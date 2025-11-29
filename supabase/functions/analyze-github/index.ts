@@ -22,7 +22,10 @@ serve(async (req) => {
     // Extrair informações da URL
     const urlParts = githubUrl.replace(/\/$/, "").split("/");
     const owner = urlParts[urlParts.length - 2];
-    const repo = urlParts[urlParts.length - 1];
+    let repo = urlParts[urlParts.length - 1];
+    
+    // Remove .git suffix if present
+    repo = repo.replace(/\.git$/, "");
     const projectName = repo;
 
     console.log(`Owner: ${owner}, Repo: ${repo}`);
