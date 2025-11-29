@@ -2,9 +2,18 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, FileText, DollarSign, Lightbulb, Home, Loader2 } from "lucide-react";
+import { Github, FileText, DollarSign, Lightbulb, Home, Loader2, Download, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import html2pdf from "html2pdf.js";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 const Improvements = () => {
   const { id } = useParams();
@@ -40,6 +49,10 @@ const Improvements = () => {
       if (analysisError) throw analysisError;
       setAnalysis(analysisData);
 
+      toast.success("Análise carregada com sucesso", {
+        icon: <CheckCircle className="w-4 h-4 text-accent" />,
+      });
+
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
       toast.error("Erro ao carregar análise");
@@ -47,6 +60,19 @@ const Improvements = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const exportToPDF = () => {
+    const element = document.getElementById("analysis-content");
+    const options = {
+      margin: 1,
+      filename: `${project?.name || "projeto"}-Melhorias.pdf`,
+      image: { type: "jpeg" as const, quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "in" as const, format: "letter" as const, orientation: "portrait" as const },
+    };
+    html2pdf().set(options).from(element).save();
+    toast.success("PDF gerado com sucesso!");
   };
 
   if (loading) {
@@ -73,6 +99,10 @@ const Improvements = () => {
           </div>
           
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={exportToPDF}>
+              <Download className="w-4 h-4" />
+              Exportar PDF
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate(`/analise-prd/${id}`)}>
               <FileText className="w-4 h-4" />
               PRD
@@ -87,6 +117,27 @@ const Improvements = () => {
 
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <div className="space-y-8 animate-fade-in">
+          {/* Breadcrumb */}
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={() => navigate("/")} className="cursor-pointer">
+                  Home
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={() => navigate("/historico")} className="cursor-pointer">
+                  {project?.name}
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Melhorias & Features</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-light rounded-full text-primary font-medium text-sm">
               <Lightbulb className="w-4 h-4" />
@@ -98,7 +149,7 @@ const Improvements = () => {
             </p>
           </div>
 
-          <div className="prose prose-slate max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content">
+          <div id="analysis-content" className="prose prose-slate max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content">
             <ReactMarkdown>
               {analysis?.content || "Nenhuma análise disponível."}
             </ReactMarkdown>

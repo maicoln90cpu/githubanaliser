@@ -2,9 +2,18 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, FileText, DollarSign, Lightbulb, Home, Loader2 } from "lucide-react";
+import { Github, FileText, DollarSign, Lightbulb, Home, Loader2, Download, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import html2pdf from "html2pdf.js";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 const AnalysisPRD = () => {
   const { id } = useParams();
@@ -42,6 +51,11 @@ const AnalysisPRD = () => {
       if (analysisError) throw analysisError;
       setAnalysis(analysisData);
 
+      // Mostrar feedback de salvamento
+      toast.success("Análise carregada com sucesso", {
+        icon: <CheckCircle className="w-4 h-4 text-accent" />,
+      });
+
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
       toast.error("Erro ao carregar análise");
@@ -49,6 +63,19 @@ const AnalysisPRD = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const exportToPDF = () => {
+    const element = document.getElementById("analysis-content");
+    const options = {
+      margin: 1,
+      filename: `${project?.name || "projeto"}-PRD.pdf`,
+      image: { type: "jpeg" as const, quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "in" as const, format: "letter" as const, orientation: "portrait" as const },
+    };
+    html2pdf().set(options).from(element).save();
+    toast.success("PDF gerado com sucesso!");
   };
 
   if (loading) {
@@ -76,6 +103,10 @@ const AnalysisPRD = () => {
           </div>
           
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={exportToPDF}>
+              <Download className="w-4 h-4" />
+              Exportar PDF
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate(`/plano-captacao/${id}`)}>
               <DollarSign className="w-4 h-4" />
               Captação
@@ -91,6 +122,27 @@ const AnalysisPRD = () => {
       {/* Content */}
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <div className="space-y-8 animate-fade-in">
+          {/* Breadcrumb */}
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={() => navigate("/")} className="cursor-pointer">
+                  Home
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={() => navigate("/historico")} className="cursor-pointer">
+                  {project?.name}
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Análise PRD</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
           {/* Page Header */}
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-light rounded-full text-primary font-medium text-sm">
@@ -104,7 +156,7 @@ const AnalysisPRD = () => {
           </div>
 
           {/* Analysis Content */}
-          <div className="prose prose-slate max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content">
+          <div id="analysis-content" className="prose prose-slate max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content">
             <ReactMarkdown>
               {analysis?.content || "Nenhuma análise disponível."}
             </ReactMarkdown>

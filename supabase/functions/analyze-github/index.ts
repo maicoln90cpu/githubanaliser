@@ -75,6 +75,29 @@ serve(async (req) => {
       fileStructure = contents.map((item: any) => `${item.type}: ${item.name}`).join("\n");
     }
 
+    // Buscar package.json
+    let packageJsonContent = "";
+    try {
+      const packageResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/package.json`, {
+        headers: {
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "GitAnalyzer",
+        },
+      });
+      if (packageResponse.ok) {
+        const packageData = await packageResponse.json();
+        const packageContent = atob(packageData.content);
+        const packageJson = JSON.parse(packageContent);
+        packageJsonContent = `
+Dependencies: ${packageJson.dependencies ? Object.keys(packageJson.dependencies).join(", ") : "Nenhuma"}
+Dev Dependencies: ${packageJson.devDependencies ? Object.keys(packageJson.devDependencies).join(", ") : "Nenhuma"}
+Scripts: ${packageJson.scripts ? Object.keys(packageJson.scripts).join(", ") : "Nenhum"}
+Version: ${packageJson.version || "Não especificada"}`;
+      }
+    } catch (e) {
+      console.log("package.json não encontrado ou erro ao processar");
+    }
+
     // Criar cliente Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -110,6 +133,8 @@ ${readmeContent.substring(0, 3000)}
 
 Estrutura de arquivos:
 ${fileStructure}
+
+${packageJsonContent ? `package.json:\n${packageJsonContent}` : ""}
 `;
 
     // Chamar Lovable AI para gerar as 3 análises
