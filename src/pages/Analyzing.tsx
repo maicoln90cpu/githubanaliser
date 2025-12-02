@@ -5,6 +5,7 @@ import { Loader2, Github, Check, Circle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Step {
   id: string;
@@ -27,6 +28,7 @@ const statusToStepIndex: Record<AnalysisStatus, number> = {
 const Analyzing = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
   const [progress, setProgress] = useState(0);
   const [startTime] = useState(Date.now());
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~60s");
@@ -44,6 +46,7 @@ const Analyzing = () => {
   ]);
   
   const githubUrl = searchParams.get("url");
+  const existingProjectId = searchParams.get("projectId");
 
   const calculateTimeRemaining = (currentStepIndex: number, totalSteps: number) => {
     const elapsed = Date.now() - startTime;
@@ -123,9 +126,39 @@ const Analyzing = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
+    // Verificar se usuário está logado
+    if (!user) {
+      toast.error("Você precisa estar logado para analisar projetos");
+      navigate("/auth");
+      return;
+    }
+
+    // Se já tem um projectId existente, apenas fazer polling
+    if (existingProjectId) {
+      setProjectId(existingProjectId);
+      setSteps(prev => prev.map((step, i) => 
+        i === 0 ? { ...step, status: "complete" } : step
+      ));
+      setProgress(16);
+      
+      pollingRef.current = setInterval(() => {
+        pollStatus(existingProjectId);
+      }, 3000);
+      
+      pollStatus(existingProjectId);
+      
+      return () => {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+        }
+      };
+    }
+
     if (!githubUrl) {
       toast.error("URL do GitHub não encontrada");
-      navigate("/");
+      navigate("/dashboard");
       return;
     }
 
@@ -137,21 +170,21 @@ const Analyzing = () => {
         ));
         setProgress(8);
 
-        // Iniciar análise
+        // Iniciar análise com user_id
         const { data, error } = await supabase.functions.invoke("analyze-github", {
-          body: { githubUrl }
+          body: { githubUrl, userId: user.id }
         });
 
         if (error) {
           console.error("Erro ao iniciar análise:", error);
           toast.error("Erro ao iniciar análise");
-          navigate("/");
+          navigate("/dashboard");
           return;
         }
 
         if (!data?.projectId) {
           toast.error("Resposta inválida do servidor");
-          navigate("/");
+          navigate("/dashboard");
           return;
         }
 
@@ -174,7 +207,7 @@ const Analyzing = () => {
       } catch (error) {
         console.error("Erro:", error);
         toast.error("Erro ao processar análise");
-        navigate("/");
+        navigate("/dashboard");
       }
     };
 
@@ -186,7 +219,7 @@ const Analyzing = () => {
         clearInterval(pollingRef.current);
       }
     };
-  }, [githubUrl, navigate]);
+  }, [githubUrl, navigate, user, authLoading, existingProjectId]);
 
   const getStepIcon = (status: Step["status"]) => {
     switch (status) {
@@ -212,8 +245,8 @@ const Analyzing = () => {
           </div>
           <h2 className="text-2xl font-bold">Erro na análise</h2>
           <p className="text-muted-foreground">{errorMessage}</p>
-          <Button onClick={() => navigate("/")} variant="outline">
-            Voltar ao início
+        <Button onClick={() => navigate("/dashboard")} variant="outline">
+            Voltar ao dashboard
           </Button>
         </div>
       </div>

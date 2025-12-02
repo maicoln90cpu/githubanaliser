@@ -54,6 +54,7 @@ export type Database = {
           github_url: string
           id: string
           name: string
+          user_id: string | null
         }
         Insert: {
           analysis_status?: string | null
@@ -62,6 +63,7 @@ export type Database = {
           github_url: string
           id?: string
           name: string
+          user_id?: string | null
         }
         Update: {
           analysis_status?: string | null
@@ -70,6 +72,7 @@ export type Database = {
           github_url?: string
           id?: string
           name?: string
+          user_id?: string | null
         }
         Relationships: []
       }

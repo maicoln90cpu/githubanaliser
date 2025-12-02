@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Github, Sparkles, History } from "lucide-react";
+import { Github, Sparkles, LogIn, LayoutDashboard } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 const Home = () => {
   const [githubUrl, setGithubUrl] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const navigate = useNavigate();
+  const { user, isLoading } = useAuth();
 
   const validateGithubUrl = (url: string): boolean => {
     const githubPattern = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
@@ -23,6 +25,13 @@ const Home = () => {
 
     if (!validateGithubUrl(githubUrl)) {
       toast.error("URL do GitHub inválida. Use o formato: https://github.com/usuario/repositorio");
+      return;
+    }
+
+    // Verificar se usuário está logado
+    if (!user) {
+      toast.error("Você precisa estar logado para analisar projetos");
+      navigate("/auth");
       return;
     }
 
@@ -52,14 +61,27 @@ const Home = () => {
             <Github className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-xl">GitAnalyzer</span>
           </div>
-          <Button 
-            variant="ghost" 
-            onClick={() => navigate("/historico")}
-            className="gap-2"
-          >
-            <History className="w-4 h-4" />
-            Histórico
-          </Button>
+          {!isLoading && (
+            user ? (
+              <Button 
+                variant="default" 
+                onClick={() => navigate("/dashboard")}
+                className="gap-2"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                Dashboard
+              </Button>
+            ) : (
+              <Button 
+                variant="ghost" 
+                onClick={() => navigate("/auth")}
+                className="gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                Entrar
+              </Button>
+            )
+          )}
         </div>
       </header>
 
