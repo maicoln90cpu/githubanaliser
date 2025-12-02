@@ -484,23 +484,43 @@ serve(async (req) => {
         .update({ analysis_status: "pending", error_message: null })
         .eq("id", existingProject.id);
     } else {
-      // Criar novo projeto com user_id
+      // Criar novo projeto com user_id usando upsert para evitar race conditions
       const { data: newProject, error: projectError } = await supabase
         .from("projects")
-        .insert({
+        .upsert({
           name: projectName,
           github_url: githubUrl,
           analysis_status: "pending",
           user_id: userId,
+        }, {
+          onConflict: 'github_url,user_id',
+          ignoreDuplicates: false
         })
         .select()
         .single();
 
       if (projectError) {
-        throw projectError;
+        // Se ainda falhar, tentar buscar o projeto existente
+        console.error("Erro:", projectError);
+        const { data: retryProject } = await supabase
+          .from("projects")
+          .select()
+          .eq("github_url", githubUrl)
+          .eq("user_id", userId)
+          .single();
+        
+        if (retryProject) {
+          project = retryProject;
+          // Deletar análises antigas e resetar status
+          await supabase.from("analyses").delete().eq("project_id", retryProject.id);
+          await supabase.from("projects").update({ analysis_status: "pending", error_message: null }).eq("id", retryProject.id);
+        } else {
+          throw projectError;
+        }
+      } else {
+        project = newProject;
+        console.log("✓ Novo projeto criado:", project.id);
       }
-      project = newProject;
-      console.log("✓ Novo projeto criado:", project.id);
     }
 
     // Iniciar processamento em background
