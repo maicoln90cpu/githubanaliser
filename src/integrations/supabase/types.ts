@@ -48,19 +48,25 @@ export type Database = {
       }
       projects: {
         Row: {
+          analysis_status: string | null
           created_at: string
+          error_message: string | null
           github_url: string
           id: string
           name: string
         }
         Insert: {
+          analysis_status?: string | null
           created_at?: string
+          error_message?: string | null
           github_url: string
           id?: string
           name: string
         }
         Update: {
+          analysis_status?: string | null
           created_at?: string
+          error_message?: string | null
           github_url?: string
           id?: string
           name?: string
