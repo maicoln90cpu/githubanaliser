@@ -231,22 +231,42 @@ Scripts disponíveis: ${packageJson.scripts ? Object.entries(packageJson.scripts
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Salvar projeto
-    const { data: project, error: projectError } = await supabase
+    // Verificar se projeto já existe
+    let project;
+    const { data: existingProject } = await supabase
       .from("projects")
-      .insert({
-        name: projectName,
-        github_url: githubUrl,
-      })
       .select()
-      .single();
+      .eq("github_url", githubUrl)
+      .maybeSingle();
 
-    if (projectError) {
-      console.error("Erro ao salvar projeto:", projectError);
-      throw projectError;
+    if (existingProject) {
+      console.log("✓ Projeto já existe, atualizando análises:", existingProject.id);
+      project = existingProject;
+      
+      // Deletar análises antigas para recriar
+      await supabase
+        .from("analyses")
+        .delete()
+        .eq("project_id", existingProject.id);
+      console.log("✓ Análises antigas removidas");
+    } else {
+      // Criar novo projeto
+      const { data: newProject, error: projectError } = await supabase
+        .from("projects")
+        .insert({
+          name: projectName,
+          github_url: githubUrl,
+        })
+        .select()
+        .single();
+
+      if (projectError) {
+        console.error("Erro ao salvar projeto:", projectError);
+        throw projectError;
+      }
+      project = newProject;
+      console.log("✓ Novo projeto salvo:", project.id);
     }
-
-    console.log("✓ Projeto salvo:", project.id);
 
     // Preparar contexto COMPLETO para IA
     const projectContext = `
