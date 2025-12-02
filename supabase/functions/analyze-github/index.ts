@@ -433,12 +433,17 @@ serve(async (req) => {
   }
 
   try {
-    const { githubUrl } = await req.json();
+    const { githubUrl, userId } = await req.json();
     console.log("=== INICIANDO ANÁLISE ===");
     console.log("URL:", githubUrl);
+    console.log("User ID:", userId);
 
     if (!githubUrl) {
       throw new Error("URL do GitHub não fornecida");
+    }
+
+    if (!userId) {
+      throw new Error("Usuário não autenticado");
     }
 
     // Extrair informações da URL
@@ -455,12 +460,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verificar se projeto já existe ou criar novo
+    // Verificar se projeto já existe para esse usuário
     let project;
     const { data: existingProject } = await supabase
       .from("projects")
       .select()
       .eq("github_url", githubUrl)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (existingProject) {
@@ -478,13 +484,14 @@ serve(async (req) => {
         .update({ analysis_status: "pending", error_message: null })
         .eq("id", existingProject.id);
     } else {
-      // Criar novo projeto
+      // Criar novo projeto com user_id
       const { data: newProject, error: projectError } = await supabase
         .from("projects")
         .insert({
           name: projectName,
           github_url: githubUrl,
           analysis_status: "pending",
+          user_id: userId,
         })
         .select()
         .single();
