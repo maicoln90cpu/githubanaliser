@@ -1,37 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Github, Check, Circle } from "lucide-react";
+import { Loader2, Github, Check, Circle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 
 interface Step {
   id: string;
   label: string;
-  status: "pending" | "loading" | "complete";
+  status: "pending" | "loading" | "complete" | "error";
 }
+
+type AnalysisStatus = "pending" | "extracting" | "generating_prd" | "generating_funding" | "generating_improvements" | "completed" | "error";
+
+const statusToStepIndex: Record<AnalysisStatus, number> = {
+  pending: 0,
+  extracting: 1,
+  generating_prd: 2,
+  generating_funding: 3,
+  generating_improvements: 4,
+  completed: 5,
+  error: -1,
+};
 
 const Analyzing = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [startTime] = useState(Date.now());
-  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~30s");
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~60s");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [steps, setSteps] = useState<Step[]>([
     { id: "connect", label: "Conectando ao GitHub", status: "pending" },
     { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
-    { id: "code", label: "Analisando código-fonte", status: "pending" },
     { id: "prd", label: "Gerando análise PRD", status: "pending" },
     { id: "funding", label: "Criando plano de captação", status: "pending" },
     { id: "improvements", label: "Sugerindo melhorias", status: "pending" },
+    { id: "complete", label: "Finalizando análise", status: "pending" },
   ]);
+  
   const githubUrl = searchParams.get("url");
 
-  const calculateTimeRemaining = (stepIndex: number, totalSteps: number) => {
+  const calculateTimeRemaining = (currentStepIndex: number, totalSteps: number) => {
     const elapsed = Date.now() - startTime;
-    const completedSteps = stepIndex + 1;
-    if (completedSteps === 0) return "~30s";
+    const completedSteps = currentStepIndex;
+    if (completedSteps <= 0) return "~60s";
     
     const avgTimePerStep = elapsed / completedSteps;
     const remainingSteps = totalSteps - completedSteps;
@@ -42,16 +59,66 @@ const Analyzing = () => {
     return `~${Math.ceil(remainingMs / 60000)}min`;
   };
 
-  const updateStep = (stepIndex: number, status: Step["status"]) => {
-    setSteps(prev => prev.map((step, i) => 
-      i === stepIndex ? { ...step, status } : step
-    ));
-    if (status === "loading") {
-      setCurrentStep(stepIndex);
+  const updateStepsFromStatus = (status: AnalysisStatus) => {
+    const stepIndex = statusToStepIndex[status];
+    
+    setSteps(prev => prev.map((step, i) => {
+      if (status === "error") {
+        return step;
+      }
+      if (status === "completed") {
+        return { ...step, status: "complete" };
+      }
+      if (i < stepIndex) {
+        return { ...step, status: "complete" };
+      }
+      if (i === stepIndex) {
+        return { ...step, status: "loading" };
+      }
+      return { ...step, status: "pending" };
+    }));
+
+    if (status === "completed") {
+      setProgress(100);
+    } else if (stepIndex >= 0) {
       setProgress(Math.round(((stepIndex + 0.5) / 6) * 100));
-    } else if (status === "complete") {
-      setProgress(Math.round(((stepIndex + 1) / 6) * 100));
       setEstimatedTimeRemaining(calculateTimeRemaining(stepIndex, 6));
+    }
+  };
+
+  const pollStatus = async (id: string) => {
+    try {
+      const { data: project, error } = await supabase
+        .from("projects")
+        .select("analysis_status, error_message")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        console.error("Erro ao buscar status:", error);
+        return;
+      }
+
+      const status = project.analysis_status as AnalysisStatus;
+      updateStepsFromStatus(status);
+
+      if (status === "completed") {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+        }
+        toast.success("Análise concluída!");
+        setTimeout(() => {
+          navigate(`/analise-prd/${id}`);
+        }, 500);
+      } else if (status === "error") {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+        }
+        setErrorMessage(project.error_message || "Erro desconhecido na análise");
+        toast.error("Erro ao analisar o projeto");
+      }
+    } catch (error) {
+      console.error("Erro no polling:", error);
     }
   };
 
@@ -62,51 +129,48 @@ const Analyzing = () => {
       return;
     }
 
-    const analyzeProject = async () => {
+    const startAnalysis = async () => {
       try {
-        // Step 1: Connecting
-        updateStep(0, "loading");
-        await new Promise(resolve => setTimeout(resolve, 500));
-        updateStep(0, "complete");
+        // Step 1: Conectando
+        setSteps(prev => prev.map((step, i) => 
+          i === 0 ? { ...step, status: "loading" } : step
+        ));
+        setProgress(8);
 
-        // Step 2: Extracting structure
-        updateStep(1, "loading");
-        await new Promise(resolve => setTimeout(resolve, 800));
-        updateStep(1, "complete");
-
-        // Step 3: Analyzing code
-        updateStep(2, "loading");
-        
-        // Call edge function
+        // Iniciar análise
         const { data, error } = await supabase.functions.invoke("analyze-github", {
           body: { githubUrl }
         });
 
         if (error) {
-          console.error("Erro ao analisar:", error);
-          toast.error("Erro ao analisar o projeto");
+          console.error("Erro ao iniciar análise:", error);
+          toast.error("Erro ao iniciar análise");
           navigate("/");
           return;
         }
 
-        updateStep(2, "complete");
+        if (!data?.projectId) {
+          toast.error("Resposta inválida do servidor");
+          navigate("/");
+          return;
+        }
 
-        // Step 4-6: Simulated progress for AI generation (already done in edge function)
-        updateStep(3, "loading");
-        await new Promise(resolve => setTimeout(resolve, 400));
-        updateStep(3, "complete");
+        // Marcar conexão como completa
+        setSteps(prev => prev.map((step, i) => 
+          i === 0 ? { ...step, status: "complete" } : step
+        ));
+        setProgress(16);
 
-        updateStep(4, "loading");
-        await new Promise(resolve => setTimeout(resolve, 400));
-        updateStep(4, "complete");
+        setProjectId(data.projectId);
 
-        updateStep(5, "loading");
-        await new Promise(resolve => setTimeout(resolve, 400));
-        updateStep(5, "complete");
+        // Iniciar polling a cada 3 segundos
+        pollingRef.current = setInterval(() => {
+          pollStatus(data.projectId);
+        }, 3000);
 
-        // Redirect
-        navigate(`/analise-prd/${data.projectId}`);
-        
+        // Primeira verificação imediata
+        pollStatus(data.projectId);
+
       } catch (error) {
         console.error("Erro:", error);
         toast.error("Erro ao processar análise");
@@ -114,7 +178,14 @@ const Analyzing = () => {
       }
     };
 
-    analyzeProject();
+    startAnalysis();
+
+    // Cleanup
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
   }, [githubUrl, navigate]);
 
   const getStepIcon = (status: Step["status"]) => {
@@ -123,10 +194,31 @@ const Analyzing = () => {
         return <Check className="w-4 h-4 text-primary" />;
       case "loading":
         return <Loader2 className="w-4 h-4 animate-spin text-primary" />;
+      case "error":
+        return <AlertCircle className="w-4 h-4 text-destructive" />;
       default:
         return <Circle className="w-4 h-4 text-muted-foreground/40" />;
     }
   };
+
+  const currentStep = steps.findIndex(s => s.status === "loading");
+
+  if (errorMessage) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-20 h-20 bg-destructive/10 rounded-full flex items-center justify-center mx-auto">
+            <AlertCircle className="w-10 h-10 text-destructive" />
+          </div>
+          <h2 className="text-2xl font-bold">Erro na análise</h2>
+          <p className="text-muted-foreground">{errorMessage}</p>
+          <Button onClick={() => navigate("/")} variant="outline">
+            Voltar ao início
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -147,7 +239,7 @@ const Analyzing = () => {
         <div className="space-y-4">
           <h2 className="text-2xl font-bold">Analisando seu projeto</h2>
           <p className="text-muted-foreground">
-            {steps[currentStep]?.label || "Processando..."}
+            {currentStep >= 0 ? steps[currentStep]?.label : "Processando..."}
           </p>
           
           {/* Progress bar */}
@@ -162,7 +254,7 @@ const Analyzing = () => {
 
         {/* Progress steps */}
         <div className="space-y-2 pt-4">
-          {steps.map((step, index) => (
+          {steps.map((step) => (
             <div
               key={step.id}
               className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ${
