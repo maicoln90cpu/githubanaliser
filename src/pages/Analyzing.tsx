@@ -16,6 +16,8 @@ const Analyzing = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [startTime] = useState(Date.now());
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~30s");
   const [steps, setSteps] = useState<Step[]>([
     { id: "connect", label: "Conectando ao GitHub", status: "pending" },
     { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
@@ -26,6 +28,20 @@ const Analyzing = () => {
   ]);
   const githubUrl = searchParams.get("url");
 
+  const calculateTimeRemaining = (stepIndex: number, totalSteps: number) => {
+    const elapsed = Date.now() - startTime;
+    const completedSteps = stepIndex + 1;
+    if (completedSteps === 0) return "~30s";
+    
+    const avgTimePerStep = elapsed / completedSteps;
+    const remainingSteps = totalSteps - completedSteps;
+    const remainingMs = avgTimePerStep * remainingSteps;
+    
+    if (remainingMs < 1000) return "quase pronto...";
+    if (remainingMs < 60000) return `~${Math.ceil(remainingMs / 1000)}s`;
+    return `~${Math.ceil(remainingMs / 60000)}min`;
+  };
+
   const updateStep = (stepIndex: number, status: Step["status"]) => {
     setSteps(prev => prev.map((step, i) => 
       i === stepIndex ? { ...step, status } : step
@@ -35,6 +51,7 @@ const Analyzing = () => {
       setProgress(Math.round(((stepIndex + 0.5) / 6) * 100));
     } else if (status === "complete") {
       setProgress(Math.round(((stepIndex + 1) / 6) * 100));
+      setEstimatedTimeRemaining(calculateTimeRemaining(stepIndex, 6));
     }
   };
 
@@ -136,7 +153,10 @@ const Analyzing = () => {
           {/* Progress bar */}
           <div className="px-4">
             <Progress value={progress} className="h-2" />
-            <p className="text-xs text-muted-foreground mt-2">{progress}% concluído</p>
+            <div className="flex justify-between items-center mt-2">
+              <p className="text-xs text-muted-foreground">{progress}% concluído</p>
+              <p className="text-xs text-muted-foreground">Tempo restante: {estimatedTimeRemaining}</p>
+            </div>
           </div>
         </div>
 
