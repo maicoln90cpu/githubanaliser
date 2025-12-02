@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Github, FileText, DollarSign, Lightbulb, Home, Loader2, Download, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import html2pdf from "html2pdf.js";
 import {
   Breadcrumb,
@@ -150,7 +151,7 @@ const Improvements = () => {
           </div>
 
           <div id="analysis-content" className="prose prose-slate max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content">
-            <ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {analysis?.content || "Nenhuma análise disponível."}
             </ReactMarkdown>
           </div>
