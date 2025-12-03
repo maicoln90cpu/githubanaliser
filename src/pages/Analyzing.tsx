@@ -50,6 +50,7 @@ const Analyzing = () => {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const hasCompletedRef = useRef(false);
   
   const [steps, setSteps] = useState<Step[]>([
     { id: "connect", label: "Conectando ao GitHub", status: "pending" },
@@ -125,9 +126,11 @@ const Analyzing = () => {
       const status = project.analysis_status as AnalysisStatus;
       updateStepsFromStatus(status);
 
-      if (status === "completed") {
+      if (status === "completed" && !hasCompletedRef.current) {
+        hasCompletedRef.current = true;
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
+          pollingRef.current = null;
         }
         toast.success("Análise concluída!");
         setTimeout(() => {
