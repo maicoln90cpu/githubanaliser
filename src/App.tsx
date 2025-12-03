@@ -7,10 +7,19 @@ import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Analyzing from "./pages/Analyzing";
+import ProjectHub from "./pages/ProjectHub";
 import AnalysisPRD from "./pages/AnalysisPRD";
+import DivulgationPlan from "./pages/DivulgationPlan";
 import FundingPlan from "./pages/FundingPlan";
+import SecurityImprovements from "./pages/SecurityImprovements";
+import UIImprovements from "./pages/UIImprovements";
+import ToolsImprovements from "./pages/ToolsImprovements";
+import NewFeatures from "./pages/NewFeatures";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminProjects from "./pages/admin/AdminProjects";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,11 +35,19 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/analisando" element={<Analyzing />} />
+          <Route path="/projeto/:id" element={<ProjectHub />} />
           <Route path="/analise-prd/:id" element={<AnalysisPRD />} />
+          <Route path="/plano-divulgacao/:id" element={<DivulgationPlan />} />
           <Route path="/plano-captacao/:id" element={<FundingPlan />} />
+          <Route path="/melhorias-seguranca/:id" element={<SecurityImprovements />} />
+          <Route path="/melhorias-ui/:id" element={<UIImprovements />} />
+          <Route path="/melhorias-ferramentas/:id" element={<ToolsImprovements />} />
+          <Route path="/novas-features/:id" element={<NewFeatures />} />
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/usuarios" element={<AdminUsers />} />
+          <Route path="/admin/projetos" element={<AdminProjects />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
