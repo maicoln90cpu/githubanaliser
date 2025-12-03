@@ -46,6 +46,83 @@ export type Database = {
           },
         ]
       }
+      analysis_usage: {
+        Row: {
+          analysis_type: string
+          cost_estimated: number | null
+          created_at: string | null
+          id: string
+          project_id: string | null
+          tokens_estimated: number | null
+          user_id: string
+        }
+        Insert: {
+          analysis_type: string
+          cost_estimated?: number | null
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          tokens_estimated?: number | null
+          user_id: string
+        }
+        Update: {
+          analysis_type?: string
+          cost_estimated?: number | null
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          tokens_estimated?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_usage_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plans: {
+        Row: {
+          created_at: string | null
+          daily_analyses: number | null
+          description: string | null
+          features: Json | null
+          id: string
+          is_active: boolean | null
+          monthly_analyses: number | null
+          name: string
+          price_monthly: number | null
+          slug: string
+        }
+        Insert: {
+          created_at?: string | null
+          daily_analyses?: number | null
+          description?: string | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean | null
+          monthly_analyses?: number | null
+          name: string
+          price_monthly?: number | null
+          slug: string
+        }
+        Update: {
+          created_at?: string | null
+          daily_analyses?: number | null
+          description?: string | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean | null
+          monthly_analyses?: number | null
+          name?: string
+          price_monthly?: number | null
+          slug?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           analysis_status: string | null
@@ -97,11 +174,61 @@ export type Database = {
         }
         Relationships: []
       }
+      user_subscriptions: {
+        Row: {
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          plan_id: string | null
+          started_at: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_user_daily_usage: { Args: { p_user_id: string }; Returns: number }
+      get_user_monthly_usage: { Args: { p_user_id: string }; Returns: number }
+      get_user_plan: {
+        Args: { p_user_id: string }
+        Returns: {
+          daily_analyses: number
+          monthly_analyses: number
+          plan_id: string
+          plan_name: string
+          plan_slug: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

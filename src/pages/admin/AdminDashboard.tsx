@@ -178,7 +178,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* Quick Links */}
-        <div className="grid md:grid-cols-2 gap-6 animate-slide-up" style={{ animationDelay: "0.1s" }}>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <div 
             className="p-6 bg-card border border-border rounded-xl hover:shadow-lg transition-all cursor-pointer"
             onClick={() => navigate("/admin/usuarios")}
@@ -188,8 +188,8 @@ const AdminDashboard = () => {
                 <Users className="w-6 h-6 text-blue-500" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg">Gerenciar Usuários</h3>
-                <p className="text-sm text-muted-foreground">Ver todos os usuários e seus projetos</p>
+                <h3 className="font-semibold text-lg">Usuários</h3>
+                <p className="text-sm text-muted-foreground">Ver todos os usuários</p>
               </div>
             </div>
             <Button variant="outline" className="w-full">
@@ -206,12 +206,48 @@ const AdminDashboard = () => {
                 <FolderGit2 className="w-6 h-6 text-purple-500" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg">Gerenciar Projetos</h3>
-                <p className="text-sm text-muted-foreground">Ver todos os projetos analisados</p>
+                <h3 className="font-semibold text-lg">Projetos</h3>
+                <p className="text-sm text-muted-foreground">Ver todos os projetos</p>
               </div>
             </div>
             <Button variant="outline" className="w-full">
               Ver Projetos
+            </Button>
+          </div>
+
+          <div 
+            className="p-6 bg-card border border-border rounded-xl hover:shadow-lg transition-all cursor-pointer"
+            onClick={() => navigate("/admin/custos")}
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center">
+                <BarChart3 className="w-6 h-6 text-green-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Custos</h3>
+                <p className="text-sm text-muted-foreground">Análise de custos</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full">
+              Ver Custos
+            </Button>
+          </div>
+
+          <div 
+            className="p-6 bg-card border border-border rounded-xl hover:shadow-lg transition-all cursor-pointer"
+            onClick={() => navigate("/admin/planos")}
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+                <FileText className="w-6 h-6 text-yellow-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Planos</h3>
+                <p className="text-sm text-muted-foreground">Gerenciar planos</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full">
+              Ver Planos
             </Button>
           </div>
         </div>
