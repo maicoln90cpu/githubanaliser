@@ -31,6 +31,7 @@ const analysisOptions: AnalysisOption[] = [
   { id: "ui_theme", label: "UI/Theme", description: "Melhorias visuais", icon: "🎨" },
   { id: "ferramentas", label: "Ferramentas", description: "Otimizações de código", icon: "🔧" },
   { id: "features", label: "Novas Features", description: "Sugestões de funcionalidades", icon: "✨" },
+  { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖" },
 ];
 
 const Home = () => {
@@ -82,8 +83,8 @@ const Home = () => {
       return;
     }
 
-    // Verificar se plano Free está tentando usar análises avançadas
-    if (plan?.planSlug === 'free') {
+    // Verificar se plano Free está tentando usar análises avançadas (admin tem acesso total)
+    if (plan?.planSlug === 'free' && !plan?.isAdmin) {
       const basicAnalyses = ['prd', 'divulgacao', 'captacao'];
       const advancedSelected = selectedAnalyses.filter(a => !basicAnalyses.includes(a));
       if (advancedSelected.length > 0) {
@@ -268,9 +269,12 @@ const Home = () => {
                 {user && plan && (
                   <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm">
                     <span className="text-muted-foreground">
-                      Uso: {plan.dailyUsage}/{plan.dailyLimit} hoje • {plan.monthlyUsage}/{plan.monthlyLimit} este mês
+                      {plan.isAdmin 
+                        ? `Uso: ${plan.dailyUsage} hoje • ${plan.monthlyUsage} este mês (ilimitado)`
+                        : `Uso: ${plan.dailyUsage}/${plan.dailyLimit} hoje • ${plan.monthlyUsage}/${plan.monthlyLimit} este mês`
+                      }
                     </span>
-                    {plan.planSlug === 'free' && (
+                    {plan.planSlug === 'free' && !plan.isAdmin && (
                       <Button variant="link" size="sm" className="text-primary p-0 h-auto" onClick={() => setShowUpgradeModal(true)}>
                         <Crown className="w-3 h-3 mr-1" />
                         Upgrade
@@ -290,7 +294,7 @@ const Home = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {analysisOptions.map((option) => {
                     const isBasicAnalysis = ['prd', 'divulgacao', 'captacao'].includes(option.id);
-                    const isDisabled = plan?.planSlug === 'free' && !isBasicAnalysis;
+                    const isDisabled = plan?.planSlug === 'free' && !isBasicAnalysis && !plan?.isAdmin;
                     
                     return (
                       <label
