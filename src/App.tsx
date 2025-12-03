@@ -20,6 +20,8 @@ import History from "./pages/History";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminProjects from "./pages/admin/AdminProjects";
+import AdminCosts from "./pages/admin/AdminCosts";
+import AdminPlans from "./pages/admin/AdminPlans";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +50,8 @@ const App = () => (
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/usuarios" element={<AdminUsers />} />
           <Route path="/admin/projetos" element={<AdminProjects />} />
+          <Route path="/admin/custos" element={<AdminCosts />} />
+          <Route path="/admin/planos" element={<AdminPlans />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
