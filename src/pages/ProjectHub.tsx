@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { 
   Github, 
   Home, 
@@ -17,7 +18,11 @@ import {
   ExternalLink,
   CheckCircle,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Play,
+  Zap,
+  Scale,
+  BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -44,6 +49,11 @@ interface Project {
 interface Analysis {
   type: string;
   created_at: string;
+}
+
+interface AnalysisUsage {
+  analysis_type: string;
+  depth_level: string | null;
 }
 
 const analysisTypes = [
@@ -129,18 +139,27 @@ const analysisTypes = [
   },
 ];
 
+const depthBadges: Record<string, { label: string; icon: typeof Zap; className: string }> = {
+  critical: { label: "Crítico", icon: Zap, className: "bg-orange-500/10 text-orange-500 border-orange-500/20" },
+  balanced: { label: "Balanceado", icon: Scale, className: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  complete: { label: "Completo", icon: BarChart3, className: "bg-green-500/10 text-green-500 border-green-500/20" },
+};
+
 const ProjectHub = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [analysisUsage, setAnalysisUsage] = useState<AnalysisUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [reanalyzing, setReanalyzing] = useState<string | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: string; title: string }>({
+  const [generating, setGenerating] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: string; title: string; isGenerate: boolean }>({
     open: false,
     type: "",
-    title: ""
+    title: "",
+    isGenerate: false
   });
 
   useEffect(() => {
@@ -173,6 +192,14 @@ const ProjectHub = () => {
           .eq("project_id", id);
 
         setAnalyses(analysesData || []);
+
+        // Fetch depth levels from analysis_usage
+        const { data: usageData } = await supabase
+          .from("analysis_usage")
+          .select("analysis_type, depth_level")
+          .eq("project_id", id);
+
+        setAnalysisUsage(usageData || []);
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
         toast.error("Erro ao carregar projeto");
@@ -189,15 +216,24 @@ const ProjectHub = () => {
     return analyses.some(a => a.type === type);
   };
 
+  const getDepthLevel = (type: string): string | null => {
+    const usage = analysisUsage.find(u => u.analysis_type === type);
+    return usage?.depth_level || null;
+  };
+
   const hasCachedData = () => {
     return project?.github_data !== null && project?.github_data !== undefined;
   };
 
-  const handleReanalyze = async (type: string) => {
+  const handleGenerateOrReanalyze = async (type: string, isReanalyze: boolean) => {
     if (!project || !user) return;
 
-    setReanalyzing(type);
-    setConfirmDialog({ open: false, type: "", title: "" });
+    if (isReanalyze) {
+      setReanalyzing(type);
+    } else {
+      setGenerating(type);
+    }
+    setConfirmDialog({ open: false, type: "", title: "", isGenerate: false });
 
     try {
       const { error } = await supabase.functions.invoke("analyze-github", {
@@ -205,13 +241,14 @@ const ProjectHub = () => {
           githubUrl: project.github_url,
           userId: user.id,
           analysisTypes: [type],
-          useCache: hasCachedData()
+          useCache: hasCachedData(),
+          depth: "balanced" // Default depth for individual generation
         }
       });
 
       if (error) throw error;
 
-      toast.success("Re-análise iniciada!", {
+      toast.success(isReanalyze ? "Re-análise iniciada!" : "Análise iniciada!", {
         description: hasCachedData() 
           ? "Usando dados em cache para economizar recursos"
           : "Extraindo dados do GitHub"
@@ -221,16 +258,17 @@ const ProjectHub = () => {
       navigate(`/analisando?projectId=${project.id}&analysisTypes=${type}`);
 
     } catch (error) {
-      console.error("Erro ao re-analisar:", error);
-      toast.error("Erro ao iniciar re-análise");
+      console.error("Erro ao analisar:", error);
+      toast.error("Erro ao iniciar análise");
     } finally {
       setReanalyzing(null);
+      setGenerating(null);
     }
   };
 
-  const openConfirmDialog = (type: string, title: string, e: React.MouseEvent) => {
+  const openConfirmDialog = (type: string, title: string, isGenerate: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
-    setConfirmDialog({ open: true, type, title });
+    setConfirmDialog({ open: true, type, title, isGenerate });
   };
 
   if (loading) {
@@ -296,6 +334,9 @@ const ProjectHub = () => {
             const Icon = analysis.icon;
             const available = hasAnalysis(analysis.type);
             const isReanalyzing = reanalyzing === analysis.type;
+            const isGenerating = generating === analysis.type;
+            const depthLevel = getDepthLevel(analysis.type);
+            const depthBadge = depthLevel ? depthBadges[depthLevel] : null;
             
             return (
               <div
@@ -303,7 +344,7 @@ const ProjectHub = () => {
                 className={`relative p-6 rounded-xl border transition-all duration-300 ${
                   available 
                     ? "bg-card border-border hover:shadow-lg hover:border-primary/30 cursor-pointer" 
-                    : "bg-muted/30 border-border/50 opacity-60"
+                    : "bg-muted/30 border-border/50"
                 }`}
                 style={{ animationDelay: `${index * 0.05}s` }}
                 onClick={() => available && navigate(`${analysis.route}/${id}`)}
@@ -312,7 +353,7 @@ const ProjectHub = () => {
                 <div className="absolute top-4 right-4 flex items-center gap-2">
                   {available && (
                     <button
-                      onClick={(e) => openConfirmDialog(analysis.type, analysis.title, e)}
+                      onClick={(e) => openConfirmDialog(analysis.type, analysis.title, false, e)}
                       className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                       title="Refazer análise"
                       disabled={isReanalyzing}
@@ -340,16 +381,40 @@ const ProjectHub = () => {
                 <h3 className="font-semibold mb-1">{analysis.title}</h3>
                 <p className="text-sm text-muted-foreground">{analysis.description}</p>
 
-                {/* Availability badge */}
-                <div className="mt-4">
+                {/* Badges row */}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                   {available ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500">
-                      Disponível
-                    </span>
+                    <>
+                      <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500">
+                        Disponível
+                      </span>
+                      {depthBadge && (
+                        <Badge variant="outline" className={`text-xs ${depthBadge.className}`}>
+                          <depthBadge.icon className="w-3 h-3 mr-1" />
+                          {depthBadge.label}
+                        </Badge>
+                      )}
+                    </>
                   ) : (
-                    <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-                      Não gerada
-                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={(e) => openConfirmDialog(analysis.type, analysis.title, true, e)}
+                      disabled={isGenerating}
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          Gerando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3 h-3 mr-1" />
+                          Gerar Análise
+                        </>
+                      )}
+                    </Button>
                   )}
                 </div>
               </div>
@@ -365,28 +430,33 @@ const ProjectHub = () => {
         </div>
       </main>
 
-      {/* Confirm Re-analysis Dialog */}
+      {/* Confirm Dialog */}
       <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Refazer análise</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmDialog.isGenerate ? "Gerar análise" : "Refazer análise"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Deseja refazer a análise <strong>"{confirmDialog.title}"</strong>?
+              {confirmDialog.isGenerate 
+                ? `Deseja gerar a análise "${confirmDialog.title}"?`
+                : `Deseja refazer a análise "${confirmDialog.title}"?`
+              }
               {hasCachedData() ? (
                 <span className="block mt-2 text-green-600">
                   ✓ Dados do projeto em cache - economia de chamadas API
                 </span>
               ) : (
                 <span className="block mt-2 text-yellow-600">
-                  ⚠ Será necessário extrair dados do GitHub novamente
+                  ⚠ Será necessário extrair dados do GitHub
                 </span>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleReanalyze(confirmDialog.type)}>
-              Refazer Análise
+            <AlertDialogAction onClick={() => handleGenerateOrReanalyze(confirmDialog.type, !confirmDialog.isGenerate)}>
+              {confirmDialog.isGenerate ? "Gerar Análise" : "Refazer Análise"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
