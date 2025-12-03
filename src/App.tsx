@@ -15,6 +15,7 @@ import SecurityImprovements from "./pages/SecurityImprovements";
 import UIImprovements from "./pages/UIImprovements";
 import ToolsImprovements from "./pages/ToolsImprovements";
 import NewFeatures from "./pages/NewFeatures";
+import TechnicalDocumentation from "./pages/TechnicalDocumentation";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -46,6 +47,7 @@ const App = () => (
           <Route path="/melhorias-ui/:id" element={<UIImprovements />} />
           <Route path="/melhorias-ferramentas/:id" element={<ToolsImprovements />} />
           <Route path="/novas-features/:id" element={<NewFeatures />} />
+          <Route path="/documentacao-tecnica/:id" element={<TechnicalDocumentation />} />
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
           <Route path="/admin" element={<AdminDashboard />} />

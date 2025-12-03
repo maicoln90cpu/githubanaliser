@@ -13,6 +13,7 @@ import {
   Palette, 
   Wrench, 
   Sparkles,
+  BookOpen,
   ExternalLink,
   CheckCircle,
   Clock,
@@ -115,6 +116,16 @@ const analysisTypes = [
     textColor: "text-yellow-500",
     bgColor: "bg-yellow-500/10",
     route: "/novas-features"
+  },
+  { 
+    type: "documentacao", 
+    title: "Documentação Técnica", 
+    description: "README, API Reference e guias",
+    icon: BookOpen, 
+    color: "bg-cyan-500",
+    textColor: "text-cyan-500",
+    bgColor: "bg-cyan-500/10",
+    route: "/documentacao-tecnica"
   },
 ];
 
