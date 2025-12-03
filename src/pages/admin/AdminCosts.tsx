@@ -11,7 +11,9 @@ import {
   TrendingUp,
   Calculator,
   Shield,
-  ArrowLeft
+  ArrowLeft,
+  Zap,
+  BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -33,8 +35,11 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Legend
+  PieChart,
+  Pie,
+  Cell
 } from "recharts";
+import { Badge } from "@/components/ui/badge";
 
 interface CostStats {
   totalAnalyses: number;
@@ -42,12 +47,14 @@ interface CostStats {
   avgCostPerAnalysis: number;
   avgCostPerUser: number;
   totalUsers: number;
+  totalTokens: number;
 }
 
 interface DailyUsage {
   date: string;
   analyses: number;
   cost: number;
+  tokens: number;
 }
 
 interface UserCost {
@@ -59,8 +66,22 @@ interface UserCost {
   planName: string;
 }
 
-// Estimated cost per analysis type (based on Gemini Flash pricing)
-const COST_PER_ANALYSIS = 0.002; // ~$0.002 per analysis (input + output tokens)
+interface DepthStats {
+  depth: string;
+  count: number;
+  avgTokens: number;
+  avgCost: number;
+  totalCost: number;
+}
+
+const USD_TO_BRL = 5.5;
+const COST_PER_ANALYSIS = 0.002;
+
+const DEPTH_COLORS = {
+  'critical': 'hsl(142, 76%, 36%)',
+  'balanced': 'hsl(217, 91%, 60%)', 
+  'complete': 'hsl(262, 83%, 58%)',
+};
 
 const AdminCosts = () => {
   const navigate = useNavigate();
@@ -68,9 +89,9 @@ const AdminCosts = () => {
   const [stats, setStats] = useState<CostStats | null>(null);
   const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
   const [userCosts, setUserCosts] = useState<UserCost[]>([]);
+  const [depthStats, setDepthStats] = useState<DepthStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasRealData, setHasRealData] = useState(false);
-  const [totalTokens, setTotalTokens] = useState(0);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -81,169 +102,171 @@ const AdminCosts = () => {
       return;
     }
 
-    const loadCostData = async () => {
-      try {
-        // Get real usage data from analysis_usage table
-        const { data: usageData } = await supabase
-          .from("analysis_usage")
-          .select("*");
-
-        // Calculate real costs from usage data
-        const realTotalCost = usageData?.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0) || 0;
-        const realTotalTokens = usageData?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
-
-        // Total analyses (fallback to old method if no usage data)
-        const { count: totalAnalyses } = await supabase
-          .from("analyses")
-          .select("*", { count: "exact", head: true });
-
-        // Get unique users
-        const { data: projects } = await supabase
-          .from("projects")
-          .select("user_id")
-          .not("user_id", "is", null);
-
-        const uniqueUsers = new Set(projects?.map(p => p.user_id) || []);
-        const totalUsers = uniqueUsers.size;
-
-        // Use real costs if available, otherwise estimate
-        const hasRealUsageData = usageData && usageData.length > 0;
-        setHasRealData(hasRealUsageData);
-        setTotalTokens(realTotalTokens);
-        
-        const estimatedTotalCost = hasRealUsageData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
-        const avgCostPerAnalysis = totalAnalyses && totalAnalyses > 0 
-          ? estimatedTotalCost / totalAnalyses 
-          : COST_PER_ANALYSIS;
-        const avgCostPerUser = totalUsers > 0 ? estimatedTotalCost / totalUsers : 0;
-
-        setStats({
-          totalAnalyses: totalAnalyses || 0,
-          estimatedTotalCost,
-          avgCostPerAnalysis,
-          avgCostPerUser,
-          totalUsers,
-        });
-
-        // Get daily usage for last 30 days - prefer usage data
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        // Group usage by date
-        const dailyMap = new Map<string, { analyses: number; cost: number; tokens: number }>();
-        
-        if (hasRealUsageData) {
-          usageData?.forEach(u => {
-            const date = new Date(u.created_at!).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-            const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
-            dailyMap.set(date, {
-              analyses: existing.analyses + 1,
-              cost: existing.cost + Number(u.cost_estimated || 0),
-              tokens: existing.tokens + (u.tokens_estimated || 0),
-            });
-          });
-        } else {
-          // Fallback to analyses table
-          const { data: analysesData } = await supabase
-            .from("analyses")
-            .select("created_at")
-            .gte("created_at", thirtyDaysAgo.toISOString());
-
-          analysesData?.forEach(a => {
-            const date = new Date(a.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-            const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
-            dailyMap.set(date, {
-              analyses: existing.analyses + 1,
-              cost: existing.cost + COST_PER_ANALYSIS,
-              tokens: 0,
-            });
-          });
-        }
-
-        const dailyData: DailyUsage[] = Array.from(dailyMap.entries())
-          .map(([date, data]) => ({
-            date,
-            analyses: data.analyses,
-            cost: data.cost,
-          }))
-          .sort((a, b) => {
-            const [dayA, monthA] = a.date.split('/').map(Number);
-            const [dayB, monthB] = b.date.split('/').map(Number);
-            return monthA - monthB || dayA - dayB;
-          })
-          .slice(-14);
-
-        setDailyUsage(dailyData);
-
-        // Get cost per user from real data
-        const userCostMap = new Map<string, { count: number; cost: number; tokens: number }>();
-        
-        if (hasRealUsageData) {
-          usageData?.forEach(u => {
-            const existing = userCostMap.get(u.user_id) || { count: 0, cost: 0, tokens: 0 };
-            userCostMap.set(u.user_id, {
-              count: existing.count + 1,
-              cost: existing.cost + Number(u.cost_estimated || 0),
-              tokens: existing.tokens + (u.tokens_estimated || 0),
-            });
-          });
-        } else {
-          // Fallback to projects/analyses
-          const { data: userProjects } = await supabase
-            .from("projects")
-            .select(`user_id, analyses (id)`)
-            .not("user_id", "is", null);
-
-          userProjects?.forEach(p => {
-            if (p.user_id) {
-              const count = Array.isArray(p.analyses) ? p.analyses.length : 0;
-              const existing = userCostMap.get(p.user_id) || { count: 0, cost: 0, tokens: 0 };
-              userCostMap.set(p.user_id, {
-                count: existing.count + count,
-                cost: existing.cost + (count * COST_PER_ANALYSIS),
-                tokens: 0,
-              });
-            }
-          });
-        }
-
-        // Get user subscriptions for plan info
-        const { data: subscriptions } = await supabase
-          .from("user_subscriptions")
-          .select(`user_id, plans (name)`)
-          .eq("status", "active");
-
-        const userPlanMap = new Map<string, string>();
-        subscriptions?.forEach(s => {
-          if (s.user_id && s.plans) {
-            userPlanMap.set(s.user_id, (s.plans as any).name || 'Free');
-          }
-        });
-
-        const userCostData: UserCost[] = Array.from(userCostMap.entries())
-          .map(([userId, data]) => ({
-            userId,
-            email: `user-${userId.slice(0, 8)}...`,
-            analysesCount: data.count,
-            estimatedCost: data.cost,
-            totalTokens: data.tokens,
-            planName: userPlanMap.get(userId) || 'Free',
-          }))
-          .sort((a, b) => b.estimatedCost - a.estimatedCost)
-          .slice(0, 10);
-
-        setUserCosts(userCostData);
-
-      } catch (error) {
-        console.error("Erro ao carregar dados de custos:", error);
-        toast.error("Erro ao carregar dados de custos");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadCostData();
   }, [isAdmin, adminLoading, navigate]);
+
+  const loadCostData = async () => {
+    try {
+      // Get real usage data
+      const { data: usageData } = await supabase
+        .from("analysis_usage")
+        .select("*");
+
+      const realTotalCost = usageData?.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0) || 0;
+      const realTotalTokens = usageData?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
+
+      const { count: totalAnalyses } = await supabase
+        .from("analyses")
+        .select("*", { count: "exact", head: true });
+
+      const { data: projects } = await supabase
+        .from("projects")
+        .select("user_id")
+        .not("user_id", "is", null);
+
+      const uniqueUsers = new Set(projects?.map(p => p.user_id) || []);
+      const totalUsers = uniqueUsers.size;
+
+      const hasRealUsageData = usageData && usageData.length > 0;
+      setHasRealData(hasRealUsageData);
+      
+      const estimatedTotalCost = hasRealUsageData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
+      const avgCostPerAnalysis = totalAnalyses && totalAnalyses > 0 
+        ? estimatedTotalCost / totalAnalyses 
+        : COST_PER_ANALYSIS;
+      const avgCostPerUser = totalUsers > 0 ? estimatedTotalCost / totalUsers : 0;
+
+      setStats({
+        totalAnalyses: totalAnalyses || 0,
+        estimatedTotalCost,
+        avgCostPerAnalysis,
+        avgCostPerUser,
+        totalUsers,
+        totalTokens: realTotalTokens,
+      });
+
+      // Daily usage
+      const dailyMap = new Map<string, { analyses: number; cost: number; tokens: number }>();
+      
+      if (hasRealUsageData) {
+        usageData?.forEach(u => {
+          const date = new Date(u.created_at!).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
+          dailyMap.set(date, {
+            analyses: existing.analyses + 1,
+            cost: existing.cost + Number(u.cost_estimated || 0),
+            tokens: existing.tokens + (u.tokens_estimated || 0),
+          });
+        });
+      }
+
+      const dailyData: DailyUsage[] = Array.from(dailyMap.entries())
+        .map(([date, data]) => ({
+          date,
+          analyses: data.analyses,
+          cost: data.cost,
+          tokens: data.tokens,
+        }))
+        .sort((a, b) => {
+          const [dayA, monthA] = a.date.split('/').map(Number);
+          const [dayB, monthB] = b.date.split('/').map(Number);
+          return monthA - monthB || dayA - dayB;
+        })
+        .slice(-14);
+
+      setDailyUsage(dailyData);
+
+      // Depth statistics (simulated based on model used)
+      const depthMap = new Map<string, { count: number; tokens: number; cost: number }>();
+      
+      usageData?.forEach(u => {
+        // Infer depth from model or context size
+        let depth = 'complete';
+        if (u.model_used?.includes('lite')) {
+          depth = u.tokens_estimated && u.tokens_estimated < 5000 ? 'critical' : 'balanced';
+        }
+        
+        const existing = depthMap.get(depth) || { count: 0, tokens: 0, cost: 0 };
+        depthMap.set(depth, {
+          count: existing.count + 1,
+          tokens: existing.tokens + (u.tokens_estimated || 0),
+          cost: existing.cost + Number(u.cost_estimated || 0),
+        });
+      });
+
+      const depthStatsData: DepthStats[] = [
+        { depth: 'critical', count: 0, avgTokens: 0, avgCost: 0, totalCost: 0 },
+        { depth: 'balanced', count: 0, avgTokens: 0, avgCost: 0, totalCost: 0 },
+        { depth: 'complete', count: 0, avgTokens: 0, avgCost: 0, totalCost: 0 },
+      ].map(d => {
+        const data = depthMap.get(d.depth);
+        if (data && data.count > 0) {
+          return {
+            depth: d.depth,
+            count: data.count,
+            avgTokens: Math.round(data.tokens / data.count),
+            avgCost: data.cost / data.count,
+            totalCost: data.cost,
+          };
+        }
+        return d;
+      });
+
+      setDepthStats(depthStatsData);
+
+      // User costs with profiles
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, email");
+
+      const profileMap = new Map(profiles?.map(p => [p.id, p.email]) || []);
+
+      const userCostMap = new Map<string, { count: number; cost: number; tokens: number }>();
+      
+      if (hasRealUsageData) {
+        usageData?.forEach(u => {
+          const existing = userCostMap.get(u.user_id) || { count: 0, cost: 0, tokens: 0 };
+          userCostMap.set(u.user_id, {
+            count: existing.count + 1,
+            cost: existing.cost + Number(u.cost_estimated || 0),
+            tokens: existing.tokens + (u.tokens_estimated || 0),
+          });
+        });
+      }
+
+      const { data: subscriptions } = await supabase
+        .from("user_subscriptions")
+        .select(`user_id, plans (name)`)
+        .eq("status", "active");
+
+      const userPlanMap = new Map<string, string>();
+      subscriptions?.forEach(s => {
+        if (s.user_id && s.plans) {
+          userPlanMap.set(s.user_id, (s.plans as any).name || 'Free');
+        }
+      });
+
+      const userCostData: UserCost[] = Array.from(userCostMap.entries())
+        .map(([userId, data]) => ({
+          userId,
+          email: profileMap.get(userId) || `user-${userId.slice(0, 8)}...`,
+          analysesCount: data.count,
+          estimatedCost: data.cost,
+          totalTokens: data.tokens,
+          planName: userPlanMap.get(userId) || 'Free',
+        }))
+        .sort((a, b) => b.estimatedCost - a.estimatedCost)
+        .slice(0, 10);
+
+      setUserCosts(userCostData);
+
+    } catch (error) {
+      console.error("Erro ao carregar dados de custos:", error);
+      toast.error("Erro ao carregar dados de custos");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (adminLoading || loading) {
     return (
@@ -253,12 +276,17 @@ const AdminCosts = () => {
     );
   }
 
-  // Projections
   const dailyAvg = dailyUsage.length > 0 
     ? dailyUsage.reduce((sum, d) => sum + d.analyses, 0) / dailyUsage.length 
     : 0;
   const monthlyProjection = dailyAvg * 30;
-  const monthlyProjectedCost = monthlyProjection * COST_PER_ANALYSIS;
+  const monthlyProjectedCost = stats ? (stats.avgCostPerAnalysis * monthlyProjection) : 0;
+
+  const pieData = depthStats.filter(d => d.count > 0).map(d => ({
+    name: d.depth.charAt(0).toUpperCase() + d.depth.slice(1),
+    value: d.count,
+    color: DEPTH_COLORS[d.depth as keyof typeof DEPTH_COLORS],
+  }));
 
   return (
     <div className="min-h-screen bg-background">
@@ -293,7 +321,7 @@ const AdminCosts = () => {
             <h1 className="text-3xl font-bold">Custos e Projeções</h1>
           </div>
           <p className="text-muted-foreground">
-            Estimativas de custos de IA e projeções de uso
+            Análise detalhada de custos de IA e projeções de uso
           </p>
         </div>
 
@@ -306,8 +334,8 @@ const AdminCosts = () => {
             </p>
             <p className="text-sm text-muted-foreground">
               {hasRealData 
-                ? `${totalTokens.toLocaleString()} tokens registrados • Modelo: google/gemini-2.5-flash`
-                : 'Nenhuma análise nova foi executada desde a implementação do tracking. Execute uma análise para ver dados reais.'}
+                ? `${stats?.totalTokens.toLocaleString()} tokens registrados • ${stats?.totalAnalyses} análises rastreadas`
+                : 'Execute análises para ver dados reais de custo.'}
             </p>
           </div>
         </div>
@@ -320,8 +348,9 @@ const AdminCosts = () => {
                 <DollarSign className="w-6 h-6 text-green-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">${stats?.estimatedTotalCost.toFixed(2)}</p>
-                <p className="text-sm text-muted-foreground">Custo Total Estimado</p>
+                <p className="text-2xl font-bold">R$ {(stats?.estimatedTotalCost! * USD_TO_BRL).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">(${stats?.estimatedTotalCost.toFixed(4)} USD)</p>
+                <p className="text-sm text-muted-foreground">Custo Total</p>
               </div>
             </div>
           </div>
@@ -332,7 +361,7 @@ const AdminCosts = () => {
                 <Calculator className="w-6 h-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">${stats?.avgCostPerAnalysis.toFixed(4)}</p>
+                <p className="text-2xl font-bold">R$ {(stats?.avgCostPerAnalysis! * USD_TO_BRL).toFixed(4)}</p>
                 <p className="text-sm text-muted-foreground">Custo/Análise</p>
               </div>
             </div>
@@ -341,11 +370,11 @@ const AdminCosts = () => {
           <div className="p-6 bg-card border border-border rounded-xl">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                <Users className="w-6 h-6 text-purple-500" />
+                <Zap className="w-6 h-6 text-purple-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">${stats?.avgCostPerUser.toFixed(2)}</p>
-                <p className="text-sm text-muted-foreground">Custo/Usuário</p>
+                <p className="text-2xl font-bold">{stats?.totalTokens.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Total Tokens</p>
               </div>
             </div>
           </div>
@@ -356,136 +385,225 @@ const AdminCosts = () => {
                 <TrendingUp className="w-6 h-6 text-orange-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold">${monthlyProjectedCost.toFixed(2)}</p>
+                <p className="text-2xl font-bold">R$ {(monthlyProjectedCost * USD_TO_BRL).toFixed(2)}</p>
                 <p className="text-sm text-muted-foreground">Projeção Mensal</p>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Depth Comparison */}
+        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.05s" }}>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-primary" />
+              Comparativo por Profundidade
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-2">Profundidade</th>
+                    <th className="text-right py-3 px-2">Análises</th>
+                    <th className="text-right py-3 px-2">Tokens Médios</th>
+                    <th className="text-right py-3 px-2">Custo Médio</th>
+                    <th className="text-right py-3 px-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {depthStats.map((d) => (
+                    <tr key={d.depth} className="border-b border-border/50">
+                      <td className="py-3 px-2">
+                        <Badge 
+                          className={`${
+                            d.depth === 'critical' ? 'bg-green-500/10 text-green-500' :
+                            d.depth === 'balanced' ? 'bg-blue-500/10 text-blue-500' :
+                            'bg-purple-500/10 text-purple-500'
+                          }`}
+                        >
+                          {d.depth.charAt(0).toUpperCase() + d.depth.slice(1)}
+                        </Badge>
+                      </td>
+                      <td className="text-right py-3 px-2">{d.count}</td>
+                      <td className="text-right py-3 px-2 font-mono">{d.avgTokens.toLocaleString()}</td>
+                      <td className="text-right py-3 px-2">R$ {(d.avgCost * USD_TO_BRL).toFixed(4)}</td>
+                      <td className="text-right py-3 px-2 font-medium">R$ {(d.totalCost * USD_TO_BRL).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {depthStats.every(d => d.count === 0) && (
+              <p className="text-center text-muted-foreground py-4">
+                Ainda não há dados de profundidade registrados.
+              </p>
+            )}
+          </div>
+
+          {/* Pie Chart */}
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.1s" }}>
+            <h3 className="font-semibold text-lg mb-4">Distribuição por Profundidade</h3>
+            {pieData.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-muted-foreground">
+                Execute análises para ver a distribuição
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Charts */}
         <div className="grid lg:grid-cols-2 gap-6 mb-8">
-          {/* Usage Chart */}
-          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.1s" }}>
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.15s" }}>
             <h3 className="font-semibold text-lg mb-4">Uso Diário (últimos 14 dias)</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyUsage}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="date" className="text-muted-foreground text-xs" />
-                  <YAxis className="text-muted-foreground text-xs" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px'
-                    }}
-                  />
-                  <Bar dataKey="analyses" fill="hsl(var(--primary))" name="Análises" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {dailyUsage.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyUsage}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="date" className="text-muted-foreground text-xs" />
+                    <YAxis className="text-muted-foreground text-xs" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Bar dataKey="analyses" fill="hsl(var(--primary))" name="Análises" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Sem dados de uso recentes
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Cost Chart */}
-          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.15s" }}>
-            <h3 className="font-semibold text-lg mb-4">Custo Diário Estimado</h3>
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.2s" }}>
+            <h3 className="font-semibold text-lg mb-4">Custo Diário (R$)</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyUsage}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="date" className="text-muted-foreground text-xs" />
-                  <YAxis className="text-muted-foreground text-xs" tickFormatter={(v) => `$${v.toFixed(3)}`} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value: number) => [`$${value.toFixed(4)}`, 'Custo']}
-                  />
-                  <Line type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ fill: 'hsl(var(--primary))' }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {dailyUsage.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyUsage}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="date" className="text-muted-foreground text-xs" />
+                    <YAxis className="text-muted-foreground text-xs" tickFormatter={(v) => `R$${(v * USD_TO_BRL).toFixed(2)}`} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                      formatter={(value: number) => [`R$ ${(value * USD_TO_BRL).toFixed(4)}`, 'Custo']}
+                    />
+                    <Line type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ fill: 'hsl(var(--primary))' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Sem dados de custo recentes
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Projections */}
-        <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up" style={{ animationDelay: "0.2s" }}>
+        <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up" style={{ animationDelay: "0.25s" }}>
           <h3 className="font-semibold text-lg mb-4">Projeções de Crescimento</h3>
           <div className="grid md:grid-cols-3 gap-6">
             <div className="p-4 bg-muted/30 rounded-lg">
               <p className="text-sm text-muted-foreground mb-1">Com 100 usuários/mês</p>
-              <p className="text-xl font-bold">${(100 * 5 * COST_PER_ANALYSIS * 7).toFixed(2)}/mês</p>
+              <p className="text-xl font-bold">R$ {(100 * 5 * (stats?.avgCostPerAnalysis || COST_PER_ANALYSIS) * 7 * USD_TO_BRL).toFixed(2)}/mês</p>
               <p className="text-xs text-muted-foreground">~5 análises por usuário, 7 tipos</p>
             </div>
             <div className="p-4 bg-muted/30 rounded-lg">
               <p className="text-sm text-muted-foreground mb-1">Com 500 usuários/mês</p>
-              <p className="text-xl font-bold">${(500 * 5 * COST_PER_ANALYSIS * 7).toFixed(2)}/mês</p>
+              <p className="text-xl font-bold">R$ {(500 * 5 * (stats?.avgCostPerAnalysis || COST_PER_ANALYSIS) * 7 * USD_TO_BRL).toFixed(2)}/mês</p>
               <p className="text-xs text-muted-foreground">~5 análises por usuário, 7 tipos</p>
             </div>
             <div className="p-4 bg-muted/30 rounded-lg">
               <p className="text-sm text-muted-foreground mb-1">Com 1000 usuários/mês</p>
-              <p className="text-xl font-bold">${(1000 * 5 * COST_PER_ANALYSIS * 7).toFixed(2)}/mês</p>
+              <p className="text-xl font-bold">R$ {(1000 * 5 * (stats?.avgCostPerAnalysis || COST_PER_ANALYSIS) * 7 * USD_TO_BRL).toFixed(2)}/mês</p>
               <p className="text-xs text-muted-foreground">~5 análises por usuário, 7 tipos</p>
             </div>
           </div>
         </div>
 
-        {/* Top Users by Cost */}
-        <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.25s" }}>
-          <h3 className="font-semibold text-lg mb-4">Top 10 Usuários por Custo</h3>
+        {/* Top Users */}
+        <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.3s" }}>
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Top 10 Usuários por Custo
+          </h3>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Usuário</TableHead>
-                <TableHead>Plano</TableHead>
+                <TableHead className="text-center">Plano</TableHead>
                 <TableHead className="text-right">Análises</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
-                <TableHead className="text-right">Custo Estimado</TableHead>
+                <TableHead className="text-right">Custo (R$)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {userCosts.map((user) => (
-                <TableRow key={user.userId}>
-                  <TableCell className="font-mono text-sm">{user.email}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      user.planName === 'Pro' ? 'bg-purple-500/10 text-purple-500' :
-                      user.planName === 'Basic' ? 'bg-blue-500/10 text-blue-500' :
-                      'bg-muted text-muted-foreground'
-                    }`}>
-                      {user.planName}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">{user.analysesCount}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {user.totalTokens > 0 ? user.totalTokens.toLocaleString() : '-'}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">${user.estimatedCost.toFixed(4)}</TableCell>
-                </TableRow>
-              ))}
-              {userCosts.length === 0 && (
+              {userCosts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    Nenhum dado de uso disponível
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    Nenhum dado de uso registrado ainda
                   </TableCell>
                 </TableRow>
+              ) : (
+                userCosts.map((user, index) => (
+                  <TableRow key={user.userId}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">#{index + 1}</span>
+                        <span className="font-medium">{user.email}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge className={`${
+                        user.planName === 'Pro' ? 'bg-purple-500/10 text-purple-500' :
+                        user.planName === 'Basic' ? 'bg-blue-500/10 text-blue-500' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {user.planName}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{user.analysesCount}</TableCell>
+                    <TableCell className="text-right font-mono">{user.totalTokens.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-medium">
+                      R$ {(user.estimatedCost * USD_TO_BRL).toFixed(2)}
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
-        </div>
-
-        {/* Pricing Info */}
-        <div className="mt-8 p-4 bg-muted/30 rounded-lg text-sm text-muted-foreground">
-          <p className="font-medium mb-2">ℹ️ Sobre as estimativas de custo:</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li>Custo base por análise: ~$0.002 (usando Google Gemini Flash)</li>
-            <li>Cada projeto gera até 7 análises diferentes</li>
-            <li>Os custos reais podem variar baseado no tamanho do repositório</li>
-            <li>Projeções assumem média de 5 projetos por usuário</li>
-          </ul>
         </div>
       </main>
     </div>

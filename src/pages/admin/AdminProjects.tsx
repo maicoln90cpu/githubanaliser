@@ -14,7 +14,9 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Trash2
+  Trash2,
+  Coins,
+  Zap
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -44,7 +46,12 @@ interface Project {
   created_at: string;
   analysis_status: string | null;
   user_id: string | null;
+  userEmail: string;
+  totalTokens: number;
+  estimatedCostBRL: number;
 }
+
+const USD_TO_BRL = 5.5;
 
 const AdminProjects = () => {
   const navigate = useNavigate();
@@ -82,9 +89,44 @@ const AdminProjects = () => {
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
-      setProjects(data || []);
+
+      // Buscar perfis dos usuários
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, email");
+
+      const profileMap = new Map(profiles?.map(p => [p.id, p.email]) || []);
+
+      // Buscar dados de uso por projeto
+      const { data: usageData } = await supabase
+        .from("analysis_usage")
+        .select("project_id, tokens_estimated, cost_estimated");
+
+      // Agregar uso por projeto
+      const usageMap = new Map<string, { tokens: number; cost: number }>();
+      usageData?.forEach(u => {
+        if (u.project_id) {
+          const existing = usageMap.get(u.project_id) || { tokens: 0, cost: 0 };
+          usageMap.set(u.project_id, {
+            tokens: existing.tokens + (u.tokens_estimated || 0),
+            cost: existing.cost + Number(u.cost_estimated || 0),
+          });
+        }
+      });
+
+      // Enriquecer projetos com dados de usuário e uso
+      const enrichedProjects: Project[] = (data || []).map(p => {
+        const usage = usageMap.get(p.id) || { tokens: 0, cost: 0 };
+        return {
+          ...p,
+          userEmail: p.user_id ? (profileMap.get(p.user_id) || `user-${p.user_id.substring(0, 8)}...`) : 'Anônimo',
+          totalTokens: usage.tokens,
+          estimatedCostBRL: usage.cost * USD_TO_BRL,
+        };
+      });
+
+      setProjects(enrichedProjects);
     } catch (error) {
       console.error("Erro ao carregar projetos:", error);
       toast.error("Erro ao carregar projetos");
@@ -98,7 +140,6 @@ const AdminProjects = () => {
     
     setDeleting(true);
     try {
-      // Delete analyses first (cascade should handle this, but let's be explicit)
       const { error: analysesError } = await supabase
         .from("analyses")
         .delete()
@@ -108,7 +149,6 @@ const AdminProjects = () => {
         console.error("Erro ao deletar análises:", analysesError);
       }
 
-      // Delete the project
       const { error: projectError } = await supabase
         .from("projects")
         .delete()
@@ -154,8 +194,13 @@ const AdminProjects = () => {
 
   const filteredProjects = projects.filter(project => 
     project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.github_url.toLowerCase().includes(searchTerm.toLowerCase())
+    project.github_url.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    project.userEmail.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Totais
+  const totalTokens = projects.reduce((sum, p) => sum + p.totalTokens, 0);
+  const totalCostBRL = projects.reduce((sum, p) => sum + p.estimatedCostBRL, 0);
 
   if (adminLoading || loading) {
     return (
@@ -212,11 +257,50 @@ const AdminProjects = () => {
           )}
         </div>
 
+        {/* Summary Cards */}
+        <div className="grid md:grid-cols-3 gap-4 mb-6 animate-slide-up">
+          <div className="p-4 bg-card border border-border rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                <FolderGit2 className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-xl font-bold">{projects.length}</p>
+                <p className="text-sm text-muted-foreground">Total Projetos</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-card border border-border rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+                <Zap className="w-5 h-5 text-green-500" />
+              </div>
+              <div>
+                <p className="text-xl font-bold">{totalTokens.toLocaleString()}</p>
+                <p className="text-sm text-muted-foreground">Total Tokens</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-card border border-border rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+                <Coins className="w-5 h-5 text-yellow-500" />
+              </div>
+              <div>
+                <p className="text-xl font-bold">R$ {totalCostBRL.toFixed(2)}</p>
+                <p className="text-sm text-muted-foreground">Custo Total</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Search */}
         <div className="mb-6 relative max-w-md animate-slide-up">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome ou URL..."
+            placeholder="Buscar por nome, URL ou usuário..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -229,7 +313,10 @@ const AdminProjects = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Projeto</TableHead>
+                <TableHead>Usuário</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Custo (R$)</TableHead>
                 <TableHead>Data</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -237,7 +324,7 @@ const AdminProjects = () => {
             <TableBody>
               {filteredProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Nenhum projeto encontrado
                   </TableCell>
                 </TableRow>
@@ -259,10 +346,19 @@ const AdminProjects = () => {
                       </div>
                     </TableCell>
                     <TableCell>
+                      <p className="text-sm">{project.userEmail}</p>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         {getStatusIcon(project.analysis_status)}
                         {getStatusBadge(project.analysis_status)}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {project.totalTokens.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      R$ {project.estimatedCostBRL.toFixed(2)}
                     </TableCell>
                     <TableCell>
                       {new Date(project.created_at).toLocaleDateString("pt-BR")}
