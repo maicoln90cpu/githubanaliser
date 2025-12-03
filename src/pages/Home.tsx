@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle } from "lucide-react";
+import { Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, Zap, Scale, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
@@ -15,6 +15,48 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+
+type AnalysisDepth = 'critical' | 'balanced' | 'complete';
+
+interface DepthOption {
+  id: AnalysisDepth;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  context: string;
+  savings: string;
+  color: string;
+}
+
+const depthOptions: DepthOption[] = [
+  { 
+    id: 'critical', 
+    label: 'Pontos Críticos', 
+    description: 'Análise focada nos problemas mais importantes',
+    icon: <Zap className="w-5 h-5" />,
+    context: '~8KB',
+    savings: '~75% economia',
+    color: 'text-yellow-500'
+  },
+  { 
+    id: 'balanced', 
+    label: 'Balanceada', 
+    description: 'Equilíbrio entre profundidade e velocidade',
+    icon: <Scale className="w-5 h-5" />,
+    context: '~20KB',
+    savings: '~50% economia',
+    color: 'text-blue-500'
+  },
+  { 
+    id: 'complete', 
+    label: 'Completa', 
+    description: 'Análise detalhada com máximo contexto',
+    icon: <Rocket className="w-5 h-5" />,
+    context: '~40KB',
+    savings: 'Máxima qualidade',
+    color: 'text-green-500'
+  },
+];
 
 interface AnalysisOption {
   id: string;
@@ -39,6 +81,7 @@ const Home = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [showAnalysisOptions, setShowAnalysisOptions] = useState(false);
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>(analysisOptions.map(a => a.id));
+  const [selectedDepth, setSelectedDepth] = useState<AnalysisDepth>('complete');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
@@ -99,7 +142,7 @@ const Home = () => {
     try {
       // Redirecionar para tela de análise com as opções selecionadas
       const analysisTypes = selectedAnalyses.join(",");
-      navigate(`/analisando?url=${encodeURIComponent(githubUrl)}&analysisTypes=${analysisTypes}`);
+      navigate(`/analisando?url=${encodeURIComponent(githubUrl)}&analysisTypes=${analysisTypes}&depth=${selectedDepth}`);
     } catch (error) {
       toast.error("Erro ao iniciar análise");
       setIsValidating(false);
@@ -245,23 +288,58 @@ const Home = () => {
 
             {/* Analysis Options */}
             {showAnalysisOptions && (
-              <div className="bg-card border border-border rounded-xl p-6 space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">Selecione as análises desejadas</h3>
-                    {user && plan && (
-                      <span className={`px-2 py-0.5 text-xs rounded-full ${
-                        plan.planSlug === 'pro' ? 'bg-purple-500/10 text-purple-500' :
-                        plan.planSlug === 'basic' ? 'bg-blue-500/10 text-blue-500' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
-                        {plan.planName}
-                      </span>
-                    )}
+              <div className="bg-card border border-border rounded-xl p-6 space-y-5 animate-fade-in">
+                {/* Depth Selector */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <Scale className="w-4 h-4" />
+                    Profundidade da Análise
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {depthOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => setSelectedDepth(option.id)}
+                        className={`p-4 rounded-lg border text-left transition-all ${
+                          selectedDepth === option.id
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={option.color}>{option.icon}</span>
+                          <span className="font-medium text-sm">{option.label}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">{option.description}</p>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Contexto: {option.context}</span>
+                          <span className={`font-medium ${option.id === 'complete' ? 'text-green-500' : 'text-yellow-500'}`}>
+                            {option.savings}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={selectAll}>Todas</Button>
-                    <Button variant="ghost" size="sm" onClick={selectNone}>Nenhuma</Button>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">Tipos de Análise</h3>
+                      {user && plan && (
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${
+                          plan.planSlug === 'pro' ? 'bg-purple-500/10 text-purple-500' :
+                          plan.planSlug === 'basic' ? 'bg-blue-500/10 text-blue-500' :
+                          'bg-muted text-muted-foreground'
+                        }`}>
+                          {plan.planName}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" onClick={selectAll}>Todas</Button>
+                      <Button variant="ghost" size="sm" onClick={selectNone}>Nenhuma</Button>
+                    </div>
                   </div>
                 </div>
 

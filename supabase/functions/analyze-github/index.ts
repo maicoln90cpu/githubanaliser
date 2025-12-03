@@ -136,6 +136,33 @@ const MODELS = {
   economic: "google/gemini-2.5-flash-lite"
 };
 
+// Depth levels configuration
+type DepthLevel = 'critical' | 'balanced' | 'complete';
+
+interface DepthConfig {
+  maxContext: number;
+  model: string;
+  promptStyle: 'concise' | 'moderate' | 'detailed';
+}
+
+const DEFAULT_DEPTH_CONFIG: Record<DepthLevel, DepthConfig> = {
+  critical: {
+    maxContext: 8000,
+    model: "google/gemini-2.5-flash-lite",
+    promptStyle: 'concise'
+  },
+  balanced: {
+    maxContext: 20000,
+    model: "google/gemini-2.5-flash-lite",
+    promptStyle: 'moderate'
+  },
+  complete: {
+    maxContext: 40000,
+    model: "google/gemini-2.5-flash",
+    promptStyle: 'detailed'
+  }
+};
+
 // Default settings
 const DEFAULT_SETTINGS = {
   analysis_mode: 'detailed',
@@ -147,6 +174,39 @@ interface SystemSettings {
   analysisMode: 'economic' | 'detailed';
   maxContext: number;
   model: string;
+  promptStyle: 'concise' | 'moderate' | 'detailed';
+}
+
+async function loadDepthSettings(supabase: any, depth: DepthLevel): Promise<DepthConfig> {
+  try {
+    const { data, error } = await supabase
+      .from("system_settings")
+      .select("key, value");
+    
+    if (error) {
+      console.log("⚠️ Erro ao carregar configurações de profundidade, usando padrão:", error.message);
+      return DEFAULT_DEPTH_CONFIG[depth];
+    }
+    
+    const settings: Record<string, string> = {};
+    data?.forEach((s: { key: string; value: string }) => {
+      settings[s.key] = s.value;
+    });
+    
+    // Get depth-specific settings from database or use defaults
+    const config: DepthConfig = {
+      maxContext: parseInt(settings[`depth_${depth}_context`] || String(DEFAULT_DEPTH_CONFIG[depth].maxContext)),
+      model: settings[`depth_${depth}_model`] || DEFAULT_DEPTH_CONFIG[depth].model,
+      promptStyle: DEFAULT_DEPTH_CONFIG[depth].promptStyle
+    };
+    
+    console.log(`⚙️ Configurações de profundidade (${depth}): contexto=${config.maxContext}, modelo=${config.model}, estilo=${config.promptStyle}`);
+    
+    return config;
+  } catch (e) {
+    console.log("⚠️ Exceção ao carregar configurações de profundidade:", e);
+    return DEFAULT_DEPTH_CONFIG[depth];
+  }
 }
 
 async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
@@ -160,7 +220,8 @@ async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
       return {
         analysisMode: 'detailed',
         maxContext: DEFAULT_SETTINGS.detailed_max_context,
-        model: MODELS.detailed
+        model: MODELS.detailed,
+        promptStyle: 'detailed'
       };
     }
     
@@ -179,14 +240,16 @@ async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
     return {
       analysisMode: mode,
       maxContext,
-      model: MODELS[mode]
+      model: MODELS[mode],
+      promptStyle: mode === 'economic' ? 'moderate' : 'detailed'
     };
   } catch (e) {
     console.log("⚠️ Exceção ao carregar configurações:", e);
     return {
       analysisMode: 'detailed',
       maxContext: DEFAULT_SETTINGS.detailed_max_context,
-      model: MODELS.detailed
+      model: MODELS.detailed,
+      promptStyle: 'detailed'
     };
   }
 }
@@ -491,15 +554,16 @@ async function processAnalysisInBackground(
   projectName: string,
   analysisTypes: string[],
   useCache: boolean = false,
-  userId: string = ""
+  userId: string = "",
+  depth: DepthLevel = "complete"
 ) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Load system settings (mode: economic or detailed)
-  const settings = await loadSystemSettings(supabase);
-  console.log(`🎛️ Modo de análise: ${settings.analysisMode} (modelo: ${settings.model})`);
+  // Load depth-specific settings
+  const depthConfig = await loadDepthSettings(supabase, depth);
+  console.log(`🎛️ Profundidade: ${depth} (modelo: ${depthConfig.model}, contexto: ${depthConfig.maxContext})`);
 
   // Default to all types if not specified
   const typesToGenerate = analysisTypes.length > 0 
@@ -554,10 +618,10 @@ async function processAnalysisInBackground(
       console.log("✓ Dados salvos no cache");
     }
 
-    // Apply context limit based on mode
-    if (projectContext.length > settings.maxContext) {
-      console.log(`⚠️ Contexto truncado de ${projectContext.length} para ${settings.maxContext} caracteres`);
-      projectContext = projectContext.substring(0, settings.maxContext);
+    // Apply context limit based on depth
+    if (projectContext.length > depthConfig.maxContext) {
+      console.log(`⚠️ Contexto truncado de ${projectContext.length} para ${depthConfig.maxContext} caracteres`);
+      projectContext = projectContext.substring(0, depthConfig.maxContext);
     }
 
     console.log(`Contexto preparado: ${projectContext.length} caracteres`);
@@ -602,7 +666,7 @@ Estruture o documento com estas seções:
 6. **📦 Requisitos Técnicos** - Stack, dependências, infraestrutura
 7. **⚠️ Riscos e Mitigações** - Tabela com probabilidade e impacto
 8. **📊 Métricas de Sucesso** - KPIs em tabela`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -640,7 +704,7 @@ Estruture o documento com estas seções:
 6. **🤝 Parcerias e Influenciadores** - Potenciais parceiros e abordagem
 7. **📅 Cronograma de Lançamento** - Timeline em tabela
 8. **📊 Métricas e KPIs** - Tabela com meta e baseline`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -677,7 +741,7 @@ Estruture o documento com estas seções:
 6. **👥 Tipos de Investidores** - Perfil ideal e abordagem
 7. **📋 Documentação Necessária** - Checklist para pitch
 8. **📅 Roadmap de Captação** - Timeline e milestones`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -714,7 +778,7 @@ Estruture o documento com estas seções:
 6. **🗄️ Segurança de Dados** - Criptografia, sanitização, LGPD
 7. **🌐 Segurança de API** - Rate limiting, CORS, validações
 8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -751,7 +815,7 @@ Estruture o documento com estas seções:
 6. **✨ Animações e Micro-interações** - Sugestões específicas
 7. **🌙 Tema Escuro/Claro** - Implementação ou melhorias
 8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -788,7 +852,7 @@ Estruture o documento com estas seções:
 6. **📝 Documentação de Código** - Melhorias específicas
 7. **🔄 CI/CD e DevOps** - Automações sugeridas
 8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -825,7 +889,7 @@ Estruture o documento com estas seções:
 6. **👥 Features Sociais/Colaborativas** - Funcionalidades de comunidade
 7. **💰 Features de Monetização** - Modelos de receita
 8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -891,7 +955,7 @@ Se houver edge functions ou APIs:
 - Tabela com todos scripts do package.json
 - Descrição do que cada comando faz
 - Ordem recomendada de execução`,
-        settings.model
+        depthConfig.model
       );
       
       await supabase.from("analyses").upsert({
@@ -924,12 +988,13 @@ serve(async (req) => {
   }
 
   try {
-    const { githubUrl, userId, analysisTypes, useCache } = await req.json();
+    const { githubUrl, userId, analysisTypes, useCache, depth } = await req.json();
     console.log("=== INICIANDO ANÁLISE ===");
     console.log("URL:", githubUrl);
     console.log("User ID:", userId);
     console.log("Tipos de análise:", analysisTypes);
     console.log("Usar cache:", useCache);
+    console.log("Profundidade:", depth || "complete");
 
     if (!githubUrl) {
       throw new Error("URL do GitHub não fornecida");
@@ -1046,7 +1111,8 @@ serve(async (req) => {
         projectName, 
         typesArray,
         useCache === true,
-        userId
+        userId,
+        (depth as DepthLevel) || "complete"
       )
     );
 
