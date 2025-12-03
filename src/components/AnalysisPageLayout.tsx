@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -52,6 +52,8 @@ const AnalysisPageLayout = ({
   const [project, setProject] = useState<Project | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [analysisNotFound, setAnalysisNotFound] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -78,12 +80,11 @@ const AnalysisPageLayout = ({
           .single();
 
         if (analysisError || !analysisData) {
-          toast.error("Análise não encontrada");
-          navigate(`/projeto/${id}`);
-          return;
+          // Em vez de redirecionar, mostrar opção de gerar
+          setAnalysisNotFound(true);
+        } else {
+          setAnalysis(analysisData);
         }
-
-        setAnalysis(analysisData);
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
         toast.error("Erro ao carregar análise");
@@ -96,23 +97,121 @@ const AnalysisPageLayout = ({
     loadData();
   }, [id, type, navigate]);
 
+  const handleRegenerateAnalysis = async () => {
+    if (!project) return;
+    
+    setRegenerating(true);
+    toast.info("Iniciando geração da análise...");
+    
+    // Redirecionar para a página de análise com o tipo específico
+    navigate(`/analisando?projectId=${id}&analysisTypes=${type}`);
+  };
+
   const exportToPDF = () => {
     const element = document.getElementById("analysis-content");
+    if (!element) return;
+    
+    // Criar wrapper temporário com estilos forçados para PDF
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = element.innerHTML;
+    wrapper.style.cssText = `
+      color: #000000 !important;
+      background-color: #ffffff !important;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    `;
+    
+    // Forçar cor preta em todos os elementos
+    const allElements = wrapper.querySelectorAll("*");
+    allElements.forEach((el) => {
+      (el as HTMLElement).style.color = "#000000";
+      (el as HTMLElement).style.backgroundColor = "transparent";
+    });
+    
+    document.body.appendChild(wrapper);
+    
     const opt = {
-      margin: 1,
+      margin: 0.5,
       filename: `${project?.name}-${type}.pdf`,
       image: { type: "jpeg" as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { 
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      },
       jsPDF: { unit: "in" as const, format: "a4" as const, orientation: "portrait" as const },
     };
-    html2pdf().set(opt).from(element).save();
-    toast.success("PDF exportado com sucesso!");
+    
+    html2pdf().set(opt).from(wrapper).save().then(() => {
+      document.body.removeChild(wrapper);
+      toast.success("PDF exportado com sucesso!");
+    });
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Tela de análise não encontrada
+  if (analysisNotFound) {
+    return (
+      <div className="min-h-screen bg-background">
+        {/* Header */}
+        <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+          <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
+              <Github className="w-6 h-6 text-foreground" />
+              <span className="font-semibold text-xl">GitAnalyzer</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+                <Home className="w-4 h-4 mr-2" />
+                Dashboard
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/projeto/${id}`)}>
+                <Grid3X3 className="w-4 h-4 mr-2" />
+                Análises
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="container mx-auto px-4 py-16">
+          <div className="max-w-md mx-auto text-center space-y-6">
+            <div className={`w-20 h-20 ${iconBgColor} rounded-full flex items-center justify-center mx-auto`}>
+              <AlertCircle className={`w-10 h-10 ${iconColor}`} />
+            </div>
+            <h2 className="text-2xl font-bold">{title}</h2>
+            <p className="text-muted-foreground">
+              Esta análise ainda não foi gerada para o projeto <strong>{project?.name}</strong>.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Isso pode acontecer se o projeto foi analisado antes da atualização do sistema ou se houve um erro durante a geração.
+            </p>
+            <div className="flex flex-col gap-3 pt-4">
+              <Button 
+                onClick={handleRegenerateAnalysis} 
+                disabled={regenerating}
+                className="gap-2"
+              >
+                {regenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Gerar {title}
+              </Button>
+              <Button variant="outline" onClick={() => navigate(`/projeto/${id}`)}>
+                Voltar para Análises
+              </Button>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }

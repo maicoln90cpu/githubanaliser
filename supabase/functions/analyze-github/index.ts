@@ -153,11 +153,19 @@ async function processAnalysisInBackground(
   githubUrl: string,
   owner: string,
   repo: string,
-  projectName: string
+  projectName: string,
+  analysisTypes: string[]
 ) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Default to all types if not specified
+  const typesToGenerate = analysisTypes.length > 0 
+    ? analysisTypes 
+    : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features"];
+
+  console.log("Tipos de análise selecionados:", typesToGenerate);
 
   try {
     // === ETAPA 1: EXTRAÇÃO ===
@@ -292,14 +300,15 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
 - Use \`código\` para termos técnicos
 `;
 
-    // === ETAPA 2: GERAR PRD ===
-    await updateProjectStatus(supabase, projectId, "generating_prd");
-    console.log("Gerando PRD...");
+    // === GERAR PRD ===
+    if (typesToGenerate.includes("prd")) {
+      await updateProjectStatus(supabase, projectId, "generating_prd");
+      console.log("Gerando PRD...");
 
-    const prdContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um analista de produtos técnico sênior especializado em documentação de software.",
-      `Analise o seguinte projeto GitHub e crie um PRD (Product Requirements Document) completo em português.
+      const prdContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um analista de produtos técnico sênior especializado em documentação de software.",
+        `Analise o seguinte projeto GitHub e crie um PRD (Product Requirements Document) completo em português.
 
 ${projectContext}
 
@@ -314,23 +323,25 @@ Estruture o documento com estas seções:
 6. **📦 Requisitos Técnicos** - Stack, dependências, infraestrutura
 7. **⚠️ Riscos e Mitigações** - Tabela com probabilidade e impacto
 8. **📊 Métricas de Sucesso** - KPIs em tabela`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "prd",
-      content: prdContent,
-    });
-    console.log("✓ PRD salvo");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "prd",
+        content: prdContent,
+      });
+      console.log("✓ PRD salvo");
+    }
 
-    // === ETAPA 3: GERAR PLANO DE DIVULGAÇÃO ===
-    await updateProjectStatus(supabase, projectId, "generating_divulgacao");
-    console.log("Gerando plano de divulgação...");
+    // === GERAR PLANO DE DIVULGAÇÃO ===
+    if (typesToGenerate.includes("divulgacao")) {
+      await updateProjectStatus(supabase, projectId, "generating_divulgacao");
+      console.log("Gerando plano de divulgação...");
 
-    const divulgacaoContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um especialista em marketing digital e growth hacking.",
-      `Analise o projeto e crie um plano de divulgação e marketing em português.
+      const divulgacaoContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um especialista em marketing digital e growth hacking.",
+        `Analise o projeto e crie um plano de divulgação e marketing em português.
 
 ${projectContext}
 
@@ -345,23 +356,25 @@ Estruture o documento com estas seções:
 6. **🤝 Parcerias e Influenciadores** - Potenciais parceiros e abordagem
 7. **📅 Cronograma de Lançamento** - Timeline em tabela
 8. **📊 Métricas e KPIs** - Tabela com meta e baseline`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "divulgacao",
-      content: divulgacaoContent,
-    });
-    console.log("✓ Plano de divulgação salvo");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "divulgacao",
+        content: divulgacaoContent,
+      });
+      console.log("✓ Plano de divulgação salvo");
+    }
 
-    // === ETAPA 4: GERAR PLANO DE CAPTAÇÃO ===
-    await updateProjectStatus(supabase, projectId, "generating_captacao");
-    console.log("Gerando plano de captação...");
+    // === GERAR PLANO DE CAPTAÇÃO ===
+    if (typesToGenerate.includes("captacao")) {
+      await updateProjectStatus(supabase, projectId, "generating_captacao");
+      console.log("Gerando plano de captação...");
 
-    const captacaoContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um especialista em captação de recursos e investimentos para startups.",
-      `Analise o projeto e crie um plano de captação de recursos em português.
+      const captacaoContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um especialista em captação de recursos e investimentos para startups.",
+        `Analise o projeto e crie um plano de captação de recursos em português.
 
 ${projectContext}
 
@@ -376,23 +389,25 @@ Estruture o documento com estas seções:
 6. **👥 Tipos de Investidores** - Perfil ideal e abordagem
 7. **📋 Documentação Necessária** - Checklist para pitch
 8. **📅 Roadmap de Captação** - Timeline e milestones`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "captacao",
-      content: captacaoContent,
-    });
-    console.log("✓ Plano de captação salvo");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "captacao",
+        content: captacaoContent,
+      });
+      console.log("✓ Plano de captação salvo");
+    }
 
-    // === ETAPA 5: GERAR MELHORIAS DE SEGURANÇA ===
-    await updateProjectStatus(supabase, projectId, "generating_seguranca");
-    console.log("Gerando análise de segurança...");
+    // === GERAR MELHORIAS DE SEGURANÇA ===
+    if (typesToGenerate.includes("seguranca")) {
+      await updateProjectStatus(supabase, projectId, "generating_seguranca");
+      console.log("Gerando análise de segurança...");
 
-    const segurancaContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um especialista em segurança da informação e cibersegurança.",
-      `Analise o código do projeto e identifique vulnerabilidades e melhorias de segurança em português.
+      const segurancaContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um especialista em segurança da informação e cibersegurança.",
+        `Analise o código do projeto e identifique vulnerabilidades e melhorias de segurança em português.
 
 ${projectContext}
 
@@ -407,23 +422,25 @@ Estruture o documento com estas seções:
 6. **🗄️ Segurança de Dados** - Criptografia, sanitização, LGPD
 7. **🌐 Segurança de API** - Rate limiting, CORS, validações
 8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "seguranca",
-      content: segurancaContent,
-    });
-    console.log("✓ Análise de segurança salva");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "seguranca",
+        content: segurancaContent,
+      });
+      console.log("✓ Análise de segurança salva");
+    }
 
-    // === ETAPA 6: GERAR MELHORIAS DE UI/THEME ===
-    await updateProjectStatus(supabase, projectId, "generating_ui");
-    console.log("Gerando melhorias de UI...");
+    // === GERAR MELHORIAS DE UI/THEME ===
+    if (typesToGenerate.includes("ui_theme")) {
+      await updateProjectStatus(supabase, projectId, "generating_ui");
+      console.log("Gerando melhorias de UI...");
 
-    const uiContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um designer de UX/UI especializado em interfaces modernas e acessíveis.",
-      `Analise o código do projeto e sugira melhorias visuais e de experiência em português.
+      const uiContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um designer de UX/UI especializado em interfaces modernas e acessíveis.",
+        `Analise o código do projeto e sugira melhorias visuais e de experiência em português.
 
 ${projectContext}
 
@@ -438,23 +455,25 @@ Estruture o documento com estas seções:
 6. **✨ Animações e Micro-interações** - Sugestões específicas
 7. **🌙 Tema Escuro/Claro** - Implementação ou melhorias
 8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "ui_theme",
-      content: uiContent,
-    });
-    console.log("✓ Melhorias de UI salvas");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "ui_theme",
+        content: uiContent,
+      });
+      console.log("✓ Melhorias de UI salvas");
+    }
 
-    // === ETAPA 7: GERAR MELHORIAS DE FERRAMENTAS ===
-    await updateProjectStatus(supabase, projectId, "generating_ferramentas");
-    console.log("Gerando melhorias de ferramentas...");
+    // === GERAR MELHORIAS DE FERRAMENTAS ===
+    if (typesToGenerate.includes("ferramentas")) {
+      await updateProjectStatus(supabase, projectId, "generating_ferramentas");
+      console.log("Gerando melhorias de ferramentas...");
 
-    const ferramentasContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um arquiteto de software sênior especializado em otimização de código.",
-      `Analise o código existente e sugira melhorias nas funcionalidades atuais em português.
+      const ferramentasContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um arquiteto de software sênior especializado em otimização de código.",
+        `Analise o código existente e sugira melhorias nas funcionalidades atuais em português.
 
 ${projectContext}
 
@@ -469,23 +488,25 @@ Estruture o documento com estas seções:
 6. **📝 Documentação de Código** - Melhorias específicas
 7. **🔄 CI/CD e DevOps** - Automações sugeridas
 8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "ferramentas",
-      content: ferramentasContent,
-    });
-    console.log("✓ Melhorias de ferramentas salvas");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "ferramentas",
+        content: ferramentasContent,
+      });
+      console.log("✓ Melhorias de ferramentas salvas");
+    }
 
-    // === ETAPA 8: GERAR SUGESTÕES DE NOVAS FEATURES ===
-    await updateProjectStatus(supabase, projectId, "generating_features");
-    console.log("Gerando sugestões de features...");
+    // === GERAR SUGESTÕES DE NOVAS FEATURES ===
+    if (typesToGenerate.includes("features")) {
+      await updateProjectStatus(supabase, projectId, "generating_features");
+      console.log("Gerando sugestões de features...");
 
-    const featuresContent = await callLovableAI(
-      lovableApiKey,
-      "Você é um product manager visionário especializado em inovação de produtos.",
-      `Analise o projeto e sugira novas funcionalidades inovadoras em português.
+      const featuresContent = await callLovableAI(
+        lovableApiKey,
+        "Você é um product manager visionário especializado em inovação de produtos.",
+        `Analise o projeto e sugira novas funcionalidades inovadoras em português.
 
 ${projectContext}
 
@@ -500,14 +521,15 @@ Estruture o documento com estas seções:
 6. **👥 Features Sociais/Colaborativas** - Funcionalidades de comunidade
 7. **💰 Features de Monetização** - Modelos de receita
 8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`
-    );
-    
-    await supabase.from("analyses").insert({
-      project_id: projectId,
-      type: "features",
-      content: featuresContent,
-    });
-    console.log("✓ Sugestões de features salvas");
+      );
+      
+      await supabase.from("analyses").insert({
+        project_id: projectId,
+        type: "features",
+        content: featuresContent,
+      });
+      console.log("✓ Sugestões de features salvas");
+    }
 
     // === CONCLUÍDO ===
     await updateProjectStatus(supabase, projectId, "completed");
@@ -530,10 +552,11 @@ serve(async (req) => {
   }
 
   try {
-    const { githubUrl, userId } = await req.json();
+    const { githubUrl, userId, analysisTypes } = await req.json();
     console.log("=== INICIANDO ANÁLISE ===");
     console.log("URL:", githubUrl);
     console.log("User ID:", userId);
+    console.log("Tipos de análise:", analysisTypes);
 
     if (!githubUrl) {
       throw new Error("URL do GitHub não fornecida");
@@ -563,14 +586,28 @@ serve(async (req) => {
       .eq("user_id", userId)
       .maybeSingle();
 
+    // Parse analysis types - if it's a single type for re-analysis, don't delete other analyses
+    const typesArray = Array.isArray(analysisTypes) ? analysisTypes : [];
+    const isSingleTypeReanalysis = typesArray.length === 1;
+
     if (existingProject) {
       console.log("✓ Projeto já existe:", existingProject.id);
       project = existingProject;
       
-      await supabase
-        .from("analyses")
-        .delete()
-        .eq("project_id", existingProject.id);
+      // Only delete analyses for the types being regenerated
+      if (isSingleTypeReanalysis) {
+        await supabase
+          .from("analyses")
+          .delete()
+          .eq("project_id", existingProject.id)
+          .eq("type", typesArray[0]);
+      } else {
+        // Delete all analyses for full re-analysis
+        await supabase
+          .from("analyses")
+          .delete()
+          .eq("project_id", existingProject.id);
+      }
       
       await supabase
         .from("projects")
@@ -628,7 +665,7 @@ serve(async (req) => {
     }
 
     EdgeRuntime.waitUntil(
-      processAnalysisInBackground(project.id, githubUrl, owner, repo, projectName)
+      processAnalysisInBackground(project.id, githubUrl, owner, repo, projectName, typesArray)
     );
 
     return new Response(

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Github, Check, Circle, AlertCircle } from "lucide-react";
@@ -11,6 +11,7 @@ interface Step {
   id: string;
   label: string;
   status: "pending" | "loading" | "complete" | "error";
+  analysisType?: string;
 }
 
 type AnalysisStatus = 
@@ -26,19 +27,28 @@ type AnalysisStatus =
   | "completed" 
   | "error";
 
-const statusToStepIndex: Record<AnalysisStatus, number> = {
-  pending: 0,
-  extracting: 1,
-  generating_prd: 2,
-  generating_divulgacao: 3,
-  generating_captacao: 4,
-  generating_seguranca: 5,
-  generating_ui: 6,
-  generating_ferramentas: 7,
-  generating_features: 8,
-  completed: 9,
-  error: -1,
+const analysisTypeToStatus: Record<string, AnalysisStatus> = {
+  prd: "generating_prd",
+  divulgacao: "generating_divulgacao",
+  captacao: "generating_captacao",
+  seguranca: "generating_seguranca",
+  ui_theme: "generating_ui",
+  ferramentas: "generating_ferramentas",
+  features: "generating_features",
 };
+
+const allSteps: Step[] = [
+  { id: "connect", label: "Conectando ao GitHub", status: "pending" },
+  { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
+  { id: "prd", label: "Gerando análise PRD", status: "pending", analysisType: "prd" },
+  { id: "divulgacao", label: "Criando plano de divulgação", status: "pending", analysisType: "divulgacao" },
+  { id: "captacao", label: "Criando plano de captação", status: "pending", analysisType: "captacao" },
+  { id: "seguranca", label: "Analisando segurança", status: "pending", analysisType: "seguranca" },
+  { id: "ui", label: "Sugerindo melhorias visuais", status: "pending", analysisType: "ui_theme" },
+  { id: "ferramentas", label: "Analisando ferramentas", status: "pending", analysisType: "ferramentas" },
+  { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
+  { id: "complete", label: "Finalizando análise", status: "pending" },
+];
 
 const Analyzing = () => {
   const [searchParams] = useSearchParams();
@@ -52,21 +62,71 @@ const Analyzing = () => {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const hasCompletedRef = useRef(false);
   
-  const [steps, setSteps] = useState<Step[]>([
-    { id: "connect", label: "Conectando ao GitHub", status: "pending" },
-    { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
-    { id: "prd", label: "Gerando análise PRD", status: "pending" },
-    { id: "divulgacao", label: "Criando plano de divulgação", status: "pending" },
-    { id: "captacao", label: "Criando plano de captação", status: "pending" },
-    { id: "seguranca", label: "Analisando segurança", status: "pending" },
-    { id: "ui", label: "Sugerindo melhorias visuais", status: "pending" },
-    { id: "ferramentas", label: "Analisando ferramentas", status: "pending" },
-    { id: "features", label: "Sugerindo novas features", status: "pending" },
-    { id: "complete", label: "Finalizando análise", status: "pending" },
-  ]);
-  
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
+  const analysisTypesParam = searchParams.get("analysisTypes");
+  
+  // Parse selected analysis types
+  const selectedAnalysisTypes = useMemo(() => {
+    if (analysisTypesParam) {
+      return analysisTypesParam.split(",");
+    }
+    // Default: all types
+    return ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features"];
+  }, [analysisTypesParam]);
+
+  // Build dynamic steps based on selected analyses
+  const dynamicSteps = useMemo(() => {
+    const steps: Step[] = [
+      { id: "connect", label: "Conectando ao GitHub", status: "pending" },
+      { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
+    ];
+    
+    for (const step of allSteps) {
+      if (step.analysisType && selectedAnalysisTypes.includes(step.analysisType)) {
+        steps.push({ ...step, status: "pending" });
+      }
+    }
+    
+    steps.push({ id: "complete", label: "Finalizando análise", status: "pending" });
+    
+    return steps;
+  }, [selectedAnalysisTypes]);
+
+  const [steps, setSteps] = useState<Step[]>(dynamicSteps);
+
+  // Update steps when dynamicSteps change
+  useEffect(() => {
+    setSteps(dynamicSteps);
+  }, [dynamicSteps]);
+
+  // Build status to step index mapping
+  const statusToStepIndex = useMemo(() => {
+    const mapping: Record<AnalysisStatus, number> = {
+      pending: 0,
+      extracting: 1,
+      generating_prd: -1,
+      generating_divulgacao: -1,
+      generating_captacao: -1,
+      generating_seguranca: -1,
+      generating_ui: -1,
+      generating_ferramentas: -1,
+      generating_features: -1,
+      completed: steps.length - 1,
+      error: -1,
+    };
+
+    let index = 2; // After connect and structure
+    for (const type of selectedAnalysisTypes) {
+      const status = analysisTypeToStatus[type];
+      if (status) {
+        mapping[status] = index;
+        index++;
+      }
+    }
+
+    return mapping;
+  }, [selectedAnalysisTypes, steps.length]);
 
   const calculateTimeRemaining = (currentStepIndex: number, totalSteps: number) => {
     const elapsed = Date.now() - startTime;
@@ -84,7 +144,7 @@ const Analyzing = () => {
 
   const updateStepsFromStatus = (status: AnalysisStatus) => {
     const stepIndex = statusToStepIndex[status];
-    const totalSteps = 10;
+    const totalSteps = steps.length;
     
     setSteps(prev => prev.map((step, i) => {
       if (status === "error") {
@@ -191,7 +251,11 @@ const Analyzing = () => {
         setProgress(5);
 
         const { data, error } = await supabase.functions.invoke("analyze-github", {
-          body: { githubUrl, userId: user.id }
+          body: { 
+            githubUrl, 
+            userId: user.id,
+            analysisTypes: selectedAnalysisTypes
+          }
         });
 
         if (error) {
@@ -234,7 +298,7 @@ const Analyzing = () => {
         clearInterval(pollingRef.current);
       }
     };
-  }, [githubUrl, navigate, user, authLoading, existingProjectId]);
+  }, [githubUrl, navigate, user, authLoading, existingProjectId, selectedAnalysisTypes]);
 
   const getStepIcon = (status: Step["status"]) => {
     switch (status) {
