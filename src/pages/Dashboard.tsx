@@ -44,7 +44,7 @@ interface RecentActivity {
 }
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { plan, isLoading: planLoading } = useUserPlan();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,8 +55,11 @@ const Dashboard = () => {
   const { isAdmin } = useAdmin();
 
   useEffect(() => {
+    // Wait for auth to be determined
+    if (authLoading) return;
+    
     if (!user) {
-      navigate("/auth");
+      navigate("/auth", { replace: true });
       return;
     }
     
@@ -64,7 +67,7 @@ const Dashboard = () => {
     fetchRecentActivities();
     fetchChecklistStats();
     fetchTokenUsage();
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   const fetchProjects = async () => {
     try {
@@ -216,6 +219,15 @@ const Dashboard = () => {
   const dailyUsagePercent = plan ? Math.min((plan.dailyUsage / plan.dailyLimit) * 100, 100) : 0;
   const monthlyUsagePercent = plan ? Math.min((plan.monthlyUsage / plan.monthlyLimit) * 100, 100) : 0;
   const checklistPercent = checklistStats.total > 0 ? (checklistStats.completed / checklistStats.total) * 100 : 0;
+
+  // Show loading while auth is being determined
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!user) {
     return null;

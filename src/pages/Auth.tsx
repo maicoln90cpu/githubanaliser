@@ -22,19 +22,24 @@ const Auth = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Check existing session first
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        if (session?.user) {
-          navigate("/dashboard");
+        // Defer navigation to avoid security errors
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          setTimeout(() => {
+            navigate("/dashboard", { replace: true });
+          }, 0);
         }
       }
     );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        navigate("/dashboard");
-      }
-    });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
