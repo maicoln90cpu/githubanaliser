@@ -36,6 +36,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Project {
   id: string;
@@ -155,6 +162,7 @@ const ProjectHub = () => {
   const [loading, setLoading] = useState(true);
   const [reanalyzing, setReanalyzing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [selectedDepth, setSelectedDepth] = useState<"critical" | "balanced" | "complete">("balanced");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: string; title: string; isGenerate: boolean }>({
     open: false,
     type: "",
@@ -242,16 +250,14 @@ const ProjectHub = () => {
           userId: user.id,
           analysisTypes: [type],
           useCache: hasCachedData(),
-          depth: "balanced" // Default depth for individual generation
+          depth: selectedDepth
         }
       });
 
       if (error) throw error;
 
       toast.success(isReanalyze ? "Re-análise iniciada!" : "Análise iniciada!", {
-        description: hasCachedData() 
-          ? "Usando dados em cache para economizar recursos"
-          : "Extraindo dados do GitHub"
+        description: `Profundidade: ${depthBadges[selectedDepth].label}${hasCachedData() ? " • Usando cache" : ""}`
       });
 
       // Navigate to analyzing page
@@ -437,20 +443,64 @@ const ProjectHub = () => {
             <AlertDialogTitle>
               {confirmDialog.isGenerate ? "Gerar análise" : "Refazer análise"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmDialog.isGenerate 
-                ? `Deseja gerar a análise "${confirmDialog.title}"?`
-                : `Deseja refazer a análise "${confirmDialog.title}"?`
-              }
-              {hasCachedData() ? (
-                <span className="block mt-2 text-green-600">
-                  ✓ Dados do projeto em cache - economia de chamadas API
-                </span>
-              ) : (
-                <span className="block mt-2 text-yellow-600">
-                  ⚠ Será necessário extrair dados do GitHub
-                </span>
-              )}
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  {confirmDialog.isGenerate 
+                    ? `Deseja gerar a análise "${confirmDialog.title}"?`
+                    : `Deseja refazer a análise "${confirmDialog.title}"?`
+                  }
+                </p>
+                
+                {/* Depth Selector */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Profundidade da análise</label>
+                  <Select value={selectedDepth} onValueChange={(v) => setSelectedDepth(v as typeof selectedDepth)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-orange-500" />
+                          <div>
+                            <span className="font-medium">Crítico</span>
+                            <span className="text-muted-foreground ml-2">• Rápido e econômico</span>
+                          </div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="balanced">
+                        <div className="flex items-center gap-2">
+                          <Scale className="w-4 h-4 text-blue-500" />
+                          <div>
+                            <span className="font-medium">Balanceado</span>
+                            <span className="text-muted-foreground ml-2">• Recomendado</span>
+                          </div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="complete">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-green-500" />
+                          <div>
+                            <span className="font-medium">Completo</span>
+                            <span className="text-muted-foreground ml-2">• Análise detalhada</span>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {hasCachedData() ? (
+                  <p className="text-sm text-green-600">
+                    ✓ Dados do projeto em cache - economia de chamadas API
+                  </p>
+                ) : (
+                  <p className="text-sm text-yellow-600">
+                    ⚠ Será necessário extrair dados do GitHub
+                  </p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
