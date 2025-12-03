@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import html2pdf from "html2pdf.js";
+import { CheckableMarkdown } from "./CheckableMarkdown";
+import { useChecklistState } from "@/hooks/useChecklistState";
+import { Progress } from "@/components/ui/progress";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -55,6 +56,17 @@ const AnalysisPageLayout = ({
   const [loading, setLoading] = useState(true);
   const [analysisNotFound, setAnalysisNotFound] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [showOnlyPending, setShowOnlyPending] = useState(false);
+
+  // Checklist state
+  const {
+    completedItems,
+    completedCount,
+    totalItems,
+    setTotalItems,
+    progress,
+    toggleItem,
+  } = useChecklistState(analysis?.id);
 
   useEffect(() => {
     const loadData = async () => {
@@ -252,6 +264,42 @@ const AnalysisPageLayout = ({
       </header>
 
       <main className="container mx-auto px-4 py-8">
+        {/* Checklist Progress Bar */}
+        {totalItems > 0 && (
+          <div className="mb-6 p-4 bg-card border border-border rounded-xl animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-5 h-5 text-primary" />
+                <span className="font-medium">Progresso do Checklist</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-muted-foreground">
+                  {completedCount} de {totalItems} itens ({progress}%)
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setShowOnlyPending(!showOnlyPending)}
+                  className="gap-2"
+                >
+                  {showOnlyPending ? (
+                    <>
+                      <Eye className="w-4 h-4" />
+                      Mostrar todos
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-4 h-4" />
+                      Só pendentes
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </div>
+        )}
+
         {/* Breadcrumb */}
         <Breadcrumb className="mb-6">
           <BreadcrumbList>
@@ -285,9 +333,13 @@ const AnalysisPageLayout = ({
           id="analysis-content" 
           className="prose prose-slate dark:prose-invert max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content animate-slide-up"
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {analysis?.content || "Nenhuma análise disponível."}
-          </ReactMarkdown>
+          <CheckableMarkdown
+            content={analysis?.content || "Nenhuma análise disponível."}
+            completedItems={completedItems}
+            onToggleItem={toggleItem}
+            onTotalItemsChange={setTotalItems}
+            showOnlyPending={showOnlyPending}
+          />
         </div>
 
         {/* Navigation */}
