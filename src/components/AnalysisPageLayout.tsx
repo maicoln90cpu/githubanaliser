@@ -1,0 +1,213 @@
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon } from "lucide-react";
+import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import html2pdf from "html2pdf.js";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+
+interface AnalysisPageLayoutProps {
+  type: string;
+  title: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBgColor: string;
+  prevRoute?: { path: string; label: string };
+  nextRoute?: { path: string; label: string };
+}
+
+interface Project {
+  id: string;
+  name: string;
+  github_url: string;
+}
+
+interface Analysis {
+  id: string;
+  content: string;
+  type: string;
+}
+
+const AnalysisPageLayout = ({
+  type,
+  title,
+  icon: Icon,
+  iconColor,
+  iconBgColor,
+  prevRoute,
+  nextRoute,
+}: AnalysisPageLayoutProps) => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [project, setProject] = useState<Project | null>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const { data: projectData, error: projectError } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (projectError || !projectData) {
+          toast.error("Projeto não encontrado");
+          navigate("/dashboard");
+          return;
+        }
+
+        setProject(projectData);
+
+        const { data: analysisData, error: analysisError } = await supabase
+          .from("analyses")
+          .select("*")
+          .eq("project_id", id)
+          .eq("type", type)
+          .single();
+
+        if (analysisError || !analysisData) {
+          toast.error("Análise não encontrada");
+          navigate(`/projeto/${id}`);
+          return;
+        }
+
+        setAnalysis(analysisData);
+      } catch (error) {
+        console.error("Erro ao carregar dados:", error);
+        toast.error("Erro ao carregar análise");
+        navigate("/dashboard");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [id, type, navigate]);
+
+  const exportToPDF = () => {
+    const element = document.getElementById("analysis-content");
+    const opt = {
+      margin: 1,
+      filename: `${project?.name}-${type}.pdf`,
+      image: { type: "jpeg" as const, quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "in" as const, format: "a4" as const, orientation: "portrait" as const },
+    };
+    html2pdf().set(opt).from(element).save();
+    toast.success("PDF exportado com sucesso!");
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
+            <Github className="w-6 h-6 text-foreground" />
+            <span className="font-semibold text-xl">GitAnalyzer</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+              <Home className="w-4 h-4 mr-2" />
+              Dashboard
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate(`/projeto/${id}`)}>
+              <Grid3X3 className="w-4 h-4 mr-2" />
+              Análises
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportToPDF}>
+              <Download className="w-4 h-4 mr-2" />
+              PDF
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-8">
+        {/* Breadcrumb */}
+        <Breadcrumb className="mb-6">
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink href={`/projeto/${id}`}>{project?.name}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{title}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+
+        {/* Header with icon */}
+        <div className="flex items-center gap-4 mb-8 animate-fade-in">
+          <div className={`w-14 h-14 rounded-xl ${iconBgColor} flex items-center justify-center`}>
+            <Icon className={`w-7 h-7 ${iconColor}`} />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">{title}</h1>
+            <p className="text-muted-foreground">{project?.name}</p>
+          </div>
+        </div>
+
+        {/* Analysis Content */}
+        <div 
+          id="analysis-content" 
+          className="prose prose-slate dark:prose-invert max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content animate-slide-up"
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {analysis?.content || "Nenhuma análise disponível."}
+          </ReactMarkdown>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex justify-between items-center mt-8">
+          {prevRoute ? (
+            <Button variant="outline" onClick={() => navigate(`${prevRoute.path}/${id}`)}>
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              {prevRoute.label}
+            </Button>
+          ) : (
+            <div />
+          )}
+          
+          {nextRoute ? (
+            <Button variant="outline" onClick={() => navigate(`${nextRoute.path}/${id}`)}>
+              {nextRoute.label}
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => navigate(`/projeto/${id}`)}>
+              Ver Todas as Análises
+              <Grid3X3 className="w-4 h-4 ml-2" />
+            </Button>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default AnalysisPageLayout;

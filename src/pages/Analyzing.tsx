@@ -13,15 +13,30 @@ interface Step {
   status: "pending" | "loading" | "complete" | "error";
 }
 
-type AnalysisStatus = "pending" | "extracting" | "generating_prd" | "generating_funding" | "generating_improvements" | "completed" | "error";
+type AnalysisStatus = 
+  | "pending" 
+  | "extracting" 
+  | "generating_prd" 
+  | "generating_divulgacao"
+  | "generating_captacao"
+  | "generating_seguranca"
+  | "generating_ui"
+  | "generating_ferramentas"
+  | "generating_features"
+  | "completed" 
+  | "error";
 
 const statusToStepIndex: Record<AnalysisStatus, number> = {
   pending: 0,
   extracting: 1,
   generating_prd: 2,
-  generating_funding: 3,
-  generating_improvements: 4,
-  completed: 5,
+  generating_divulgacao: 3,
+  generating_captacao: 4,
+  generating_seguranca: 5,
+  generating_ui: 6,
+  generating_ferramentas: 7,
+  generating_features: 8,
+  completed: 9,
   error: -1,
 };
 
@@ -31,7 +46,7 @@ const Analyzing = () => {
   const { user, isLoading: authLoading } = useAuth();
   const [progress, setProgress] = useState(0);
   const [startTime] = useState(Date.now());
-  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~60s");
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~2min");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -40,8 +55,12 @@ const Analyzing = () => {
     { id: "connect", label: "Conectando ao GitHub", status: "pending" },
     { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
     { id: "prd", label: "Gerando análise PRD", status: "pending" },
-    { id: "funding", label: "Criando plano de captação", status: "pending" },
-    { id: "improvements", label: "Sugerindo melhorias", status: "pending" },
+    { id: "divulgacao", label: "Criando plano de divulgação", status: "pending" },
+    { id: "captacao", label: "Criando plano de captação", status: "pending" },
+    { id: "seguranca", label: "Analisando segurança", status: "pending" },
+    { id: "ui", label: "Sugerindo melhorias visuais", status: "pending" },
+    { id: "ferramentas", label: "Analisando ferramentas", status: "pending" },
+    { id: "features", label: "Sugerindo novas features", status: "pending" },
     { id: "complete", label: "Finalizando análise", status: "pending" },
   ]);
   
@@ -51,7 +70,7 @@ const Analyzing = () => {
   const calculateTimeRemaining = (currentStepIndex: number, totalSteps: number) => {
     const elapsed = Date.now() - startTime;
     const completedSteps = currentStepIndex;
-    if (completedSteps <= 0) return "~60s";
+    if (completedSteps <= 0) return "~2min";
     
     const avgTimePerStep = elapsed / completedSteps;
     const remainingSteps = totalSteps - completedSteps;
@@ -64,6 +83,7 @@ const Analyzing = () => {
 
   const updateStepsFromStatus = (status: AnalysisStatus) => {
     const stepIndex = statusToStepIndex[status];
+    const totalSteps = 10;
     
     setSteps(prev => prev.map((step, i) => {
       if (status === "error") {
@@ -84,8 +104,8 @@ const Analyzing = () => {
     if (status === "completed") {
       setProgress(100);
     } else if (stepIndex >= 0) {
-      setProgress(Math.round(((stepIndex + 0.5) / 6) * 100));
-      setEstimatedTimeRemaining(calculateTimeRemaining(stepIndex, 6));
+      setProgress(Math.round(((stepIndex + 0.5) / totalSteps) * 100));
+      setEstimatedTimeRemaining(calculateTimeRemaining(stepIndex, totalSteps));
     }
   };
 
@@ -111,7 +131,7 @@ const Analyzing = () => {
         }
         toast.success("Análise concluída!");
         setTimeout(() => {
-          navigate(`/analise-prd/${id}`);
+          navigate(`/projeto/${id}`);
         }, 500);
       } else if (status === "error") {
         if (pollingRef.current) {
@@ -128,20 +148,18 @@ const Analyzing = () => {
   useEffect(() => {
     if (authLoading) return;
 
-    // Verificar se usuário está logado
     if (!user) {
       toast.error("Você precisa estar logado para analisar projetos");
       navigate("/auth");
       return;
     }
 
-    // Se já tem um projectId existente, apenas fazer polling
     if (existingProjectId) {
       setProjectId(existingProjectId);
       setSteps(prev => prev.map((step, i) => 
         i === 0 ? { ...step, status: "complete" } : step
       ));
-      setProgress(16);
+      setProgress(10);
       
       pollingRef.current = setInterval(() => {
         pollStatus(existingProjectId);
@@ -164,13 +182,11 @@ const Analyzing = () => {
 
     const startAnalysis = async () => {
       try {
-        // Step 1: Conectando
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "loading" } : step
         ));
-        setProgress(8);
+        setProgress(5);
 
-        // Iniciar análise com user_id
         const { data, error } = await supabase.functions.invoke("analyze-github", {
           body: { githubUrl, userId: user.id }
         });
@@ -188,20 +204,17 @@ const Analyzing = () => {
           return;
         }
 
-        // Marcar conexão como completa
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "complete" } : step
         ));
-        setProgress(16);
+        setProgress(10);
 
         setProjectId(data.projectId);
 
-        // Iniciar polling a cada 3 segundos
         pollingRef.current = setInterval(() => {
           pollStatus(data.projectId);
         }, 3000);
 
-        // Primeira verificação imediata
         pollStatus(data.projectId);
 
       } catch (error) {
@@ -213,7 +226,6 @@ const Analyzing = () => {
 
     startAnalysis();
 
-    // Cleanup
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
@@ -245,7 +257,7 @@ const Analyzing = () => {
           </div>
           <h2 className="text-2xl font-bold">Erro na análise</h2>
           <p className="text-muted-foreground">{errorMessage}</p>
-        <Button onClick={() => navigate("/dashboard")} variant="outline">
+          <Button onClick={() => navigate("/dashboard")} variant="outline">
             Voltar ao dashboard
           </Button>
         </div>
@@ -256,7 +268,6 @@ const Analyzing = () => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="max-w-md w-full text-center space-y-8 animate-fade-in">
-        {/* Logo animado */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-32 h-32 bg-primary/10 rounded-full animate-ping" />
@@ -268,14 +279,12 @@ const Analyzing = () => {
           </div>
         </div>
 
-        {/* Status */}
         <div className="space-y-4">
           <h2 className="text-2xl font-bold">Analisando seu projeto</h2>
           <p className="text-muted-foreground">
             {currentStep >= 0 ? steps[currentStep]?.label : "Processando..."}
           </p>
           
-          {/* Progress bar */}
           <div className="px-4">
             <Progress value={progress} className="h-2" />
             <div className="flex justify-between items-center mt-2">
@@ -285,8 +294,7 @@ const Analyzing = () => {
           </div>
         </div>
 
-        {/* Progress steps */}
-        <div className="space-y-2 pt-4">
+        <div className="space-y-2 pt-4 max-h-[400px] overflow-y-auto">
           {steps.map((step) => (
             <div
               key={step.id}
