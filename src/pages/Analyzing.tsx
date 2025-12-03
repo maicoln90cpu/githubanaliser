@@ -65,6 +65,7 @@ const Analyzing = () => {
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
   const analysisTypesParam = searchParams.get("analysisTypes");
+  const useCacheParam = searchParams.get("useCache") === "true";
   
   // Parse selected analysis types
   const selectedAnalysisTypes = useMemo(() => {
@@ -254,7 +255,8 @@ const Analyzing = () => {
           body: { 
             githubUrl, 
             userId: user.id,
-            analysisTypes: selectedAnalysisTypes
+            analysisTypes: selectedAnalysisTypes,
+            useCache: useCacheParam
           }
         });
 

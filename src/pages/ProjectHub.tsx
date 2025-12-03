@@ -15,10 +15,21 @@ import {
   Sparkles,
   ExternalLink,
   CheckCircle,
-  Clock
+  Clock,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Project {
   id: string;
@@ -26,6 +37,7 @@ interface Project {
   github_url: string;
   created_at: string;
   analysis_status: string;
+  github_data: Record<string, unknown> | null;
 }
 
 interface Analysis {
@@ -113,6 +125,12 @@ const ProjectHub = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reanalyzing, setReanalyzing] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: string; title: string }>({
+    open: false,
+    type: "",
+    title: ""
+  });
 
   useEffect(() => {
     if (authLoading) return;
@@ -136,7 +154,7 @@ const ProjectHub = () => {
           return;
         }
 
-        setProject(projectData);
+        setProject(projectData as Project);
 
         const { data: analysesData } = await supabase
           .from("analyses")
@@ -158,6 +176,50 @@ const ProjectHub = () => {
 
   const hasAnalysis = (type: string) => {
     return analyses.some(a => a.type === type);
+  };
+
+  const hasCachedData = () => {
+    return project?.github_data !== null && project?.github_data !== undefined;
+  };
+
+  const handleReanalyze = async (type: string) => {
+    if (!project || !user) return;
+
+    setReanalyzing(type);
+    setConfirmDialog({ open: false, type: "", title: "" });
+
+    try {
+      const { error } = await supabase.functions.invoke("analyze-github", {
+        body: {
+          githubUrl: project.github_url,
+          userId: user.id,
+          analysisTypes: [type],
+          useCache: hasCachedData()
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success("Re-análise iniciada!", {
+        description: hasCachedData() 
+          ? "Usando dados em cache para economizar recursos"
+          : "Extraindo dados do GitHub"
+      });
+
+      // Navigate to analyzing page
+      navigate(`/analisando?projectId=${project.id}&analysisTypes=${type}`);
+
+    } catch (error) {
+      console.error("Erro ao re-analisar:", error);
+      toast.error("Erro ao iniciar re-análise");
+    } finally {
+      setReanalyzing(null);
+    }
+  };
+
+  const openConfirmDialog = (type: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDialog({ open: true, type, title });
   };
 
   if (loading) {
@@ -204,9 +266,17 @@ const ProjectHub = () => {
               </a>
             </div>
           </div>
-          <p className="text-muted-foreground">
-            Selecione uma análise para visualizar os detalhes
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-muted-foreground">
+              Selecione uma análise para visualizar os detalhes
+            </p>
+            {hasCachedData() && (
+              <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-500 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Dados em cache
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Analysis Grid */}
@@ -214,6 +284,7 @@ const ProjectHub = () => {
           {analysisTypes.map((analysis, index) => {
             const Icon = analysis.icon;
             const available = hasAnalysis(analysis.type);
+            const isReanalyzing = reanalyzing === analysis.type;
             
             return (
               <div
@@ -227,7 +298,21 @@ const ProjectHub = () => {
                 onClick={() => available && navigate(`${analysis.route}/${id}`)}
               >
                 {/* Status indicator */}
-                <div className="absolute top-4 right-4">
+                <div className="absolute top-4 right-4 flex items-center gap-2">
+                  {available && (
+                    <button
+                      onClick={(e) => openConfirmDialog(analysis.type, analysis.title, e)}
+                      className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                      title="Refazer análise"
+                      disabled={isReanalyzing}
+                    >
+                      {isReanalyzing ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 text-muted-foreground hover:text-primary" />
+                      )}
+                    </button>
+                  )}
                   {available ? (
                     <CheckCircle className="w-5 h-5 text-green-500" />
                   ) : (
@@ -252,7 +337,7 @@ const ProjectHub = () => {
                     </span>
                   ) : (
                     <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-                      Processando...
+                      Não gerada
                     </span>
                   )}
                 </div>
@@ -268,6 +353,33 @@ const ProjectHub = () => {
           </Button>
         </div>
       </main>
+
+      {/* Confirm Re-analysis Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refazer análise</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja refazer a análise <strong>"{confirmDialog.title}"</strong>?
+              {hasCachedData() ? (
+                <span className="block mt-2 text-green-600">
+                  ✓ Dados do projeto em cache - economia de chamadas API
+                </span>
+              ) : (
+                <span className="block mt-2 text-yellow-600">
+                  ⚠ Será necessário extrair dados do GitHub novamente
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleReanalyze(confirmDialog.type)}>
+              Refazer Análise
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

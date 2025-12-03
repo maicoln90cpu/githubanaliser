@@ -30,6 +30,7 @@ interface Project {
   id: string;
   name: string;
   github_url: string;
+  github_data: unknown;
 }
 
 interface Analysis {
@@ -101,10 +102,16 @@ const AnalysisPageLayout = ({
     if (!project) return;
     
     setRegenerating(true);
-    toast.info("Iniciando geração da análise...");
     
-    // Redirecionar para a página de análise com o tipo específico
-    navigate(`/analisando?projectId=${id}&analysisTypes=${type}`);
+    const hasCachedData = project.github_data !== null && project.github_data !== undefined;
+    
+    toast.info(hasCachedData 
+      ? "Usando dados em cache para economizar recursos..." 
+      : "Iniciando geração da análise..."
+    );
+    
+    // Redirecionar para a página de análise com o tipo específico e useCache
+    navigate(`/analisando?projectId=${id}&analysisTypes=${type}&useCache=${hasCachedData}`);
   };
 
   const exportToPDF = () => {

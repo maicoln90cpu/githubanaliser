@@ -148,13 +148,195 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
   return data.choices[0].message.content;
 }
 
+interface GitHubData {
+  repoData: {
+    description: string;
+    language: string;
+    stars: number;
+    forks: number;
+  };
+  readmeContent: string;
+  fileStructure: string;
+  packageJsonContent: string;
+  sourceCodeContent: string;
+  configContent: string;
+  extractedAt: string;
+}
+
+async function extractGitHubData(
+  owner: string,
+  repo: string,
+  githubUrl: string,
+  projectName: string
+): Promise<{ projectContext: string; githubData: GitHubData }> {
+  console.log("Buscando informações do repositório...");
+  const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers: githubHeaders,
+  });
+
+  if (!repoResponse.ok) {
+    throw new Error(`Repositório não encontrado: ${repoResponse.status}`);
+  }
+
+  const repoData = await repoResponse.json();
+  console.log("✓ Repositório encontrado:", repoData.full_name);
+
+  let readmeContent = "";
+  try {
+    const readmeResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+      headers: githubHeaders,
+    });
+    if (readmeResponse.ok) {
+      const readmeData = await readmeResponse.json();
+      readmeContent = atob(readmeData.content);
+      console.log(`✓ README encontrado (${readmeContent.length} caracteres)`);
+    }
+  } catch (e) {
+    console.log("README não encontrado");
+  }
+
+  console.log("Buscando estrutura de arquivos...");
+  const allFiles = await fetchDirectoryContents(owner, repo, "", 0, 3);
+  console.log(`✓ Encontrados ${allFiles.length} arquivos/diretórios`);
+
+  const fileStructure = allFiles
+    .map(item => `${item.type === "dir" ? "📁" : "📄"} ${item.path}`)
+    .join("\n");
+
+  let packageJsonContent = "";
+  const packageContent = await fetchFileContent(owner, repo, "package.json");
+  if (packageContent) {
+    try {
+      const packageJson = JSON.parse(packageContent);
+      packageJsonContent = `
+Nome: ${packageJson.name || "Não especificado"}
+Versão: ${packageJson.version || "Não especificada"}
+Descrição: ${packageJson.description || "Sem descrição"}
+
+Dependencies: ${packageJson.dependencies ? Object.keys(packageJson.dependencies).join(", ") : "Nenhuma"}
+
+Dev Dependencies: ${packageJson.devDependencies ? Object.keys(packageJson.devDependencies).join(", ") : "Nenhuma"}
+
+Scripts disponíveis: ${packageJson.scripts ? Object.entries(packageJson.scripts).map(([k, v]) => `\n  - ${k}: ${v}`).join("") : "Nenhum"}`;
+      console.log("✓ package.json processado");
+    } catch (e) {
+      console.log("Erro ao processar package.json");
+    }
+  }
+
+  console.log("Buscando conteúdo dos arquivos importantes...");
+  const importantFiles = allFiles.filter(f => f.type === "file" && isImportantFile(f.path)).slice(0, 15);
+  
+  let sourceCodeContent = "";
+  let totalSize = 0;
+  const maxTotalSize = 40000;
+
+  for (const file of importantFiles) {
+    if (totalSize > maxTotalSize) break;
+
+    const content = await fetchFileContent(owner, repo, file.path);
+    if (content) {
+      const truncatedContent = content.substring(0, 4000);
+      sourceCodeContent += `\n\n=== ${file.path} ===\n${truncatedContent}`;
+      totalSize += truncatedContent.length;
+      console.log(`✓ ${file.path}`);
+    }
+  }
+
+  const configFiles = ["tsconfig.json", "vite.config.ts", "tailwind.config.ts"];
+  let configContent = "";
+  
+  for (const configFile of configFiles) {
+    const content = await fetchFileContent(owner, repo, configFile);
+    if (content) {
+      configContent += `\n\n=== ${configFile} ===\n${content.substring(0, 1500)}`;
+    }
+  }
+
+  const githubData: GitHubData = {
+    repoData: {
+      description: repoData.description || "Sem descrição",
+      language: repoData.language || "Não especificada",
+      stars: repoData.stargazers_count,
+      forks: repoData.forks_count,
+    },
+    readmeContent: readmeContent.substring(0, 4000),
+    fileStructure,
+    packageJsonContent,
+    sourceCodeContent,
+    configContent,
+    extractedAt: new Date().toISOString(),
+  };
+
+  const projectContext = `
+# Projeto: ${projectName}
+URL: ${githubUrl}
+
+## Informações do Repositório
+- Descrição: ${githubData.repoData.description}
+- Linguagem principal: ${githubData.repoData.language}
+- Stars: ${githubData.repoData.stars}
+- Forks: ${githubData.repoData.forks}
+
+## README
+${githubData.readmeContent}
+
+## Estrutura de Arquivos
+${githubData.fileStructure}
+
+## package.json
+${githubData.packageJsonContent}
+
+## Código Fonte
+${githubData.sourceCodeContent}
+
+## Configuração
+${githubData.configContent}
+`;
+
+  return { projectContext, githubData };
+}
+
+function buildProjectContextFromCache(
+  githubData: GitHubData,
+  projectName: string,
+  githubUrl: string
+): string {
+  return `
+# Projeto: ${projectName}
+URL: ${githubUrl}
+
+## Informações do Repositório
+- Descrição: ${githubData.repoData.description}
+- Linguagem principal: ${githubData.repoData.language}
+- Stars: ${githubData.repoData.stars}
+- Forks: ${githubData.repoData.forks}
+
+## README
+${githubData.readmeContent}
+
+## Estrutura de Arquivos
+${githubData.fileStructure}
+
+## package.json
+${githubData.packageJsonContent}
+
+## Código Fonte
+${githubData.sourceCodeContent}
+
+## Configuração
+${githubData.configContent}
+`;
+}
+
 async function processAnalysisInBackground(
   projectId: string,
   githubUrl: string,
   owner: string,
   repo: string,
   projectName: string,
-  analysisTypes: string[]
+  analysisTypes: string[],
+  useCache: boolean = false
 ) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -166,120 +348,52 @@ async function processAnalysisInBackground(
     : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features"];
 
   console.log("Tipos de análise selecionados:", typesToGenerate);
+  console.log("Usar cache:", useCache);
 
   try {
-    // === ETAPA 1: EXTRAÇÃO ===
-    await updateProjectStatus(supabase, projectId, "extracting");
-    
-    console.log("Buscando informações do repositório...");
-    const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-      headers: githubHeaders,
-    });
+    let projectContext: string;
 
-    if (!repoResponse.ok) {
-      throw new Error(`Repositório não encontrado: ${repoResponse.status}`);
-    }
+    // Check for cached data if useCache is true
+    if (useCache) {
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("github_data")
+        .eq("id", projectId)
+        .single();
 
-    const repoData = await repoResponse.json();
-    console.log("✓ Repositório encontrado:", repoData.full_name);
-
-    let readmeContent = "";
-    try {
-      const readmeResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
-        headers: githubHeaders,
-      });
-      if (readmeResponse.ok) {
-        const readmeData = await readmeResponse.json();
-        readmeContent = atob(readmeData.content);
-        console.log(`✓ README encontrado (${readmeContent.length} caracteres)`);
+      if (projectData?.github_data) {
+        console.log("✓ Usando dados em cache do GitHub");
+        projectContext = buildProjectContextFromCache(
+          projectData.github_data as unknown as GitHubData,
+          projectName,
+          githubUrl
+        );
+      } else {
+        console.log("Cache não encontrado, extraindo novamente...");
+        await updateProjectStatus(supabase, projectId, "extracting");
+        const { projectContext: ctx, githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
+        projectContext = ctx;
+        
+        // Save to cache
+        await supabase
+          .from("projects")
+          .update({ github_data: githubData as unknown as Record<string, unknown> })
+          .eq("id", projectId);
+        console.log("✓ Dados salvos no cache");
       }
-    } catch (e) {
-      console.log("README não encontrado");
+    } else {
+      // Full extraction (no cache)
+      await updateProjectStatus(supabase, projectId, "extracting");
+      const { projectContext: ctx, githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
+      projectContext = ctx;
+      
+      // Save to cache for future re-analyses
+      await supabase
+        .from("projects")
+        .update({ github_data: githubData as unknown as Record<string, unknown> })
+        .eq("id", projectId);
+      console.log("✓ Dados salvos no cache");
     }
-
-    console.log("Buscando estrutura de arquivos...");
-    const allFiles = await fetchDirectoryContents(owner, repo, "", 0, 3);
-    console.log(`✓ Encontrados ${allFiles.length} arquivos/diretórios`);
-
-    const fileStructure = allFiles
-      .map(item => `${item.type === "dir" ? "📁" : "📄"} ${item.path}`)
-      .join("\n");
-
-    let packageJsonContent = "";
-    const packageContent = await fetchFileContent(owner, repo, "package.json");
-    if (packageContent) {
-      try {
-        const packageJson = JSON.parse(packageContent);
-        packageJsonContent = `
-Nome: ${packageJson.name || "Não especificado"}
-Versão: ${packageJson.version || "Não especificada"}
-Descrição: ${packageJson.description || "Sem descrição"}
-
-Dependencies: ${packageJson.dependencies ? Object.keys(packageJson.dependencies).join(", ") : "Nenhuma"}
-
-Dev Dependencies: ${packageJson.devDependencies ? Object.keys(packageJson.devDependencies).join(", ") : "Nenhuma"}
-
-Scripts disponíveis: ${packageJson.scripts ? Object.entries(packageJson.scripts).map(([k, v]) => `\n  - ${k}: ${v}`).join("") : "Nenhum"}`;
-        console.log("✓ package.json processado");
-      } catch (e) {
-        console.log("Erro ao processar package.json");
-      }
-    }
-
-    console.log("Buscando conteúdo dos arquivos importantes...");
-    const importantFiles = allFiles.filter(f => f.type === "file" && isImportantFile(f.path)).slice(0, 15);
-    
-    let sourceCodeContent = "";
-    let totalSize = 0;
-    const maxTotalSize = 40000;
-
-    for (const file of importantFiles) {
-      if (totalSize > maxTotalSize) break;
-
-      const content = await fetchFileContent(owner, repo, file.path);
-      if (content) {
-        const truncatedContent = content.substring(0, 4000);
-        sourceCodeContent += `\n\n=== ${file.path} ===\n${truncatedContent}`;
-        totalSize += truncatedContent.length;
-        console.log(`✓ ${file.path}`);
-      }
-    }
-
-    const configFiles = ["tsconfig.json", "vite.config.ts", "tailwind.config.ts"];
-    let configContent = "";
-    
-    for (const configFile of configFiles) {
-      const content = await fetchFileContent(owner, repo, configFile);
-      if (content) {
-        configContent += `\n\n=== ${configFile} ===\n${content.substring(0, 1500)}`;
-      }
-    }
-
-    const projectContext = `
-# Projeto: ${projectName}
-URL: ${githubUrl}
-
-## Informações do Repositório
-- Descrição: ${repoData.description || "Sem descrição"}
-- Linguagem principal: ${repoData.language || "Não especificada"}
-- Stars: ${repoData.stargazers_count}
-- Forks: ${repoData.forks_count}
-
-## README
-${readmeContent.substring(0, 4000)}
-
-## Estrutura de Arquivos
-${fileStructure}
-
-## package.json
-${packageJsonContent}
-
-## Código Fonte
-${sourceCodeContent}
-
-## Configuração
-${configContent}
-`;
 
     console.log(`Contexto preparado: ${projectContext.length} caracteres`);
 
@@ -552,11 +666,12 @@ serve(async (req) => {
   }
 
   try {
-    const { githubUrl, userId, analysisTypes } = await req.json();
+    const { githubUrl, userId, analysisTypes, useCache } = await req.json();
     console.log("=== INICIANDO ANÁLISE ===");
     console.log("URL:", githubUrl);
     console.log("User ID:", userId);
     console.log("Tipos de análise:", analysisTypes);
+    console.log("Usar cache:", useCache);
 
     if (!githubUrl) {
       throw new Error("URL do GitHub não fornecida");
@@ -601,8 +716,8 @@ serve(async (req) => {
           .delete()
           .eq("project_id", existingProject.id)
           .eq("type", typesArray[0]);
-      } else {
-        // Delete all analyses for full re-analysis
+      } else if (!useCache) {
+        // Delete all analyses for full re-analysis (not using cache means fresh start)
         await supabase
           .from("analyses")
           .delete()
@@ -665,7 +780,15 @@ serve(async (req) => {
     }
 
     EdgeRuntime.waitUntil(
-      processAnalysisInBackground(project.id, githubUrl, owner, repo, projectName, typesArray)
+      processAnalysisInBackground(
+        project.id, 
+        githubUrl, 
+        owner, 
+        repo, 
+        projectName, 
+        typesArray,
+        useCache === true
+      )
     );
 
     return new Response(
