@@ -55,6 +55,7 @@ interface UserCost {
   email: string;
   analysesCount: number;
   estimatedCost: number;
+  totalTokens: number;
   planName: string;
 }
 
@@ -68,6 +69,8 @@ const AdminCosts = () => {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
   const [userCosts, setUserCosts] = useState<UserCost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasRealData, setHasRealData] = useState(false);
+  const [totalTokens, setTotalTokens] = useState(0);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -104,8 +107,11 @@ const AdminCosts = () => {
         const totalUsers = uniqueUsers.size;
 
         // Use real costs if available, otherwise estimate
-        const hasRealData = usageData && usageData.length > 0;
-        const estimatedTotalCost = hasRealData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
+        const hasRealUsageData = usageData && usageData.length > 0;
+        setHasRealData(hasRealUsageData);
+        setTotalTokens(realTotalTokens);
+        
+        const estimatedTotalCost = hasRealUsageData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
         const avgCostPerAnalysis = totalAnalyses && totalAnalyses > 0 
           ? estimatedTotalCost / totalAnalyses 
           : COST_PER_ANALYSIS;
@@ -126,7 +132,7 @@ const AdminCosts = () => {
         // Group usage by date
         const dailyMap = new Map<string, { analyses: number; cost: number; tokens: number }>();
         
-        if (hasRealData) {
+        if (hasRealUsageData) {
           usageData?.forEach(u => {
             const date = new Date(u.created_at!).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
             const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
@@ -170,14 +176,15 @@ const AdminCosts = () => {
         setDailyUsage(dailyData);
 
         // Get cost per user from real data
-        const userCostMap = new Map<string, { count: number; cost: number }>();
+        const userCostMap = new Map<string, { count: number; cost: number; tokens: number }>();
         
-        if (hasRealData) {
+        if (hasRealUsageData) {
           usageData?.forEach(u => {
-            const existing = userCostMap.get(u.user_id) || { count: 0, cost: 0 };
+            const existing = userCostMap.get(u.user_id) || { count: 0, cost: 0, tokens: 0 };
             userCostMap.set(u.user_id, {
               count: existing.count + 1,
               cost: existing.cost + Number(u.cost_estimated || 0),
+              tokens: existing.tokens + (u.tokens_estimated || 0),
             });
           });
         } else {
@@ -190,10 +197,11 @@ const AdminCosts = () => {
           userProjects?.forEach(p => {
             if (p.user_id) {
               const count = Array.isArray(p.analyses) ? p.analyses.length : 0;
-              const existing = userCostMap.get(p.user_id) || { count: 0, cost: 0 };
+              const existing = userCostMap.get(p.user_id) || { count: 0, cost: 0, tokens: 0 };
               userCostMap.set(p.user_id, {
                 count: existing.count + count,
                 cost: existing.cost + (count * COST_PER_ANALYSIS),
+                tokens: 0,
               });
             }
           });
@@ -218,6 +226,7 @@ const AdminCosts = () => {
             email: `user-${userId.slice(0, 8)}...`,
             analysesCount: data.count,
             estimatedCost: data.cost,
+            totalTokens: data.tokens,
             planName: userPlanMap.get(userId) || 'Free',
           }))
           .sort((a, b) => b.estimatedCost - a.estimatedCost)
@@ -286,6 +295,21 @@ const AdminCosts = () => {
           <p className="text-muted-foreground">
             Estimativas de custos de IA e projeções de uso
           </p>
+        </div>
+
+        {/* Data Source Banner */}
+        <div className={`p-4 rounded-lg mb-6 flex items-center gap-3 ${hasRealData ? 'bg-green-500/10 border border-green-500/20' : 'bg-yellow-500/10 border border-yellow-500/20'}`}>
+          <Shield className={`w-5 h-5 ${hasRealData ? 'text-green-500' : 'text-yellow-500'}`} />
+          <div>
+            <p className={`font-medium ${hasRealData ? 'text-green-600' : 'text-yellow-600'}`}>
+              {hasRealData ? 'Dados Reais de Uso' : 'Dados Estimados'}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {hasRealData 
+                ? `${totalTokens.toLocaleString()} tokens registrados • Modelo: google/gemini-2.5-flash`
+                : 'Nenhuma análise nova foi executada desde a implementação do tracking. Execute uma análise para ver dados reais.'}
+            </p>
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -418,6 +442,7 @@ const AdminCosts = () => {
                 <TableHead>Usuário</TableHead>
                 <TableHead>Plano</TableHead>
                 <TableHead className="text-right">Análises</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Custo Estimado</TableHead>
               </TableRow>
             </TableHeader>
@@ -435,12 +460,15 @@ const AdminCosts = () => {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">{user.analysesCount}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {user.totalTokens > 0 ? user.totalTokens.toLocaleString() : '-'}
+                  </TableCell>
                   <TableCell className="text-right font-medium">${user.estimatedCost.toFixed(4)}</TableCell>
                 </TableRow>
               ))}
               {userCosts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                     Nenhum dado de uso disponível
                   </TableCell>
                 </TableRow>
