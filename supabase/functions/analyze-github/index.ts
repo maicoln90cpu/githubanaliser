@@ -191,49 +191,75 @@ async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
   }
 }
 
+// Delay helper
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string, model: string): Promise<AIResponse> {
   console.log(`🤖 Chamando Lovable AI (${model})...`);
   const startTime = Date.now();
   
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${lovableApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-    }),
-  });
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+        }),
+      });
 
-  const elapsed = Date.now() - startTime;
+      if (response.status === 429) {
+        // Rate limit - wait and retry with exponential backoff
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000); // Max 30s
+        console.log(`⚠️ Rate limit (429). Tentativa ${attempt}/${maxRetries}. Aguardando ${waitTime/1000}s...`);
+        await delay(waitTime);
+        continue;
+      }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`❌ Erro na API Lovable: ${response.status} - ${errorText}`);
-    throw new Error(`Erro na API Lovable: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Erro na API Lovable: ${response.status} - ${errorText}`);
+        throw new Error(`Erro na API Lovable: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const elapsed = Date.now() - startTime;
+      
+      // Log detalhado do uso de tokens
+      const promptTokens = data.usage?.prompt_tokens || 0;
+      const completionTokens = data.usage?.completion_tokens || 0;
+      const totalTokens = data.usage?.total_tokens || promptTokens + completionTokens ||
+        Math.ceil((systemPrompt.length + userPrompt.length + (data.choices[0].message.content?.length || 0)) / 4);
+      
+      console.log(`✅ Resposta recebida em ${elapsed}ms (tentativa ${attempt})`);
+      console.log(`📊 Tokens: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
+      
+      return {
+        content: data.choices[0].message.content,
+        tokensUsed: totalTokens,
+        model: model
+      };
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
+        console.log(`⚠️ Erro na tentativa ${attempt}. Aguardando ${waitTime/1000}s antes de retry...`);
+        await delay(waitTime);
+      }
+    }
   }
-
-  const data = await response.json();
   
-  // Log detalhado do uso de tokens
-  const promptTokens = data.usage?.prompt_tokens || 0;
-  const completionTokens = data.usage?.completion_tokens || 0;
-  const totalTokens = data.usage?.total_tokens || promptTokens + completionTokens ||
-    Math.ceil((systemPrompt.length + userPrompt.length + (data.choices[0].message.content?.length || 0)) / 4);
-  
-  console.log(`✅ Resposta recebida em ${elapsed}ms`);
-  console.log(`📊 Tokens: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
-  
-  return {
-    content: data.choices[0].message.content,
-    tokensUsed: totalTokens,
-    model: model
-  };
+  throw lastError || new Error("Falha após múltiplas tentativas");
 }
 
 interface GitHubData {
@@ -586,6 +612,9 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model);
       console.log("✓ PRD salvo");
+      
+      // Delay entre chamadas para evitar rate limit
+      await delay(2000);
     }
 
     // === GERAR PLANO DE DIVULGAÇÃO ===
@@ -621,6 +650,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model);
       console.log("✓ Plano de divulgação salvo");
+      
+      await delay(2000);
     }
 
     // === GERAR PLANO DE CAPTAÇÃO ===
@@ -656,6 +687,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model);
       console.log("✓ Plano de captação salvo");
+      
+      await delay(2000);
     }
 
     // === GERAR MELHORIAS DE SEGURANÇA ===
@@ -691,6 +724,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model);
       console.log("✓ Análise de segurança salva");
+      
+      await delay(2000);
     }
 
     // === GERAR MELHORIAS DE UI/THEME ===
@@ -726,6 +761,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model);
       console.log("✓ Melhorias de UI salvas");
+      
+      await delay(2000);
     }
 
     // === GERAR MELHORIAS DE FERRAMENTAS ===
@@ -761,6 +798,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model);
       console.log("✓ Melhorias de ferramentas salvas");
+      
+      await delay(2000);
     }
 
     // === GERAR SUGESTÕES DE NOVAS FEATURES ===
@@ -796,6 +835,8 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model);
       console.log("✓ Sugestões de features salvas");
+      
+      await delay(2000);
     }
 
     // === GERAR DOCUMENTAÇÃO TÉCNICA ===
