@@ -78,7 +78,9 @@ const AnalysisPageLayout = ({
           .select("*")
           .eq("project_id", id)
           .eq("type", type)
-          .single();
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (analysisError || !analysisData) {
           // Em vez de redirecionar, mostrar opção de gerar

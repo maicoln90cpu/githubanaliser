@@ -13,7 +13,8 @@ import {
   ExternalLink,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -25,6 +26,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Project {
   id: string;
@@ -43,6 +54,9 @@ const AdminProjects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -53,31 +67,66 @@ const AdminProjects = () => {
       return;
     }
 
-    const loadProjects = async () => {
-      try {
-        let query = supabase
-          .from("projects")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (userFilter) {
-          query = query.eq("user_id", userFilter);
-        }
-
-        const { data, error } = await query;
-
-        if (error) throw error;
-        setProjects(data || []);
-      } catch (error) {
-        console.error("Erro ao carregar projetos:", error);
-        toast.error("Erro ao carregar projetos");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadProjects();
   }, [isAdmin, adminLoading, navigate, userFilter]);
+
+  const loadProjects = async () => {
+    try {
+      let query = supabase
+        .from("projects")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (userFilter) {
+        query = query.eq("user_id", userFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setProjects(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar projetos:", error);
+      toast.error("Erro ao carregar projetos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+    
+    setDeleting(true);
+    try {
+      // Delete analyses first (cascade should handle this, but let's be explicit)
+      const { error: analysesError } = await supabase
+        .from("analyses")
+        .delete()
+        .eq("project_id", projectToDelete.id);
+
+      if (analysesError) {
+        console.error("Erro ao deletar análises:", analysesError);
+      }
+
+      // Delete the project
+      const { error: projectError } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", projectToDelete.id);
+
+      if (projectError) throw projectError;
+
+      toast.success(`Projeto "${projectToDelete.name}" excluído com sucesso`);
+      setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+    } catch (error) {
+      console.error("Erro ao excluir projeto:", error);
+      toast.error("Erro ao excluir projeto");
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+    }
+  };
 
   const getStatusIcon = (status: string | null) => {
     switch (status) {
@@ -219,15 +268,28 @@ const AdminProjects = () => {
                       {new Date(project.created_at).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell className="text-right">
-                      {project.analysis_status === "completed" && (
+                      <div className="flex items-center justify-end gap-2">
+                        {project.analysis_status === "completed" && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => navigate(`/projeto/${project.id}`)}
+                          >
+                            Ver Análises
+                          </Button>
+                        )}
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => navigate(`/projeto/${project.id}`)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            setProjectToDelete(project);
+                            setDeleteDialogOpen(true);
+                          }}
                         >
-                          Ver Análises
+                          <Trash2 className="w-4 h-4" />
                         </Button>
-                      )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -236,6 +298,45 @@ const AdminProjects = () => {
           </Table>
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Projeto</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o projeto <strong>"{projectToDelete?.name}"</strong>?
+              <br /><br />
+              Esta ação é irreversível e irá excluir:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>O projeto e seus dados</li>
+                <li>Todas as análises associadas</li>
+                <li>Dados em cache do GitHub</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProject}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

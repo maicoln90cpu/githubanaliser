@@ -124,7 +124,12 @@ async function updateProjectStatus(supabase: any, projectId: string, status: str
   console.log(`Status atualizado: ${status}`);
 }
 
-async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
+interface AIResponse {
+  content: string;
+  tokensUsed: number;
+}
+
+async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string): Promise<AIResponse> {
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -145,7 +150,14 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  const tokensUsed = data.usage?.total_tokens || 
+    (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0) ||
+    Math.ceil((systemPrompt.length + userPrompt.length + (data.choices[0].message.content?.length || 0)) / 4);
+  
+  return {
+    content: data.choices[0].message.content,
+    tokensUsed
+  };
 }
 
 interface GitHubData {
@@ -329,6 +341,31 @@ ${githubData.configContent}
 `;
 }
 
+const COST_PER_TOKEN = 0.0000001; // Custo estimado por token
+
+async function trackAnalysisUsage(
+  supabase: any,
+  userId: string,
+  projectId: string,
+  analysisType: string,
+  tokensUsed: number
+) {
+  const costEstimated = tokensUsed * COST_PER_TOKEN;
+  
+  try {
+    await supabase.from("analysis_usage").insert({
+      user_id: userId,
+      project_id: projectId,
+      analysis_type: analysisType,
+      tokens_estimated: tokensUsed,
+      cost_estimated: costEstimated,
+    });
+    console.log(`📊 Uso registrado: ${analysisType} - ${tokensUsed} tokens (~$${costEstimated.toFixed(6)})`);
+  } catch (error) {
+    console.error("Erro ao registrar uso:", error);
+  }
+}
+
 async function processAnalysisInBackground(
   projectId: string,
   githubUrl: string,
@@ -336,7 +373,8 @@ async function processAnalysisInBackground(
   repo: string,
   projectName: string,
   analysisTypes: string[],
-  useCache: boolean = false
+  useCache: boolean = false,
+  userId: string = ""
 ) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -419,7 +457,7 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
       await updateProjectStatus(supabase, projectId, "generating_prd");
       console.log("Gerando PRD...");
 
-      const prdContent = await callLovableAI(
+      const prdResult = await callLovableAI(
         lovableApiKey,
         "Você é um analista de produtos técnico sênior especializado em documentação de software.",
         `Analise o seguinte projeto GitHub e crie um PRD (Product Requirements Document) completo em português.
@@ -439,11 +477,12 @@ Estruture o documento com estas seções:
 8. **📊 Métricas de Sucesso** - KPIs em tabela`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "prd",
-        content: prdContent,
-      });
+        content: prdResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed);
       console.log("✓ PRD salvo");
     }
 
@@ -452,7 +491,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_divulgacao");
       console.log("Gerando plano de divulgação...");
 
-      const divulgacaoContent = await callLovableAI(
+      const divulgacaoResult = await callLovableAI(
         lovableApiKey,
         "Você é um especialista em marketing digital e growth hacking.",
         `Analise o projeto e crie um plano de divulgação e marketing em português.
@@ -472,11 +511,12 @@ Estruture o documento com estas seções:
 8. **📊 Métricas e KPIs** - Tabela com meta e baseline`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "divulgacao",
-        content: divulgacaoContent,
-      });
+        content: divulgacaoResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed);
       console.log("✓ Plano de divulgação salvo");
     }
 
@@ -485,7 +525,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_captacao");
       console.log("Gerando plano de captação...");
 
-      const captacaoContent = await callLovableAI(
+      const captacaoResult = await callLovableAI(
         lovableApiKey,
         "Você é um especialista em captação de recursos e investimentos para startups.",
         `Analise o projeto e crie um plano de captação de recursos em português.
@@ -505,11 +545,12 @@ Estruture o documento com estas seções:
 8. **📅 Roadmap de Captação** - Timeline e milestones`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "captacao",
-        content: captacaoContent,
-      });
+        content: captacaoResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed);
       console.log("✓ Plano de captação salvo");
     }
 
@@ -518,7 +559,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_seguranca");
       console.log("Gerando análise de segurança...");
 
-      const segurancaContent = await callLovableAI(
+      const segurancaResult = await callLovableAI(
         lovableApiKey,
         "Você é um especialista em segurança da informação e cibersegurança.",
         `Analise o código do projeto e identifique vulnerabilidades e melhorias de segurança em português.
@@ -538,11 +579,12 @@ Estruture o documento com estas seções:
 8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "seguranca",
-        content: segurancaContent,
-      });
+        content: segurancaResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed);
       console.log("✓ Análise de segurança salva");
     }
 
@@ -551,7 +593,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_ui");
       console.log("Gerando melhorias de UI...");
 
-      const uiContent = await callLovableAI(
+      const uiResult = await callLovableAI(
         lovableApiKey,
         "Você é um designer de UX/UI especializado em interfaces modernas e acessíveis.",
         `Analise o código do projeto e sugira melhorias visuais e de experiência em português.
@@ -571,11 +613,12 @@ Estruture o documento com estas seções:
 8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "ui_theme",
-        content: uiContent,
-      });
+        content: uiResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed);
       console.log("✓ Melhorias de UI salvas");
     }
 
@@ -584,7 +627,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_ferramentas");
       console.log("Gerando melhorias de ferramentas...");
 
-      const ferramentasContent = await callLovableAI(
+      const ferramentasResult = await callLovableAI(
         lovableApiKey,
         "Você é um arquiteto de software sênior especializado em otimização de código.",
         `Analise o código existente e sugira melhorias nas funcionalidades atuais em português.
@@ -604,11 +647,12 @@ Estruture o documento com estas seções:
 8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "ferramentas",
-        content: ferramentasContent,
-      });
+        content: ferramentasResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed);
       console.log("✓ Melhorias de ferramentas salvas");
     }
 
@@ -617,7 +661,7 @@ Estruture o documento com estas seções:
       await updateProjectStatus(supabase, projectId, "generating_features");
       console.log("Gerando sugestões de features...");
 
-      const featuresContent = await callLovableAI(
+      const featuresResult = await callLovableAI(
         lovableApiKey,
         "Você é um product manager visionário especializado em inovação de produtos.",
         `Analise o projeto e sugira novas funcionalidades inovadoras em português.
@@ -637,11 +681,12 @@ Estruture o documento com estas seções:
 8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`
       );
       
-      await supabase.from("analyses").insert({
+      await supabase.from("analyses").upsert({
         project_id: projectId,
         type: "features",
-        content: featuresContent,
-      });
+        content: featuresResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed);
       console.log("✓ Sugestões de features salvas");
     }
 
@@ -787,7 +832,8 @@ serve(async (req) => {
         repo, 
         projectName, 
         typesArray,
-        useCache === true
+        useCache === true,
+        userId
       )
     );
 
