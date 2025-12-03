@@ -128,6 +128,7 @@ export type Database = {
           analysis_status: string | null
           created_at: string
           error_message: string | null
+          github_data: Json | null
           github_url: string
           id: string
           name: string
@@ -137,6 +138,7 @@ export type Database = {
           analysis_status?: string | null
           created_at?: string
           error_message?: string | null
+          github_data?: Json | null
           github_url: string
           id?: string
           name: string
@@ -146,6 +148,7 @@ export type Database = {
           analysis_status?: string | null
           created_at?: string
           error_message?: string | null
+          github_data?: Json | null
           github_url?: string
           id?: string
           name?: string
