@@ -69,6 +69,7 @@ const Analyzing = () => {
   const existingProjectId = searchParams.get("projectId");
   const analysisTypesParam = searchParams.get("analysisTypes");
   const useCacheParam = searchParams.get("useCache") === "true";
+  const depthParam = searchParams.get("depth") || "complete";
   
   // Parse selected analysis types
   const selectedAnalysisTypes = useMemo(() => {
@@ -260,7 +261,8 @@ const Analyzing = () => {
             githubUrl, 
             userId: user.id,
             analysisTypes: selectedAnalysisTypes,
-            useCache: useCacheParam
+            useCache: useCacheParam,
+            depth: depthParam
           }
         });
 
