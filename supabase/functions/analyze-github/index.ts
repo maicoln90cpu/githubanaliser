@@ -127,9 +127,15 @@ async function updateProjectStatus(supabase: any, projectId: string, status: str
 interface AIResponse {
   content: string;
   tokensUsed: number;
+  model: string;
 }
 
+const AI_MODEL = "google/gemini-2.5-flash";
+
 async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string): Promise<AIResponse> {
+  console.log(`🤖 Chamando Lovable AI (${AI_MODEL})...`);
+  const startTime = Date.now();
+  
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -137,7 +143,7 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: AI_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -145,18 +151,29 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
     }),
   });
 
+  const elapsed = Date.now() - startTime;
+
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`❌ Erro na API Lovable: ${response.status} - ${errorText}`);
     throw new Error(`Erro na API Lovable: ${response.status}`);
   }
 
   const data = await response.json();
-  const tokensUsed = data.usage?.total_tokens || 
-    (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0) ||
+  
+  // Log detalhado do uso de tokens
+  const promptTokens = data.usage?.prompt_tokens || 0;
+  const completionTokens = data.usage?.completion_tokens || 0;
+  const totalTokens = data.usage?.total_tokens || promptTokens + completionTokens ||
     Math.ceil((systemPrompt.length + userPrompt.length + (data.choices[0].message.content?.length || 0)) / 4);
+  
+  console.log(`✅ Resposta recebida em ${elapsed}ms`);
+  console.log(`📊 Tokens: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
   
   return {
     content: data.choices[0].message.content,
-    tokensUsed
+    tokensUsed: totalTokens,
+    model: AI_MODEL
   };
 }
 
@@ -341,28 +358,43 @@ ${githubData.configContent}
 `;
 }
 
-const COST_PER_TOKEN = 0.0000001; // Custo estimado por token
+// Custo por token baseado em Lovable AI gateway (gemini-2.5-flash)
+// Input: ~$0.15/1M tokens, Output: ~$0.60/1M tokens
+// Média estimada: ~$0.000001 por token (considerando proporção input/output)
+const COST_PER_TOKEN = 0.000001;
 
 async function trackAnalysisUsage(
   supabase: any,
   userId: string,
   projectId: string,
   analysisType: string,
-  tokensUsed: number
+  tokensUsed: number,
+  modelUsed: string = AI_MODEL
 ) {
   const costEstimated = tokensUsed * COST_PER_TOKEN;
   
+  console.log(`📊 Registrando uso: ${analysisType}`);
+  console.log(`   - Tokens: ${tokensUsed}`);
+  console.log(`   - Custo estimado: $${costEstimated.toFixed(6)}`);
+  console.log(`   - Modelo: ${modelUsed}`);
+  
   try {
-    await supabase.from("analysis_usage").insert({
+    const { error } = await supabase.from("analysis_usage").insert({
       user_id: userId,
       project_id: projectId,
       analysis_type: analysisType,
       tokens_estimated: tokensUsed,
       cost_estimated: costEstimated,
+      model_used: modelUsed,
     });
-    console.log(`📊 Uso registrado: ${analysisType} - ${tokensUsed} tokens (~$${costEstimated.toFixed(6)})`);
+    
+    if (error) {
+      console.error("❌ Erro ao registrar uso:", error);
+    } else {
+      console.log(`✅ Uso registrado com sucesso`);
+    }
   } catch (error) {
-    console.error("Erro ao registrar uso:", error);
+    console.error("❌ Exceção ao registrar uso:", error);
   }
 }
 
@@ -482,7 +514,7 @@ Estruture o documento com estas seções:
         type: "prd",
         content: prdResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model);
       console.log("✓ PRD salvo");
     }
 
@@ -516,7 +548,7 @@ Estruture o documento com estas seções:
         type: "divulgacao",
         content: divulgacaoResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model);
       console.log("✓ Plano de divulgação salvo");
     }
 
@@ -550,7 +582,7 @@ Estruture o documento com estas seções:
         type: "captacao",
         content: captacaoResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model);
       console.log("✓ Plano de captação salvo");
     }
 
@@ -584,7 +616,7 @@ Estruture o documento com estas seções:
         type: "seguranca",
         content: segurancaResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model);
       console.log("✓ Análise de segurança salva");
     }
 
@@ -618,7 +650,7 @@ Estruture o documento com estas seções:
         type: "ui_theme",
         content: uiResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model);
       console.log("✓ Melhorias de UI salvas");
     }
 
@@ -652,7 +684,7 @@ Estruture o documento com estas seções:
         type: "ferramentas",
         content: ferramentasResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model);
       console.log("✓ Melhorias de ferramentas salvas");
     }
 
@@ -686,7 +718,7 @@ Estruture o documento com estas seções:
         type: "features",
         content: featuresResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed);
+      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model);
       console.log("✓ Sugestões de features salvas");
     }
 

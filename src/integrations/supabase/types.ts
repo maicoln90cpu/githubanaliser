@@ -52,6 +52,7 @@ export type Database = {
           cost_estimated: number | null
           created_at: string | null
           id: string
+          model_used: string | null
           project_id: string | null
           tokens_estimated: number | null
           user_id: string
@@ -61,6 +62,7 @@ export type Database = {
           cost_estimated?: number | null
           created_at?: string | null
           id?: string
+          model_used?: string | null
           project_id?: string | null
           tokens_estimated?: number | null
           user_id: string
@@ -70,6 +72,7 @@ export type Database = {
           cost_estimated?: number | null
           created_at?: string | null
           id?: string
+          model_used?: string | null
           project_id?: string | null
           tokens_estimated?: number | null
           user_id?: string
