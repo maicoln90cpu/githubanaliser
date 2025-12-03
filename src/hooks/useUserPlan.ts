@@ -12,6 +12,7 @@ interface UserPlan {
   dailyUsage: number;
   canAnalyze: boolean;
   limitMessage: string | null;
+  isAdmin: boolean;
 }
 
 export const useUserPlan = () => {
@@ -28,6 +29,40 @@ export const useUserPlan = () => {
       }
 
       try {
+        // Check if user is admin
+        const { data: adminRole } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .maybeSingle();
+
+        const isAdmin = !!adminRole;
+
+        // Admin has unlimited access
+        if (isAdmin) {
+          // Get usage for display only
+          const { data: monthlyData } = await supabase
+            .rpc('get_user_monthly_usage', { p_user_id: user.id });
+          const { data: dailyData } = await supabase
+            .rpc('get_user_daily_usage', { p_user_id: user.id });
+
+          setPlan({
+            planId: null,
+            planName: 'Admin',
+            planSlug: 'admin',
+            monthlyLimit: 999999,
+            dailyLimit: 999999,
+            monthlyUsage: monthlyData || 0,
+            dailyUsage: dailyData || 0,
+            canAnalyze: true,
+            limitMessage: null,
+            isAdmin: true,
+          });
+          setIsLoading(false);
+          return;
+        }
+
         // Get user's plan
         const { data: planData } = await supabase
           .rpc('get_user_plan', { p_user_id: user.id });
@@ -69,6 +104,7 @@ export const useUserPlan = () => {
           dailyUsage,
           canAnalyze,
           limitMessage,
+          isAdmin: false,
         });
       } catch (error) {
         console.error("Erro ao carregar plano:", error);
@@ -83,6 +119,7 @@ export const useUserPlan = () => {
           dailyUsage: 0,
           canAnalyze: true,
           limitMessage: null,
+          isAdmin: false,
         });
       } finally {
         setIsLoading(false);
@@ -95,7 +132,6 @@ export const useUserPlan = () => {
   const refreshPlan = async () => {
     setIsLoading(true);
     if (user) {
-      // Re-trigger the effect
       const { data: monthlyData } = await supabase
         .rpc('get_user_monthly_usage', { p_user_id: user.id });
       const { data: dailyData } = await supabase
@@ -105,24 +141,33 @@ export const useUserPlan = () => {
         const monthlyUsage = monthlyData || 0;
         const dailyUsage = dailyData || 0;
         
-        let canAnalyze = true;
-        let limitMessage: string | null = null;
+        // Admin always can analyze
+        if (plan.isAdmin) {
+          setPlan(prev => prev ? {
+            ...prev,
+            monthlyUsage,
+            dailyUsage,
+          } : null);
+        } else {
+          let canAnalyze = true;
+          let limitMessage: string | null = null;
 
-        if (dailyUsage >= plan.dailyLimit) {
-          canAnalyze = false;
-          limitMessage = `Você atingiu o limite diário de ${plan.dailyLimit} ${plan.dailyLimit === 1 ? 'projeto' : 'projetos'}.`;
-        } else if (monthlyUsage >= plan.monthlyLimit) {
-          canAnalyze = false;
-          limitMessage = `Você atingiu o limite mensal de ${plan.monthlyLimit} projetos.`;
+          if (dailyUsage >= plan.dailyLimit) {
+            canAnalyze = false;
+            limitMessage = `Você atingiu o limite diário de ${plan.dailyLimit} ${plan.dailyLimit === 1 ? 'projeto' : 'projetos'}.`;
+          } else if (monthlyUsage >= plan.monthlyLimit) {
+            canAnalyze = false;
+            limitMessage = `Você atingiu o limite mensal de ${plan.monthlyLimit} projetos.`;
+          }
+
+          setPlan(prev => prev ? {
+            ...prev,
+            monthlyUsage,
+            dailyUsage,
+            canAnalyze,
+            limitMessage,
+          } : null);
         }
-
-        setPlan(prev => prev ? {
-          ...prev,
-          monthlyUsage,
-          dailyUsage,
-          canAnalyze,
-          limitMessage,
-        } : null);
       }
     }
     setIsLoading(false);
