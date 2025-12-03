@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, Zap, Scale, Rocket } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { 
+  Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, 
+  Zap, Scale, Rocket, Check, ChevronDown, ArrowRight, FileText, Target, 
+  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star
+} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
@@ -15,6 +20,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 type AnalysisDepth = 'critical' | 'balanced' | 'complete';
 
@@ -63,17 +74,120 @@ interface AnalysisOption {
   label: string;
   description: string;
   icon: string;
+  iconComponent: React.ReactNode;
+  fullDescription: string;
 }
 
 const analysisOptions: AnalysisOption[] = [
-  { id: "prd", label: "Análise PRD", description: "Documento técnico completo", icon: "📋" },
-  { id: "divulgacao", label: "Plano de Divulgação", description: "Estratégia de marketing", icon: "📢" },
-  { id: "captacao", label: "Plano de Captação", description: "Estratégia de investimentos", icon: "💰" },
-  { id: "seguranca", label: "Segurança", description: "Análise de vulnerabilidades", icon: "🛡️" },
-  { id: "ui_theme", label: "UI/Theme", description: "Melhorias visuais", icon: "🎨" },
-  { id: "ferramentas", label: "Ferramentas", description: "Otimizações de código", icon: "🔧" },
-  { id: "features", label: "Novas Features", description: "Sugestões de funcionalidades", icon: "✨" },
-  { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖" },
+  { id: "prd", label: "Análise PRD", description: "Documento técnico completo", icon: "📋", iconComponent: <FileText className="w-6 h-6" />, fullDescription: "Gera um Product Requirements Document completo com objetivos, público-alvo, arquitetura técnica e análise de riscos." },
+  { id: "divulgacao", label: "Plano de Divulgação", description: "Estratégia de marketing", icon: "📢", iconComponent: <Target className="w-6 h-6" />, fullDescription: "Estratégia completa de marketing digital, canais de aquisição, calendário editorial e métricas de sucesso." },
+  { id: "captacao", label: "Plano de Captação", description: "Estratégia de investimentos", icon: "💰", iconComponent: <TrendingUp className="w-6 h-6" />, fullDescription: "Análise de mercado, proposta de valor para investidores, projeções financeiras e roadmap de crescimento." },
+  { id: "seguranca", label: "Segurança", description: "Análise de vulnerabilidades", icon: "🛡️", iconComponent: <Shield className="w-6 h-6" />, fullDescription: "Identificação de vulnerabilidades, boas práticas de segurança, compliance e recomendações de proteção." },
+  { id: "ui_theme", label: "UI/Theme", description: "Melhorias visuais", icon: "🎨", iconComponent: <Palette className="w-6 h-6" />, fullDescription: "Sugestões de design, paleta de cores, tipografia, componentes UI e melhorias de experiência do usuário." },
+  { id: "ferramentas", label: "Ferramentas", description: "Otimizações de código", icon: "🔧", iconComponent: <Wrench className="w-6 h-6" />, fullDescription: "Análise de dependências, otimizações de performance, refatorações sugeridas e melhores práticas de código." },
+  { id: "features", label: "Novas Features", description: "Sugestões de funcionalidades", icon: "✨", iconComponent: <Lightbulb className="w-6 h-6" />, fullDescription: "Novas funcionalidades baseadas em tendências de mercado, análise de concorrentes e feedback de usuários." },
+  { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖", iconComponent: <BookOpen className="w-6 h-6" />, fullDescription: "README profissional, guia de instalação, referência de API, guia de contribuição e changelog." },
+];
+
+const plans = [
+  {
+    name: "Free",
+    price: "R$ 0",
+    period: "/mês",
+    description: "Ideal para experimentar",
+    features: [
+      "3 análises por mês",
+      "1 análise por dia",
+      "PRD, Divulgação e Captação",
+      "Suporte por email"
+    ],
+    limitations: ["Sem análises avançadas", "Sem exportação PDF"],
+    cta: "Começar Grátis",
+    popular: false
+  },
+  {
+    name: "Basic",
+    price: "R$ 29",
+    period: "/mês",
+    description: "Para desenvolvedores",
+    features: [
+      "20 análises por mês",
+      "5 análises por dia",
+      "Todos os 8 tipos de análise",
+      "Exportação PDF",
+      "Suporte prioritário"
+    ],
+    limitations: [],
+    cta: "Assinar Basic",
+    popular: true
+  },
+  {
+    name: "Pro",
+    price: "R$ 79",
+    period: "/mês",
+    description: "Para times e empresas",
+    features: [
+      "Análises ilimitadas/mês",
+      "15 análises por dia",
+      "Todos os 8 tipos de análise",
+      "Exportação PDF",
+      "Re-análise com cache",
+      "Suporte 24/7"
+    ],
+    limitations: [],
+    cta: "Assinar Pro",
+    popular: false
+  }
+];
+
+const faqs = [
+  {
+    question: "Como funciona a análise de projetos?",
+    answer: "Nossa IA extrai informações do seu repositório GitHub (README, estrutura de arquivos, código-fonte) e gera análises detalhadas em português. O processo leva de 2 a 5 minutos dependendo do tamanho do projeto."
+  },
+  {
+    question: "Meu repositório precisa ser público?",
+    answer: "Sim, atualmente analisamos apenas repositórios públicos do GitHub. Se seu projeto é privado, você pode torná-lo público temporariamente para a análise e depois privatizá-lo novamente."
+  },
+  {
+    question: "Quais tipos de análise estão disponíveis?",
+    answer: "Oferecemos 8 tipos: PRD técnico, Plano de Divulgação, Plano de Captação, Análise de Segurança, Melhorias de UI/Theme, Otimizações de Ferramentas, Sugestões de Features e Documentação Técnica."
+  },
+  {
+    question: "Posso exportar as análises?",
+    answer: "Sim! Usuários dos planos Basic e Pro podem exportar todas as análises em formato PDF com formatação profissional."
+  },
+  {
+    question: "As análises são salvas?",
+    answer: "Sim, todas as análises ficam salvas no seu dashboard e você pode acessá-las a qualquer momento. Também oferecemos checklists interativos para acompanhar a implementação das sugestões."
+  },
+  {
+    question: "Posso re-analisar um projeto?",
+    answer: "Sim! Usuários Pro podem re-analisar projetos usando dados em cache (mais rápido) ou fazendo uma nova extração do GitHub para capturar mudanças recentes."
+  }
+];
+
+const howItWorks = [
+  {
+    step: 1,
+    title: "Cole a URL",
+    description: "Insira a URL do seu repositório GitHub público"
+  },
+  {
+    step: 2,
+    title: "Escolha as Análises",
+    description: "Selecione quais tipos de análise você deseja gerar"
+  },
+  {
+    step: 3,
+    title: "IA em Ação",
+    description: "Nossa IA analisa o código e gera relatórios detalhados"
+  },
+  {
+    step: 4,
+    title: "Receba os Insights",
+    description: "Acesse análises completas com checklists acionáveis"
+  }
 ];
 
 const Home = () => {
@@ -103,19 +217,16 @@ const Home = () => {
       return;
     }
 
-    // Mostrar opções de análise
     setShowAnalysisOptions(true);
   };
 
   const handleAnalyze = async () => {
-    // Verificar se usuário está logado
     if (!user) {
       toast.error("Você precisa estar logado para analisar projetos");
       navigate("/auth");
       return;
     }
 
-    // Verificar limites do plano
     if (plan && !plan.canAnalyze) {
       setShowUpgradeModal(true);
       return;
@@ -126,7 +237,6 @@ const Home = () => {
       return;
     }
 
-    // Verificar se plano Free está tentando usar análises avançadas (admin tem acesso total)
     if (plan?.planSlug === 'free' && !plan?.isAdmin) {
       const basicAnalyses = ['prd', 'divulgacao', 'captacao'];
       const advancedSelected = selectedAnalyses.filter(a => !basicAnalyses.includes(a));
@@ -140,7 +250,6 @@ const Home = () => {
     setIsValidating(true);
     
     try {
-      // Redirecionar para tela de análise com as opções selecionadas
       const analysisTypes = selectedAnalyses.join(",");
       navigate(`/analisando?url=${encodeURIComponent(githubUrl)}&analysisTypes=${analysisTypes}&depth=${selectedDepth}`);
     } catch (error) {
@@ -166,6 +275,10 @@ const Home = () => {
   const selectAll = () => setSelectedAnalyses(analysisOptions.map(a => a.id));
   const selectNone = () => setSelectedAnalyses([]);
 
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -175,6 +288,20 @@ const Home = () => {
             <Github className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-xl">GitAnalyzer</span>
           </div>
+          <nav className="hidden md:flex items-center gap-6">
+            <button onClick={() => scrollToSection('features')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Features
+            </button>
+            <button onClick={() => scrollToSection('how-it-works')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Como Funciona
+            </button>
+            <button onClick={() => scrollToSection('pricing')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Preços
+            </button>
+            <button onClick={() => scrollToSection('faq')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              FAQ
+            </button>
+          </nav>
           {!isLoading && (
             user ? (
               <Button 
@@ -200,24 +327,24 @@ const Home = () => {
       </header>
 
       {/* Hero Section */}
-      <main className="container mx-auto px-4 py-20">
-        <div className="max-w-3xl mx-auto text-center space-y-8 animate-fade-in">
-          {/* Title */}
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-light rounded-full text-primary font-medium text-sm">
-              <Sparkles className="w-4 h-4" />
-              Análise Inteligente com IA
-            </div>
-            <h1 className="text-5xl md:text-6xl font-bold tracking-tight">
-              Analise qualquer projeto{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                GitHub
-              </span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Nossa IA gera análises completas: PRD técnico, plano de captação e sugestões de melhorias.
-            </p>
+      <section className="container mx-auto px-4 py-20 md:py-32">
+        <div className="max-w-4xl mx-auto text-center space-y-8 animate-fade-in">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-primary font-medium text-sm">
+            <Sparkles className="w-4 h-4" />
+            Análise Inteligente com IA
           </div>
+          
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-tight">
+            Transforme seu projeto{" "}
+            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              GitHub
+            </span>{" "}
+            em insights acionáveis
+          </h1>
+          
+          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+            Nossa IA analisa seu repositório e gera 8 tipos de relatórios: PRD técnico, planos de marketing, análise de segurança, sugestões de features e muito mais.
+          </p>
 
           {/* Input Section */}
           <div className="max-w-2xl mx-auto space-y-4 animate-slide-up" style={{ animationDelay: "0.1s" }}>
@@ -236,7 +363,6 @@ const Home = () => {
               />
               <Github className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               
-              {/* Botão de ajuda */}
               <Dialog>
                 <DialogTrigger asChild>
                   <button 
@@ -255,40 +381,37 @@ const Home = () => {
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-3">
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">1</div>
-                        <p className="text-sm">Acesse seu repositório no GitHub</p>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">2</div>
-                        <p className="text-sm">Clique em <strong>Settings</strong> (Configurações) no menu do repositório</p>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">3</div>
-                        <p className="text-sm">Role até a seção <strong>"Danger Zone"</strong> no final da página</p>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">4</div>
-                        <p className="text-sm">Clique em <strong>"Change repository visibility"</strong></p>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">5</div>
-                        <p className="text-sm">Selecione <strong>"Make public"</strong> e confirme a ação</p>
-                      </div>
-                    </div>
-                    <div className="bg-muted/50 p-3 rounded-lg">
-                      <p className="text-xs text-muted-foreground">
-                        <strong>Dica:</strong> Após a análise, você pode tornar o repositório privado novamente se desejar.
-                      </p>
+                      {[
+                        "Acesse seu repositório no GitHub",
+                        "Clique em Settings (Configurações)",
+                        "Role até a seção \"Danger Zone\"",
+                        "Clique em \"Change repository visibility\"",
+                        "Selecione \"Make public\" e confirme"
+                      ].map((step, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">{i + 1}</div>
+                          <p className="text-sm">{step}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </DialogContent>
               </Dialog>
             </div>
 
-            {/* Analysis Options */}
-            {showAnalysisOptions && (
-              <div className="bg-card border border-border rounded-xl p-6 space-y-5 animate-fade-in">
+            {!showAnalysisOptions ? (
+              <Button 
+                variant="hero" 
+                size="lg" 
+                className="w-full md:w-auto px-12"
+                onClick={handleUrlSubmit}
+              >
+                Analisar Projeto
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            ) : (
+              /* Analysis Options Panel */
+              <div className="bg-card border border-border rounded-xl p-6 space-y-5 animate-fade-in text-left">
                 {/* Depth Selector */}
                 <div className="space-y-3">
                   <h3 className="font-semibold flex items-center gap-2">
@@ -343,7 +466,6 @@ const Home = () => {
                   </div>
                 </div>
 
-                {/* Plan usage info */}
                 {user && plan && (
                   <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm">
                     <span className="text-muted-foreground">
@@ -361,7 +483,6 @@ const Home = () => {
                   </div>
                 )}
 
-                {/* Limit warning */}
                 {plan && !plan.canAnalyze && (
                   <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -405,126 +526,287 @@ const Home = () => {
                   })}
                 </div>
 
-                <Button
-                  variant="hero"
-                  size="lg"
+                <Button 
+                  variant="hero" 
+                  size="lg" 
+                  className="w-full"
                   onClick={handleAnalyze}
-                  disabled={isValidating || selectedAnalyses.length === 0 || (plan && !plan.canAnalyze)}
-                  className="w-full h-14 text-base"
+                  disabled={isValidating || selectedAnalyses.length === 0}
                 >
-                  {isValidating ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-background border-t-transparent rounded-full animate-spin" />
-                      Iniciando...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      Analisar {selectedAnalyses.length} {selectedAnalyses.length === 1 ? "item" : "itens"}
-                    </>
-                  )}
+                  {isValidating ? "Iniciando..." : `Analisar (${selectedAnalyses.length} análises)`}
+                  <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </div>
             )}
-            
-            {!showAnalysisOptions && (
-              <Button
-                variant="hero"
-                size="lg"
-                onClick={handleUrlSubmit}
-                disabled={isValidating}
-                className="w-full h-14 text-base"
-              >
-                <Sparkles className="w-5 h-5" />
-                Continuar
-              </Button>
-            )}
           </div>
 
-          {/* Features */}
-          <div className="grid md:grid-cols-3 gap-6 pt-12 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-            <div className="p-6 bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-primary-light rounded-lg flex items-center justify-center mb-4">
-                <span className="text-2xl">📋</span>
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Análise PRD</h3>
-              <p className="text-sm text-muted-foreground">
-                Documento técnico completo com arquitetura, objetivos e riscos do projeto
-              </p>
+          {/* Trust badges */}
+          <div className="flex flex-wrap items-center justify-center gap-8 pt-8 text-muted-foreground text-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              <span>Dados seguros</span>
             </div>
-
-            <div className="p-6 bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-accent-light rounded-lg flex items-center justify-center mb-4">
-                <span className="text-2xl">💰</span>
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Plano de Captação</h3>
-              <p className="text-sm text-muted-foreground">
-                Estratégias de marketing e copy para divulgar seu produto
-              </p>
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
+              <span>Análise em minutos</span>
             </div>
-
-            <div className="p-6 bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-primary-light rounded-lg flex items-center justify-center mb-4">
-                <span className="text-2xl">✨</span>
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Melhorias & Features</h3>
-              <p className="text-sm text-muted-foreground">
-                Sugestões técnicas e roadmap para evolução do projeto
-              </p>
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4" />
+              <span>8 tipos de relatórios</span>
             </div>
           </div>
         </div>
-      </main>
+      </section>
+
+      {/* Features Grid */}
+      <section id="features" className="py-20 bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">8 Análises Completas</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Nossa IA gera relatórios detalhados em português, cobrindo todos os aspectos do seu projeto.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {analysisOptions.map((option, index) => (
+              <Card 
+                key={option.id} 
+                className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-border/50"
+                style={{ animationDelay: `${index * 0.1}s` }}
+              >
+                <CardHeader>
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    {option.iconComponent}
+                  </div>
+                  <CardTitle className="text-lg">{option.label}</CardTitle>
+                  <CardDescription>{option.fullDescription}</CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section id="how-it-works" className="py-20">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Como Funciona</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Em apenas 4 passos, transforme seu código em insights valiosos.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-5xl mx-auto">
+            {howItWorks.map((item, index) => (
+              <div key={item.step} className="text-center relative">
+                <div className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-2xl font-bold mx-auto mb-4">
+                  {item.step}
+                </div>
+                <h3 className="font-semibold text-lg mb-2">{item.title}</h3>
+                <p className="text-muted-foreground text-sm">{item.description}</p>
+                {index < howItWorks.length - 1 && (
+                  <div className="hidden lg:block absolute top-8 left-[60%] w-[80%] h-0.5 bg-border" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="py-20 bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Planos e Preços</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Escolha o plano ideal para suas necessidades. Cancele quando quiser.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {plans.map((plan) => (
+              <Card 
+                key={plan.name} 
+                className={`relative ${plan.popular ? 'border-primary shadow-lg scale-105' : 'border-border/50'}`}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-full">
+                    Mais Popular
+                  </div>
+                )}
+                <CardHeader className="text-center pb-2">
+                  <CardTitle className="text-xl">{plan.name}</CardTitle>
+                  <CardDescription>{plan.description}</CardDescription>
+                  <div className="pt-4">
+                    <span className="text-4xl font-bold">{plan.price}</span>
+                    <span className="text-muted-foreground">{plan.period}</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <ul className="space-y-3">
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="flex items-center gap-2 text-sm">
+                        <Check className="w-4 h-4 text-accent shrink-0" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                    {plan.limitations.map((limitation) => (
+                      <li key={limitation} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="w-4 h-4 flex items-center justify-center shrink-0">—</span>
+                        <span>{limitation}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button 
+                    variant={plan.popular ? "default" : "outline"} 
+                    className="w-full"
+                    onClick={() => navigate("/auth")}
+                  >
+                    {plan.cta}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="py-20">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Perguntas Frequentes</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Tire suas dúvidas sobre o GitAnalyzer.
+            </p>
+          </div>
+          
+          <div className="max-w-3xl mx-auto">
+            <Accordion type="single" collapsible className="space-y-4">
+              {faqs.map((faq, index) => (
+                <AccordionItem 
+                  key={index} 
+                  value={`item-${index}`}
+                  className="bg-card border border-border rounded-lg px-6"
+                >
+                  <AccordionTrigger className="text-left hover:no-underline">
+                    {faq.question}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-muted-foreground">
+                    {faq.answer}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-20 bg-primary text-primary-foreground">
+        <div className="container mx-auto px-4 text-center">
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+            Pronto para analisar seu projeto?
+          </h2>
+          <p className="text-primary-foreground/80 text-lg max-w-2xl mx-auto mb-8">
+            Comece gratuitamente e descubra insights valiosos sobre seu código em minutos.
+          </p>
+          <Button 
+            variant="secondary" 
+            size="lg"
+            className="px-12"
+            onClick={() => scrollToSection('hero')}
+          >
+            Começar Agora
+            <ArrowRight className="w-5 h-5 ml-2" />
+          </Button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-border">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Github className="w-6 h-6" />
+                <span className="font-semibold text-lg">GitAnalyzer</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Análise inteligente de projetos GitHub com IA avançada.
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-4">Produto</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><button onClick={() => scrollToSection('features')} className="hover:text-foreground transition-colors">Features</button></li>
+                <li><button onClick={() => scrollToSection('pricing')} className="hover:text-foreground transition-colors">Preços</button></li>
+                <li><button onClick={() => scrollToSection('faq')} className="hover:text-foreground transition-colors">FAQ</button></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-4">Empresa</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><a href="#" className="hover:text-foreground transition-colors">Sobre</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors">Blog</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors">Contato</a></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-4">Legal</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><a href="#" className="hover:text-foreground transition-colors">Termos de Uso</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors">Privacidade</a></li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="border-t border-border mt-12 pt-8 text-center text-sm text-muted-foreground">
+            <p>© {new Date().getFullYear()} GitAnalyzer. Todos os direitos reservados.</p>
+          </div>
+        </div>
+      </footer>
 
       {/* Upgrade Modal */}
       <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Crown className="w-5 h-5 text-yellow-500" />
               Faça Upgrade do seu Plano
             </DialogTitle>
             <DialogDescription>
-              {plan?.limitMessage || "Você atingiu o limite do seu plano atual."}
+              {plan?.limitMessage || "Você atingiu o limite de análises do seu plano."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 border border-border rounded-lg">
-                <h4 className="font-semibold mb-2">Basic</h4>
-                <p className="text-2xl font-bold mb-2">R$29,90<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
-                <ul className="text-sm space-y-1 text-muted-foreground">
-                  <li>• 20 projetos/mês</li>
-                  <li>• 5 projetos/dia</li>
-                  <li>• 7 tipos de análise</li>
-                </ul>
-              </div>
-              <div className="p-4 border-2 border-primary rounded-lg relative">
-                <div className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-primary text-primary-foreground text-xs rounded-full">
-                  Popular
+            <div className="grid gap-3">
+              <Card className="p-4 border-primary">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-semibold">Basic</h4>
+                    <p className="text-sm text-muted-foreground">20 análises/mês • Todas análises</p>
+                  </div>
+                  <span className="font-bold">R$ 29/mês</span>
                 </div>
-                <h4 className="font-semibold mb-2">Pro</h4>
-                <p className="text-2xl font-bold mb-2">R$79,90<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
-                <ul className="text-sm space-y-1 text-muted-foreground">
-                  <li>• 100 projetos/mês</li>
-                  <li>• 15 projetos/dia</li>
-                  <li>• Re-análise individual</li>
-                </ul>
-              </div>
+              </Card>
+              <Card className="p-4 border-accent">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-semibold">Pro</h4>
+                    <p className="text-sm text-muted-foreground">Ilimitado • Re-análise com cache</p>
+                  </div>
+                  <span className="font-bold">R$ 79/mês</span>
+                </div>
+              </Card>
             </div>
-            <p className="text-xs text-center text-muted-foreground">
-              Em breve: pagamento integrado com Stripe
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowUpgradeModal(false)}>
-              Depois
-            </Button>
-            <Button className="flex-1" onClick={() => {
-              toast.info("Sistema de pagamento em desenvolvimento");
-              setShowUpgradeModal(false);
-            }}>
-              Escolher Plano
+            <Button className="w-full" onClick={() => scrollToSection('pricing')}>
+              Ver Planos Completos
             </Button>
           </div>
         </DialogContent>
