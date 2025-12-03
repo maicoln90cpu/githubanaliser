@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Github, Sparkles, LogOut, FolderGit2, BarChart3, Clock, FileText, DollarSign, Lightbulb, Loader2 } from "lucide-react";
+import { Github, Sparkles, LogOut, FolderGit2, BarChart3, Clock, Loader2, Grid3X3, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { User, Session } from "@supabase/supabase-js";
+import { useAdmin } from "@/hooks/useAdmin";
 
 interface Project {
   id: string;
@@ -23,6 +24,7 @@ const Dashboard = () => {
   const [githubUrl, setGithubUrl] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const navigate = useNavigate();
+  const { isAdmin } = useAdmin();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -132,6 +134,12 @@ const Dashboard = () => {
             <span className="text-sm text-muted-foreground hidden sm:block">
               {user.email}
             </span>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+                <Shield className="w-4 h-4 mr-2" />
+                Admin
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
               Sair
@@ -261,32 +269,14 @@ const Dashboard = () => {
                     </div>
                     
                     {project.analysis_status === "completed" && (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/analise-prd/${project.id}`)}
-                        >
-                          <FileText className="w-4 h-4 mr-1" />
-                          PRD
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/plano-captacao/${project.id}`)}
-                        >
-                          <DollarSign className="w-4 h-4 mr-1" />
-                          Captação
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/melhorias-features/${project.id}`)}
-                        >
-                          <Lightbulb className="w-4 h-4 mr-1" />
-                          Melhorias
-                        </Button>
-                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(`/projeto/${project.id}`)}
+                      >
+                        <Grid3X3 className="w-4 h-4 mr-1" />
+                        Ver Análises
+                      </Button>
                     )}
                     
                     {project.analysis_status && !["completed", "error", "pending"].includes(project.analysis_status) && (
