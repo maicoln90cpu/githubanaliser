@@ -24,6 +24,7 @@ type AnalysisStatus =
   | "generating_ui"
   | "generating_ferramentas"
   | "generating_features"
+  | "generating_documentacao"
   | "completed" 
   | "error";
 
@@ -35,6 +36,7 @@ const analysisTypeToStatus: Record<string, AnalysisStatus> = {
   ui_theme: "generating_ui",
   ferramentas: "generating_ferramentas",
   features: "generating_features",
+  documentacao: "generating_documentacao",
 };
 
 const allSteps: Step[] = [
@@ -47,6 +49,7 @@ const allSteps: Step[] = [
   { id: "ui", label: "Sugerindo melhorias visuais", status: "pending", analysisType: "ui_theme" },
   { id: "ferramentas", label: "Analisando ferramentas", status: "pending", analysisType: "ferramentas" },
   { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
+  { id: "documentacao", label: "Gerando documentação técnica", status: "pending", analysisType: "documentacao" },
   { id: "complete", label: "Finalizando análise", status: "pending" },
 ];
 
@@ -73,7 +76,7 @@ const Analyzing = () => {
       return analysisTypesParam.split(",");
     }
     // Default: all types
-    return ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features"];
+    return ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features", "documentacao"];
   }, [analysisTypesParam]);
 
   // Build dynamic steps based on selected analyses
@@ -113,6 +116,7 @@ const Analyzing = () => {
       generating_ui: -1,
       generating_ferramentas: -1,
       generating_features: -1,
+      generating_documentacao: -1,
       completed: steps.length - 1,
       error: -1,
     };

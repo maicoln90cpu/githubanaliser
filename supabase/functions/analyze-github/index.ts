@@ -478,7 +478,7 @@ async function processAnalysisInBackground(
   // Default to all types if not specified
   const typesToGenerate = analysisTypes.length > 0 
     ? analysisTypes 
-    : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features"];
+    : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features", "documentacao"];
 
   console.log("Tipos de análise selecionados:", typesToGenerate);
   console.log("Usar cache:", useCache);
@@ -796,6 +796,70 @@ Estruture o documento com estas seções:
       }, { onConflict: 'project_id,type' });
       await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model);
       console.log("✓ Sugestões de features salvas");
+    }
+
+    // === GERAR DOCUMENTAÇÃO TÉCNICA ===
+    if (typesToGenerate.includes("documentacao")) {
+      await updateProjectStatus(supabase, projectId, "generating_documentacao");
+      console.log("Gerando documentação técnica...");
+
+      const documentacaoResult = await callLovableAI(
+        lovableApiKey,
+        "Você é um technical writer sênior especializado em documentação de software open source e profissional.",
+        `Analise o projeto e gere uma documentação técnica completa e profissional em português.
+
+${projectContext}
+
+${markdownFormatInstructions}
+
+Estruture o documento com estas seções:
+
+## 📖 README.md Profissional
+Gere um README completo com:
+- Badge de status, versão, licença
+- Descrição clara do projeto
+- Screenshots/GIFs sugeridos
+- Pré-requisitos e dependências
+
+## 🚀 Guia de Instalação
+- Passos detalhados de instalação
+- Configuração de variáveis de ambiente
+- Compatibilidade entre ambientes (dev, staging, prod)
+- Docker/containerização se aplicável
+
+## 📚 API Reference
+Se houver edge functions ou APIs:
+- Lista de endpoints com método HTTP
+- Parâmetros obrigatórios e opcionais
+- Exemplos de request/response em tabela
+- Códigos de erro e tratamento
+
+## 🤝 Guia de Contribuição
+- Padrão de branches (main, develop, feature/*)
+- Commits semânticos (feat:, fix:, docs:, etc)
+- Pull Request template sugerido
+- Code review checklist
+
+## 📋 Changelog Sugerido
+- Formato Keep a Changelog
+- Versão atual e histórico
+- Categorias: Added, Changed, Deprecated, Removed, Fixed, Security
+- Exemplo de entradas
+
+## 🔧 Scripts e Comandos
+- Tabela com todos scripts do package.json
+- Descrição do que cada comando faz
+- Ordem recomendada de execução`,
+        settings.model
+      );
+      
+      await supabase.from("analyses").upsert({
+        project_id: projectId,
+        type: "documentacao",
+        content: documentacaoResult.content,
+      }, { onConflict: 'project_id,type' });
+      await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model);
+      console.log("✓ Documentação técnica salva");
     }
 
     // === CONCLUÍDO ===
