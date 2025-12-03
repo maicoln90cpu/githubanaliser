@@ -130,10 +130,69 @@ interface AIResponse {
   model: string;
 }
 
-const AI_MODEL = "google/gemini-2.5-flash";
+// Models by mode
+const MODELS = {
+  detailed: "google/gemini-2.5-flash",
+  economic: "google/gemini-2.5-flash-lite"
+};
 
-async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string): Promise<AIResponse> {
-  console.log(`🤖 Chamando Lovable AI (${AI_MODEL})...`);
+// Default settings
+const DEFAULT_SETTINGS = {
+  analysis_mode: 'detailed',
+  economic_max_context: 15000,
+  detailed_max_context: 40000
+};
+
+interface SystemSettings {
+  analysisMode: 'economic' | 'detailed';
+  maxContext: number;
+  model: string;
+}
+
+async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
+  try {
+    const { data, error } = await supabase
+      .from("system_settings")
+      .select("key, value");
+    
+    if (error) {
+      console.log("⚠️ Erro ao carregar configurações, usando padrão:", error.message);
+      return {
+        analysisMode: 'detailed',
+        maxContext: DEFAULT_SETTINGS.detailed_max_context,
+        model: MODELS.detailed
+      };
+    }
+    
+    const settings: Record<string, string> = {};
+    data?.forEach((s: { key: string; value: string }) => {
+      settings[s.key] = s.value;
+    });
+    
+    const mode = (settings.analysis_mode || 'detailed') as 'economic' | 'detailed';
+    const maxContext = mode === 'economic' 
+      ? parseInt(settings.economic_max_context || String(DEFAULT_SETTINGS.economic_max_context))
+      : parseInt(settings.detailed_max_context || String(DEFAULT_SETTINGS.detailed_max_context));
+    
+    console.log(`⚙️ Configurações carregadas: modo=${mode}, contexto=${maxContext}`);
+    
+    return {
+      analysisMode: mode,
+      maxContext,
+      model: MODELS[mode]
+    };
+  } catch (e) {
+    console.log("⚠️ Exceção ao carregar configurações:", e);
+    return {
+      analysisMode: 'detailed',
+      maxContext: DEFAULT_SETTINGS.detailed_max_context,
+      model: MODELS.detailed
+    };
+  }
+}
+
+async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string, model: string): Promise<AIResponse> {
+  console.log(`🤖 Chamando Lovable AI (${model})...`);
   const startTime = Date.now();
   
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -143,7 +202,7 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -173,7 +232,7 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
   return {
     content: data.choices[0].message.content,
     tokensUsed: totalTokens,
-    model: AI_MODEL
+    model: model
   };
 }
 
@@ -369,7 +428,7 @@ async function trackAnalysisUsage(
   projectId: string,
   analysisType: string,
   tokensUsed: number,
-  modelUsed: string = AI_MODEL
+  modelUsed: string = MODELS.detailed
 ) {
   const costEstimated = tokensUsed * COST_PER_TOKEN;
   
@@ -411,6 +470,10 @@ async function processAnalysisInBackground(
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Load system settings (mode: economic or detailed)
+  const settings = await loadSystemSettings(supabase);
+  console.log(`🎛️ Modo de análise: ${settings.analysisMode} (modelo: ${settings.model})`);
 
   // Default to all types if not specified
   const typesToGenerate = analysisTypes.length > 0 
@@ -465,6 +528,12 @@ async function processAnalysisInBackground(
       console.log("✓ Dados salvos no cache");
     }
 
+    // Apply context limit based on mode
+    if (projectContext.length > settings.maxContext) {
+      console.log(`⚠️ Contexto truncado de ${projectContext.length} para ${settings.maxContext} caracteres`);
+      projectContext = projectContext.substring(0, settings.maxContext);
+    }
+
     console.log(`Contexto preparado: ${projectContext.length} caracteres`);
 
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
@@ -506,7 +575,8 @@ Estruture o documento com estas seções:
 5. **⚙️ Funcionalidades Principais** - Tabela com prioridade e status
 6. **📦 Requisitos Técnicos** - Stack, dependências, infraestrutura
 7. **⚠️ Riscos e Mitigações** - Tabela com probabilidade e impacto
-8. **📊 Métricas de Sucesso** - KPIs em tabela`
+8. **📊 Métricas de Sucesso** - KPIs em tabela`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -540,7 +610,8 @@ Estruture o documento com estas seções:
 5. **🔍 SEO e SEM** - Keywords, estratégias orgânicas e pagas
 6. **🤝 Parcerias e Influenciadores** - Potenciais parceiros e abordagem
 7. **📅 Cronograma de Lançamento** - Timeline em tabela
-8. **📊 Métricas e KPIs** - Tabela com meta e baseline`
+8. **📊 Métricas e KPIs** - Tabela com meta e baseline`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -574,7 +645,8 @@ Estruture o documento com estas seções:
 5. **🚀 Uso dos Recursos** - Alocação do investimento em tabela
 6. **👥 Tipos de Investidores** - Perfil ideal e abordagem
 7. **📋 Documentação Necessária** - Checklist para pitch
-8. **📅 Roadmap de Captação** - Timeline e milestones`
+8. **📅 Roadmap de Captação** - Timeline e milestones`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -608,7 +680,8 @@ Estruture o documento com estas seções:
 5. **🔐 Autenticação e Autorização** - Análise e recomendações
 6. **🗄️ Segurança de Dados** - Criptografia, sanitização, LGPD
 7. **🌐 Segurança de API** - Rate limiting, CORS, validações
-8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`
+8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -642,7 +715,8 @@ Estruture o documento com estas seções:
 5. **♿ Acessibilidade** - WCAG compliance e melhorias
 6. **✨ Animações e Micro-interações** - Sugestões específicas
 7. **🌙 Tema Escuro/Claro** - Implementação ou melhorias
-8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`
+8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -676,7 +750,8 @@ Estruture o documento com estas seções:
 5. **🧪 Testes** - Cobertura atual e sugestões
 6. **📝 Documentação de Código** - Melhorias específicas
 7. **🔄 CI/CD e DevOps** - Automações sugeridas
-8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`
+8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
@@ -710,7 +785,8 @@ Estruture o documento com estas seções:
 5. **📱 Features Mobile/PWA** - Se aplicável
 6. **👥 Features Sociais/Colaborativas** - Funcionalidades de comunidade
 7. **💰 Features de Monetização** - Modelos de receita
-8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`
+8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`,
+        settings.model
       );
       
       await supabase.from("analyses").upsert({
