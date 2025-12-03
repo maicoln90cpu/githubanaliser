@@ -10,7 +10,8 @@ import {
   FolderGit2, 
   FileText, 
   BarChart3,
-  Shield
+  Shield,
+  Settings
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -248,6 +249,24 @@ const AdminDashboard = () => {
             </div>
             <Button variant="outline" className="w-full">
               Ver Planos
+            </Button>
+          </div>
+
+          <div 
+            className="p-6 bg-card border border-border rounded-xl hover:shadow-lg transition-all cursor-pointer"
+            onClick={() => navigate("/admin/configuracoes")}
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                <Settings className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Configurações</h3>
+                <p className="text-sm text-muted-foreground">Modo econômico/detalhado</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full">
+              Configurar
             </Button>
           </div>
         </div>
