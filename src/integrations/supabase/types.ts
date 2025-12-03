@@ -51,6 +51,7 @@ export type Database = {
           analysis_type: string
           cost_estimated: number | null
           created_at: string | null
+          depth_level: string | null
           id: string
           model_used: string | null
           project_id: string | null
@@ -61,6 +62,7 @@ export type Database = {
           analysis_type: string
           cost_estimated?: number | null
           created_at?: string | null
+          depth_level?: string | null
           id?: string
           model_used?: string | null
           project_id?: string | null
@@ -71,6 +73,7 @@ export type Database = {
           analysis_type?: string
           cost_estimated?: number | null
           created_at?: string | null
+          depth_level?: string | null
           id?: string
           model_used?: string | null
           project_id?: string | null

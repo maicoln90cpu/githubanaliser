@@ -517,7 +517,8 @@ async function trackAnalysisUsage(
   projectId: string,
   analysisType: string,
   tokensUsed: number,
-  modelUsed: string = MODELS.detailed
+  modelUsed: string = MODELS.detailed,
+  depthLevel: DepthLevel = "balanced"
 ) {
   const costEstimated = tokensUsed * COST_PER_TOKEN;
   
@@ -525,6 +526,7 @@ async function trackAnalysisUsage(
   console.log(`   - Tokens: ${tokensUsed}`);
   console.log(`   - Custo estimado: $${costEstimated.toFixed(6)}`);
   console.log(`   - Modelo: ${modelUsed}`);
+  console.log(`   - Profundidade: ${depthLevel}`);
   
   try {
     const { error } = await supabase.from("analysis_usage").insert({
@@ -534,6 +536,7 @@ async function trackAnalysisUsage(
       tokens_estimated: tokensUsed,
       cost_estimated: costEstimated,
       model_used: modelUsed,
+      depth_level: depthLevel,
     });
     
     if (error) {
@@ -674,7 +677,7 @@ Estruture o documento com estas seções:
         type: "prd",
         content: prdResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model, depth);
       console.log("✓ PRD salvo");
       
       // Delay entre chamadas para evitar rate limit
@@ -712,7 +715,7 @@ Estruture o documento com estas seções:
         type: "divulgacao",
         content: divulgacaoResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model, depth);
       console.log("✓ Plano de divulgação salvo");
       
       await delay(2000);
@@ -749,7 +752,7 @@ Estruture o documento com estas seções:
         type: "captacao",
         content: captacaoResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model, depth);
       console.log("✓ Plano de captação salvo");
       
       await delay(2000);
@@ -786,7 +789,7 @@ Estruture o documento com estas seções:
         type: "seguranca",
         content: segurancaResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model, depth);
       console.log("✓ Análise de segurança salva");
       
       await delay(2000);
@@ -823,7 +826,7 @@ Estruture o documento com estas seções:
         type: "ui_theme",
         content: uiResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model, depth);
       console.log("✓ Melhorias de UI salvas");
       
       await delay(2000);
@@ -860,7 +863,7 @@ Estruture o documento com estas seções:
         type: "ferramentas",
         content: ferramentasResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model, depth);
       console.log("✓ Melhorias de ferramentas salvas");
       
       await delay(2000);
@@ -897,7 +900,7 @@ Estruture o documento com estas seções:
         type: "features",
         content: featuresResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model, depth);
       console.log("✓ Sugestões de features salvas");
       
       await delay(2000);
@@ -963,7 +966,7 @@ Se houver edge functions ou APIs:
         type: "documentacao",
         content: documentacaoResult.content,
       }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model);
+      await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model, depth);
       console.log("✓ Documentação técnica salva");
     }
 
