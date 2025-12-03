@@ -80,7 +80,16 @@ const AdminCosts = () => {
 
     const loadCostData = async () => {
       try {
-        // Total analyses
+        // Get real usage data from analysis_usage table
+        const { data: usageData } = await supabase
+          .from("analysis_usage")
+          .select("*");
+
+        // Calculate real costs from usage data
+        const realTotalCost = usageData?.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0) || 0;
+        const realTotalTokens = usageData?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
+
+        // Total analyses (fallback to old method if no usage data)
         const { count: totalAnalyses } = await supabase
           .from("analyses")
           .select("*", { count: "exact", head: true });
@@ -94,9 +103,12 @@ const AdminCosts = () => {
         const uniqueUsers = new Set(projects?.map(p => p.user_id) || []);
         const totalUsers = uniqueUsers.size;
 
-        // Calculate estimated costs
-        const estimatedTotalCost = (totalAnalyses || 0) * COST_PER_ANALYSIS;
-        const avgCostPerAnalysis = COST_PER_ANALYSIS;
+        // Use real costs if available, otherwise estimate
+        const hasRealData = usageData && usageData.length > 0;
+        const estimatedTotalCost = hasRealData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
+        const avgCostPerAnalysis = totalAnalyses && totalAnalyses > 0 
+          ? estimatedTotalCost / totalAnalyses 
+          : COST_PER_ANALYSIS;
         const avgCostPerUser = totalUsers > 0 ? estimatedTotalCost / totalUsers : 0;
 
         setStats({
@@ -107,61 +119,90 @@ const AdminCosts = () => {
           totalUsers,
         });
 
-        // Get daily usage for last 30 days
+        // Get daily usage for last 30 days - prefer usage data
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const { data: analysesData } = await supabase
-          .from("analyses")
-          .select("created_at")
-          .gte("created_at", thirtyDaysAgo.toISOString());
+        // Group usage by date
+        const dailyMap = new Map<string, { analyses: number; cost: number; tokens: number }>();
+        
+        if (hasRealData) {
+          usageData?.forEach(u => {
+            const date = new Date(u.created_at!).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
+            dailyMap.set(date, {
+              analyses: existing.analyses + 1,
+              cost: existing.cost + Number(u.cost_estimated || 0),
+              tokens: existing.tokens + (u.tokens_estimated || 0),
+            });
+          });
+        } else {
+          // Fallback to analyses table
+          const { data: analysesData } = await supabase
+            .from("analyses")
+            .select("created_at")
+            .gte("created_at", thirtyDaysAgo.toISOString());
 
-        // Group by date
-        const dailyMap = new Map<string, number>();
-        analysesData?.forEach(a => {
-          const date = new Date(a.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-          dailyMap.set(date, (dailyMap.get(date) || 0) + 1);
-        });
+          analysesData?.forEach(a => {
+            const date = new Date(a.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const existing = dailyMap.get(date) || { analyses: 0, cost: 0, tokens: 0 };
+            dailyMap.set(date, {
+              analyses: existing.analyses + 1,
+              cost: existing.cost + COST_PER_ANALYSIS,
+              tokens: 0,
+            });
+          });
+        }
 
         const dailyData: DailyUsage[] = Array.from(dailyMap.entries())
-          .map(([date, analyses]) => ({
+          .map(([date, data]) => ({
             date,
-            analyses,
-            cost: analyses * COST_PER_ANALYSIS,
+            analyses: data.analyses,
+            cost: data.cost,
           }))
           .sort((a, b) => {
             const [dayA, monthA] = a.date.split('/').map(Number);
             const [dayB, monthB] = b.date.split('/').map(Number);
             return monthA - monthB || dayA - dayB;
           })
-          .slice(-14); // Last 14 days
+          .slice(-14);
 
         setDailyUsage(dailyData);
 
-        // Get cost per user
-        const { data: userProjects } = await supabase
-          .from("projects")
-          .select(`
-            user_id,
-            analyses (id)
-          `)
-          .not("user_id", "is", null);
+        // Get cost per user from real data
+        const userCostMap = new Map<string, { count: number; cost: number }>();
+        
+        if (hasRealData) {
+          usageData?.forEach(u => {
+            const existing = userCostMap.get(u.user_id) || { count: 0, cost: 0 };
+            userCostMap.set(u.user_id, {
+              count: existing.count + 1,
+              cost: existing.cost + Number(u.cost_estimated || 0),
+            });
+          });
+        } else {
+          // Fallback to projects/analyses
+          const { data: userProjects } = await supabase
+            .from("projects")
+            .select(`user_id, analyses (id)`)
+            .not("user_id", "is", null);
 
-        const userMap = new Map<string, number>();
-        userProjects?.forEach(p => {
-          if (p.user_id) {
-            const count = Array.isArray(p.analyses) ? p.analyses.length : 0;
-            userMap.set(p.user_id, (userMap.get(p.user_id) || 0) + count);
-          }
-        });
+          userProjects?.forEach(p => {
+            if (p.user_id) {
+              const count = Array.isArray(p.analyses) ? p.analyses.length : 0;
+              const existing = userCostMap.get(p.user_id) || { count: 0, cost: 0 };
+              userCostMap.set(p.user_id, {
+                count: existing.count + count,
+                cost: existing.cost + (count * COST_PER_ANALYSIS),
+              });
+            }
+          });
+        }
 
         // Get user subscriptions for plan info
         const { data: subscriptions } = await supabase
           .from("user_subscriptions")
-          .select(`
-            user_id,
-            plans (name)
-          `)
+          .select(`user_id, plans (name)`)
           .eq("status", "active");
 
         const userPlanMap = new Map<string, string>();
@@ -171,12 +212,12 @@ const AdminCosts = () => {
           }
         });
 
-        const userCostData: UserCost[] = Array.from(userMap.entries())
-          .map(([userId, count]) => ({
+        const userCostData: UserCost[] = Array.from(userCostMap.entries())
+          .map(([userId, data]) => ({
             userId,
             email: `user-${userId.slice(0, 8)}...`,
-            analysesCount: count,
-            estimatedCost: count * COST_PER_ANALYSIS,
+            analysesCount: data.count,
+            estimatedCost: data.cost,
             planName: userPlanMap.get(userId) || 'Free',
           }))
           .sort((a, b) => b.estimatedCost - a.estimatedCost)
