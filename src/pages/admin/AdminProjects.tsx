@@ -16,7 +16,11 @@ import {
   Clock,
   Trash2,
   Coins,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  Flame,
+  Leaf
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -38,6 +42,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+
+interface ProjectAnalysis {
+  type: string;
+  count: number;
+  mode: 'detailed' | 'economic';
+  modelUsed: string;
+  depthLevel: string;
+  tokens: number;
+  cost: number;
+}
 
 interface Project {
   id: string;
@@ -49,9 +69,22 @@ interface Project {
   userEmail: string;
   totalTokens: number;
   estimatedCostBRL: number;
+  analysesDetails: ProjectAnalysis[];
+  totalAnalysesCount: number;
 }
 
 const USD_TO_BRL = 5.5;
+
+const ANALYSIS_TYPES_PT: Record<string, string> = {
+  'prd': 'PRD',
+  'divulgacao': 'Divulgação',
+  'captacao': 'Captação',
+  'seguranca': 'Segurança',
+  'ui': 'UI/UX',
+  'ferramentas': 'Ferramentas',
+  'features': 'Novas Features',
+  'documentacao': 'Documentação',
+};
 
 const AdminProjects = () => {
   const navigate = useNavigate();
@@ -64,6 +97,7 @@ const AdminProjects = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (adminLoading) return;
@@ -98,31 +132,84 @@ const AdminProjects = () => {
 
       const profileMap = new Map(profiles?.map(p => [p.id, p.email]) || []);
 
-      // Buscar dados de uso por projeto
+      // Buscar dados de uso detalhados por projeto
       const { data: usageData } = await supabase
         .from("analysis_usage")
-        .select("project_id, tokens_estimated, cost_estimated");
+        .select("project_id, analysis_type, tokens_estimated, cost_estimated, model_used, depth_level");
 
-      // Agregar uso por projeto
-      const usageMap = new Map<string, { tokens: number; cost: number }>();
+      // Agregar uso por projeto com detalhes
+      const usageMap = new Map<string, { 
+        tokens: number; 
+        cost: number; 
+        details: Map<string, { count: number; tokens: number; cost: number; mode: 'detailed' | 'economic'; model: string; depth: string }>;
+      }>();
+
       usageData?.forEach(u => {
         if (u.project_id) {
-          const existing = usageMap.get(u.project_id) || { tokens: 0, cost: 0 };
-          usageMap.set(u.project_id, {
-            tokens: existing.tokens + (u.tokens_estimated || 0),
-            cost: existing.cost + Number(u.cost_estimated || 0),
-          });
+          const existing = usageMap.get(u.project_id) || { 
+            tokens: 0, 
+            cost: 0, 
+            details: new Map() 
+          };
+          
+          const type = u.analysis_type || 'unknown';
+          const isEconomic = u.model_used?.includes('lite');
+          const mode = isEconomic ? 'economic' : 'detailed';
+          const detailKey = `${type}-${mode}-${u.depth_level || 'complete'}`;
+          
+          const detail = existing.details.get(detailKey) || { 
+            count: 0, 
+            tokens: 0, 
+            cost: 0, 
+            mode, 
+            model: u.model_used || 'unknown',
+            depth: u.depth_level || 'complete'
+          };
+          
+          detail.count += 1;
+          detail.tokens += u.tokens_estimated || 0;
+          detail.cost += Number(u.cost_estimated || 0);
+          existing.details.set(detailKey, detail);
+          
+          existing.tokens += u.tokens_estimated || 0;
+          existing.cost += Number(u.cost_estimated || 0);
+          
+          usageMap.set(u.project_id, existing);
         }
       });
 
       // Enriquecer projetos com dados de usuário e uso
       const enrichedProjects: Project[] = (data || []).map(p => {
-        const usage = usageMap.get(p.id) || { tokens: 0, cost: 0 };
+        const usage = usageMap.get(p.id) || { tokens: 0, cost: 0, details: new Map() };
+        
+        // Convert details map to array
+        const analysesDetails: ProjectAnalysis[] = [];
+        let totalCount = 0;
+        
+        usage.details.forEach((detail, key) => {
+          const [type] = key.split('-');
+          analysesDetails.push({
+            type,
+            count: detail.count,
+            mode: detail.mode,
+            modelUsed: detail.model,
+            depthLevel: detail.depth,
+            tokens: detail.tokens,
+            cost: detail.cost,
+          });
+          totalCount += detail.count;
+        });
+        
+        // Sort by count descending
+        analysesDetails.sort((a, b) => b.count - a.count);
+        
         return {
           ...p,
           userEmail: p.user_id ? (profileMap.get(p.user_id) || `user-${p.user_id.substring(0, 8)}...`) : 'Anônimo',
           totalTokens: usage.tokens,
           estimatedCostBRL: usage.cost * USD_TO_BRL,
+          analysesDetails,
+          totalAnalysesCount: totalCount,
         };
       });
 
@@ -168,6 +255,18 @@ const AdminProjects = () => {
     }
   };
 
+  const toggleProjectExpand = (projectId: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
   const getStatusIcon = (status: string | null) => {
     switch (status) {
       case "completed":
@@ -192,15 +291,46 @@ const AdminProjects = () => {
     }
   };
 
+  const getModeBadge = (mode: 'detailed' | 'economic') => {
+    if (mode === 'detailed') {
+      return (
+        <Badge className="bg-orange-500/10 text-orange-500 text-xs">
+          <Flame className="w-3 h-3 mr-1" />
+          Detalhado
+        </Badge>
+      );
+    }
+    return (
+      <Badge className="bg-green-500/10 text-green-500 text-xs">
+        <Leaf className="w-3 h-3 mr-1" />
+        Econômico
+      </Badge>
+    );
+  };
+
+  const getDepthBadge = (depth: string) => {
+    const depthColors: Record<string, string> = {
+      'critical': 'bg-green-500/10 text-green-500',
+      'balanced': 'bg-blue-500/10 text-blue-500',
+      'complete': 'bg-purple-500/10 text-purple-500',
+    };
+    return (
+      <Badge className={`text-xs ${depthColors[depth] || 'bg-muted text-muted-foreground'}`}>
+        {depth.charAt(0).toUpperCase() + depth.slice(1)}
+      </Badge>
+    );
+  };
+
   const filteredProjects = projects.filter(project => 
     project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     project.github_url.toLowerCase().includes(searchTerm.toLowerCase()) ||
     project.userEmail.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Totais
+  // Totals
   const totalTokens = projects.reduce((sum, p) => sum + p.totalTokens, 0);
   const totalCostBRL = projects.reduce((sum, p) => sum + p.estimatedCostBRL, 0);
+  const totalAnalyses = projects.reduce((sum, p) => sum + p.totalAnalysesCount, 0);
 
   if (adminLoading || loading) {
     return (
@@ -243,8 +373,8 @@ const AdminProjects = () => {
             <h1 className="text-3xl font-bold">Projetos</h1>
           </div>
           <p className="text-muted-foreground">
-            {projects.length} projetos 
-            {userFilter && " deste usuário"}
+            {projects.length} projetos • {totalAnalyses} análises executadas
+            {userFilter && " (filtrado por usuário)"}
           </p>
           {userFilter && (
             <Button 
@@ -258,7 +388,7 @@ const AdminProjects = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid md:grid-cols-3 gap-4 mb-6 animate-slide-up">
+        <div className="grid md:grid-cols-4 gap-4 mb-6 animate-slide-up">
           <div className="p-4 bg-card border border-border rounded-xl">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
@@ -266,7 +396,19 @@ const AdminProjects = () => {
               </div>
               <div>
                 <p className="text-xl font-bold">{projects.length}</p>
-                <p className="text-sm text-muted-foreground">Total Projetos</p>
+                <p className="text-sm text-muted-foreground">Projetos</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-card border border-border rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                <Zap className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xl font-bold">{totalAnalyses}</p>
+                <p className="text-sm text-muted-foreground">Análises</p>
               </div>
             </div>
           </div>
@@ -278,7 +420,7 @@ const AdminProjects = () => {
               </div>
               <div>
                 <p className="text-xl font-bold">{totalTokens.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Total Tokens</p>
+                <p className="text-sm text-muted-foreground">Tokens</p>
               </div>
             </div>
           </div>
@@ -312,9 +454,11 @@ const AdminProjects = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8"></TableHead>
                 <TableHead>Projeto</TableHead>
                 <TableHead>Usuário</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-center">Análises</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Custo (R$)</TableHead>
                 <TableHead>Data</TableHead>
@@ -324,70 +468,166 @@ const AdminProjects = () => {
             <TableBody>
               {filteredProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     Nenhum projeto encontrado
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{project.name}</p>
-                        <a 
-                          href={project.github_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
-                        >
-                          {project.github_url.replace("https://github.com/", "")}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm">{project.userEmail}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(project.analysis_status)}
-                        {getStatusBadge(project.analysis_status)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {project.totalTokens.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      R$ {project.estimatedCostBRL.toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      {new Date(project.created_at).toLocaleDateString("pt-BR")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {project.analysis_status === "completed" && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => navigate(`/projeto/${project.id}`)}
-                          >
-                            Ver Análises
-                          </Button>
-                        )}
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => {
-                            setProjectToDelete(project);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <Collapsible key={project.id} asChild open={expandedProjects.has(project.id)}>
+                    <>
+                      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => project.analysesDetails.length > 0 && toggleProjectExpand(project.id)}>
+                        <TableCell>
+                          {project.analysesDetails.length > 0 && (
+                            <CollapsibleTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="sm" className="p-0 h-6 w-6">
+                                {expandedProjects.has(project.id) ? (
+                                  <ChevronUp className="w-4 h-4" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </CollapsibleTrigger>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{project.name}</p>
+                            <a 
+                              href={project.github_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {project.github_url.replace("https://github.com/", "")}
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm">{project.userEmail}</p>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getStatusIcon(project.analysis_status)}
+                            {getStatusBadge(project.analysis_status)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="font-medium">{project.totalAnalysesCount}</span>
+                            {project.analysesDetails.length > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                {project.analysesDetails.length} tipos
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {project.totalTokens.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          R$ {project.estimatedCostBRL.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          {new Date(project.created_at).toLocaleDateString("pt-BR")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            {project.analysis_status === "completed" && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => navigate(`/projeto/${project.id}`)}
+                              >
+                                Ver Análises
+                              </Button>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setProjectToDelete(project);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      <CollapsibleContent asChild>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={9} className="p-0">
+                            <div className="px-6 py-4">
+                              <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
+                                <Zap className="w-4 h-4 text-primary" />
+                                Detalhes das Análises
+                              </h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-border">
+                                      <th className="text-left py-2 px-3">Tipo</th>
+                                      <th className="text-left py-2 px-3">Modo</th>
+                                      <th className="text-left py-2 px-3">Profundidade</th>
+                                      <th className="text-center py-2 px-3">Execuções</th>
+                                      <th className="text-right py-2 px-3">Tokens</th>
+                                      <th className="text-right py-2 px-3">Custo</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {project.analysesDetails.map((analysis, idx) => (
+                                      <tr key={idx} className="border-b border-border/50">
+                                        <td className="py-2 px-3 font-medium">
+                                          {ANALYSIS_TYPES_PT[analysis.type] || analysis.type}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          {getModeBadge(analysis.mode)}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          {getDepthBadge(analysis.depthLevel)}
+                                        </td>
+                                        <td className="py-2 px-3 text-center">
+                                          <Badge variant="outline" className="text-xs">
+                                            {analysis.count}x
+                                          </Badge>
+                                        </td>
+                                        <td className="py-2 px-3 text-right font-mono text-xs">
+                                          {analysis.tokens.toLocaleString()}
+                                        </td>
+                                        <td className="py-2 px-3 text-right font-medium">
+                                          R$ {(analysis.cost * USD_TO_BRL).toFixed(4)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              
+                              {/* Summary badges */}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {project.analysesDetails.some(a => a.mode === 'detailed') && (
+                                  <Badge className="bg-orange-500/10 text-orange-500 text-xs">
+                                    <Flame className="w-3 h-3 mr-1" />
+                                    {project.analysesDetails.filter(a => a.mode === 'detailed').reduce((sum, a) => sum + a.count, 0)} detalhadas
+                                  </Badge>
+                                )}
+                                {project.analysesDetails.some(a => a.mode === 'economic') && (
+                                  <Badge className="bg-green-500/10 text-green-500 text-xs">
+                                    <Leaf className="w-3 h-3 mr-1" />
+                                    {project.analysesDetails.filter(a => a.mode === 'economic').reduce((sum, a) => sum + a.count, 0)} econômicas
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      </CollapsibleContent>
+                    </>
+                  </Collapsible>
                 ))
               )}
             </TableBody>

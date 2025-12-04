@@ -13,7 +13,9 @@ import {
   Shield,
   ArrowLeft,
   Zap,
-  BarChart3
+  BarChart3,
+  Flame,
+  Leaf
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -37,7 +39,8 @@ import {
   Bar,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Legend
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 
@@ -74,13 +77,50 @@ interface DepthStats {
   totalCost: number;
 }
 
+interface ModeStats {
+  mode: 'detailed' | 'economic';
+  modelName: string;
+  count: number;
+  avgTokens: number;
+  avgCost: number;
+  totalCost: number;
+}
+
+interface AnalysisTypeStats {
+  type: string;
+  detailedCount: number;
+  economicCount: number;
+  totalCost: number;
+  avgCost: number;
+}
+
 const USD_TO_BRL = 5.5;
 const COST_PER_ANALYSIS = 0.002;
+
+// Real cost per 1000 tokens based on system data (R$ 0.10 / 18183 tokens = ~R$ 0.0055/1K tokens)
+const FLASH_COST_PER_1K_BRL = 0.0055;
+const FLASH_LITE_COST_PER_1K_BRL = 0.0011; // ~80% cheaper
 
 const DEPTH_COLORS = {
   'critical': 'hsl(142, 76%, 36%)',
   'balanced': 'hsl(217, 91%, 60%)', 
   'complete': 'hsl(262, 83%, 58%)',
+};
+
+const MODE_COLORS = {
+  'detailed': 'hsl(25, 95%, 53%)', // orange
+  'economic': 'hsl(142, 76%, 36%)', // green
+};
+
+const ANALYSIS_TYPES_PT: Record<string, string> = {
+  'prd': 'PRD',
+  'divulgacao': 'Divulgação',
+  'captacao': 'Captação',
+  'seguranca': 'Segurança',
+  'ui': 'UI/UX',
+  'ferramentas': 'Ferramentas',
+  'features': 'Novas Features',
+  'documentacao': 'Documentação',
 };
 
 const AdminCosts = () => {
@@ -90,8 +130,11 @@ const AdminCosts = () => {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
   const [userCosts, setUserCosts] = useState<UserCost[]>([]);
   const [depthStats, setDepthStats] = useState<DepthStats[]>([]);
+  const [modeStats, setModeStats] = useState<ModeStats[]>([]);
+  const [analysisTypeStats, setAnalysisTypeStats] = useState<AnalysisTypeStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasRealData, setHasRealData] = useState(false);
+  const [realCostPer1K, setRealCostPer1K] = useState<number>(FLASH_COST_PER_1K_BRL);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -114,6 +157,12 @@ const AdminCosts = () => {
 
       const realTotalCost = usageData?.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0) || 0;
       const realTotalTokens = usageData?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
+
+      // Calculate real cost per 1K tokens
+      if (realTotalTokens > 0 && realTotalCost > 0) {
+        const costPer1K = (realTotalCost * USD_TO_BRL) / (realTotalTokens / 1000);
+        setRealCostPer1K(costPer1K);
+      }
 
       const { count: totalAnalyses } = await supabase
         .from("analyses")
@@ -176,15 +225,47 @@ const AdminCosts = () => {
 
       setDailyUsage(dailyData);
 
-      // Depth statistics (simulated based on model used)
+      // Mode statistics (detailed vs economic)
+      const modeMap = new Map<string, { count: number; tokens: number; cost: number }>();
+      
+      usageData?.forEach(u => {
+        const isEconomic = u.model_used?.includes('lite');
+        const mode = isEconomic ? 'economic' : 'detailed';
+        
+        const existing = modeMap.get(mode) || { count: 0, tokens: 0, cost: 0 };
+        modeMap.set(mode, {
+          count: existing.count + 1,
+          tokens: existing.tokens + (u.tokens_estimated || 0),
+          cost: existing.cost + Number(u.cost_estimated || 0),
+        });
+      });
+
+      const modeStatsData: ModeStats[] = [
+        { 
+          mode: 'detailed', 
+          modelName: 'gemini-2.5-flash',
+          count: modeMap.get('detailed')?.count || 0, 
+          avgTokens: modeMap.get('detailed')?.count ? Math.round((modeMap.get('detailed')?.tokens || 0) / modeMap.get('detailed')!.count) : 0,
+          avgCost: modeMap.get('detailed')?.count ? (modeMap.get('detailed')?.cost || 0) / modeMap.get('detailed')!.count : 0,
+          totalCost: modeMap.get('detailed')?.cost || 0,
+        },
+        { 
+          mode: 'economic', 
+          modelName: 'gemini-2.5-flash-lite',
+          count: modeMap.get('economic')?.count || 0, 
+          avgTokens: modeMap.get('economic')?.count ? Math.round((modeMap.get('economic')?.tokens || 0) / modeMap.get('economic')!.count) : 0,
+          avgCost: modeMap.get('economic')?.count ? (modeMap.get('economic')?.cost || 0) / modeMap.get('economic')!.count : 0,
+          totalCost: modeMap.get('economic')?.cost || 0,
+        },
+      ];
+
+      setModeStats(modeStatsData);
+
+      // Depth statistics by depth_level field
       const depthMap = new Map<string, { count: number; tokens: number; cost: number }>();
       
       usageData?.forEach(u => {
-        // Infer depth from model or context size
-        let depth = 'complete';
-        if (u.model_used?.includes('lite')) {
-          depth = u.tokens_estimated && u.tokens_estimated < 5000 ? 'critical' : 'balanced';
-        }
+        const depth = u.depth_level || 'complete';
         
         const existing = depthMap.get(depth) || { count: 0, tokens: 0, cost: 0 };
         depthMap.set(depth, {
@@ -213,6 +294,33 @@ const AdminCosts = () => {
       });
 
       setDepthStats(depthStatsData);
+
+      // Analysis type statistics
+      const typeMap = new Map<string, { detailedCount: number; economicCount: number; totalCost: number }>();
+      
+      usageData?.forEach(u => {
+        const type = u.analysis_type || 'unknown';
+        const isEconomic = u.model_used?.includes('lite');
+        
+        const existing = typeMap.get(type) || { detailedCount: 0, economicCount: 0, totalCost: 0 };
+        typeMap.set(type, {
+          detailedCount: existing.detailedCount + (isEconomic ? 0 : 1),
+          economicCount: existing.economicCount + (isEconomic ? 1 : 0),
+          totalCost: existing.totalCost + Number(u.cost_estimated || 0),
+        });
+      });
+
+      const typeStatsData: AnalysisTypeStats[] = Array.from(typeMap.entries())
+        .map(([type, data]) => ({
+          type,
+          detailedCount: data.detailedCount,
+          economicCount: data.economicCount,
+          totalCost: data.totalCost,
+          avgCost: data.totalCost / (data.detailedCount + data.economicCount),
+        }))
+        .sort((a, b) => (b.detailedCount + b.economicCount) - (a.detailedCount + a.economicCount));
+
+      setAnalysisTypeStats(typeStatsData);
 
       // User costs with profiles
       const { data: profiles } = await supabase
@@ -282,11 +390,29 @@ const AdminCosts = () => {
   const monthlyProjection = dailyAvg * 30;
   const monthlyProjectedCost = stats ? (stats.avgCostPerAnalysis * monthlyProjection) : 0;
 
-  const pieData = depthStats.filter(d => d.count > 0).map(d => ({
+  const modePieData = modeStats.filter(m => m.count > 0).map(m => ({
+    name: m.mode === 'detailed' ? 'Detalhado' : 'Econômico',
+    value: m.count,
+    color: MODE_COLORS[m.mode],
+  }));
+
+  const depthPieData = depthStats.filter(d => d.count > 0).map(d => ({
     name: d.depth.charAt(0).toUpperCase() + d.depth.slice(1),
     value: d.count,
     color: DEPTH_COLORS[d.depth as keyof typeof DEPTH_COLORS],
   }));
+
+  // Calculate potential savings if all were economic
+  const totalDetailedAnalyses = modeStats.find(m => m.mode === 'detailed')?.count || 0;
+  const avgDetailedCost = modeStats.find(m => m.mode === 'detailed')?.avgCost || 0;
+  const potentialSavings = totalDetailedAnalyses * avgDetailedCost * 0.8; // 80% savings with lite
+
+  // Depth cost estimation table data
+  const depthEstimations = [
+    { depth: 'Critical', tokens: 10000, contextLabel: '10K' },
+    { depth: 'Balanced', tokens: 15000, contextLabel: '15K' },
+    { depth: 'Complete', tokens: 20000, contextLabel: '20K' },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -334,7 +460,7 @@ const AdminCosts = () => {
             </p>
             <p className="text-sm text-muted-foreground">
               {hasRealData 
-                ? `${stats?.totalTokens.toLocaleString()} tokens registrados • ${stats?.totalAnalyses} análises rastreadas`
+                ? `${stats?.totalTokens.toLocaleString()} tokens registrados • ${stats?.totalAnalyses} análises rastreadas • Custo real: R$ ${realCostPer1K.toFixed(4)}/1K tokens`
                 : 'Execute análises para ver dados reais de custo.'}
             </p>
           </div>
@@ -392,13 +518,242 @@ const AdminCosts = () => {
           </div>
         </div>
 
-        {/* Depth Comparison */}
+        {/* Mode Comparison Section */}
         <div className="grid lg:grid-cols-2 gap-6 mb-8">
-          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up">
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+              <Flame className="w-5 h-5 text-orange-500" />
+              Comparativo por Modo
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-2">Modo</th>
+                    <th className="text-left py-3 px-2">Modelo</th>
+                    <th className="text-right py-3 px-2">Análises</th>
+                    <th className="text-right py-3 px-2">Tokens Médios</th>
+                    <th className="text-right py-3 px-2">Custo Médio</th>
+                    <th className="text-right py-3 px-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modeStats.map((m) => (
+                    <tr key={m.mode} className="border-b border-border/50">
+                      <td className="py-3 px-2">
+                        <Badge 
+                          className={`${
+                            m.mode === 'detailed' ? 'bg-orange-500/10 text-orange-500' :
+                            'bg-green-500/10 text-green-500'
+                          }`}
+                        >
+                          {m.mode === 'detailed' ? (
+                            <><Flame className="w-3 h-3 mr-1" /> Detalhado</>
+                          ) : (
+                            <><Leaf className="w-3 h-3 mr-1" /> Econômico</>
+                          )}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2 font-mono text-xs text-muted-foreground">{m.modelName}</td>
+                      <td className="text-right py-3 px-2">{m.count}</td>
+                      <td className="text-right py-3 px-2 font-mono">{m.avgTokens.toLocaleString()}</td>
+                      <td className="text-right py-3 px-2">R$ {(m.avgCost * USD_TO_BRL).toFixed(4)}</td>
+                      <td className="text-right py-3 px-2 font-medium">R$ {(m.totalCost * USD_TO_BRL).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Potential Savings Card */}
+            {potentialSavings > 0 && (
+              <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <Leaf className="w-4 h-4 text-green-500" />
+                  <span className="font-medium text-green-600">Economia Potencial</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Se todas as {totalDetailedAnalyses} análises detalhadas fossem econômicas:
+                </p>
+                <p className="text-xl font-bold text-green-500">
+                  R$ {(potentialSavings * USD_TO_BRL).toFixed(2)} economizados (~80%)
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Mode Pie Chart */}
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up">
+            <h3 className="font-semibold text-lg mb-4">Distribuição por Modo</h3>
+            {modePieData.length > 0 ? (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={modePieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {modePieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-muted-foreground">
+                Execute análises para ver a distribuição
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Depth Cost Estimation - Both Models */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up">
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            <Calculator className="w-5 h-5 text-blue-500" />
+            Estimativa de Custos por Profundidade e Modelo
+          </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Baseado em custo real medido: R$ {realCostPer1K.toFixed(4)}/1K tokens (Flash) • Flash-Lite ~80% mais barato
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-2">Profundidade</th>
+                  <th className="text-right py-3 px-2">Contexto</th>
+                  <th className="text-right py-3 px-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Flame className="w-3 h-3 text-orange-500" />
+                      <span>Flash (Detalhado)</span>
+                    </div>
+                  </th>
+                  <th className="text-right py-3 px-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Leaf className="w-3 h-3 text-green-500" />
+                      <span>Flash-Lite (Econômico)</span>
+                    </div>
+                  </th>
+                  <th className="text-right py-3 px-2">Economia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {depthEstimations.map((d) => {
+                  const flashCost = (d.tokens / 1000) * realCostPer1K;
+                  const liteCost = flashCost * 0.2; // 80% cheaper
+                  const savings = ((flashCost - liteCost) / flashCost) * 100;
+                  
+                  return (
+                    <tr key={d.depth} className="border-b border-border/50">
+                      <td className="py-3 px-2">
+                        <Badge 
+                          className={`${
+                            d.depth === 'Critical' ? 'bg-green-500/10 text-green-500' :
+                            d.depth === 'Balanced' ? 'bg-blue-500/10 text-blue-500' :
+                            'bg-purple-500/10 text-purple-500'
+                          }`}
+                        >
+                          {d.depth}
+                        </Badge>
+                      </td>
+                      <td className="text-right py-3 px-2 font-mono">{d.contextLabel} tokens</td>
+                      <td className="text-right py-3 px-2 font-medium text-orange-500">
+                        R$ {flashCost.toFixed(4)}
+                      </td>
+                      <td className="text-right py-3 px-2 font-medium text-green-500">
+                        R$ {liteCost.toFixed(4)}
+                      </td>
+                      <td className="text-right py-3 px-2">
+                        <Badge className="bg-green-500/10 text-green-500">
+                          {savings.toFixed(0)}%
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Analysis Type by Mode */}
+        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up">
             <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-primary" />
-              Comparativo por Profundidade
+              Distribuição por Tipo de Análise
             </h3>
+            {analysisTypeStats.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-2">Tipo</th>
+                      <th className="text-right py-3 px-2">
+                        <span className="flex items-center justify-end gap-1">
+                          <Flame className="w-3 h-3 text-orange-500" />
+                          Detalhado
+                        </span>
+                      </th>
+                      <th className="text-right py-3 px-2">
+                        <span className="flex items-center justify-end gap-1">
+                          <Leaf className="w-3 h-3 text-green-500" />
+                          Econômico
+                        </span>
+                      </th>
+                      <th className="text-right py-3 px-2">Total</th>
+                      <th className="text-right py-3 px-2">Custo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysisTypeStats.map((t) => (
+                      <tr key={t.type} className="border-b border-border/50">
+                        <td className="py-3 px-2 font-medium">
+                          {ANALYSIS_TYPES_PT[t.type] || t.type}
+                        </td>
+                        <td className="text-right py-3 px-2">
+                          {t.detailedCount > 0 ? (
+                            <span className="text-orange-500">{t.detailedCount}</span>
+                          ) : (
+                            <span className="text-muted-foreground">0</span>
+                          )}
+                        </td>
+                        <td className="text-right py-3 px-2">
+                          {t.economicCount > 0 ? (
+                            <span className="text-green-500">{t.economicCount}</span>
+                          ) : (
+                            <span className="text-muted-foreground">0</span>
+                          )}
+                        </td>
+                        <td className="text-right py-3 px-2 font-medium">
+                          {t.detailedCount + t.economicCount}
+                        </td>
+                        <td className="text-right py-3 px-2">
+                          R$ {(t.totalCost * USD_TO_BRL).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">
+                Nenhum dado de tipo de análise registrado ainda
+              </p>
+            )}
+          </div>
+
+          {/* Depth Comparison */}
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up">
+            <h3 className="font-semibold text-lg mb-4">Comparativo por Profundidade</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -437,38 +792,6 @@ const AdminCosts = () => {
               <p className="text-center text-muted-foreground py-4">
                 Ainda não há dados de profundidade registrados.
               </p>
-            )}
-          </div>
-
-          {/* Pie Chart */}
-          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.1s" }}>
-            <h3 className="font-semibold text-lg mb-4">Distribuição por Profundidade</h3>
-            {pieData.length > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-muted-foreground">
-                Execute análises para ver a distribuição
-              </div>
             )}
           </div>
         </div>
