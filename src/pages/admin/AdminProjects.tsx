@@ -205,7 +205,7 @@ const AdminProjects = () => {
         
         return {
           ...p,
-          userEmail: p.user_id ? (profileMap.get(p.user_id) || `user-${p.user_id.substring(0, 8)}...`) : 'Anônimo',
+          userEmail: p.user_id ? (profileMap.get(p.user_id) || 'Sem email') : 'Anônimo',
           totalTokens: usage.tokens,
           estimatedCostBRL: usage.cost * USD_TO_BRL,
           analysesDetails,

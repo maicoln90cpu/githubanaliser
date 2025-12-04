@@ -128,7 +128,7 @@ const AdminUsers = () => {
         
         return {
           user_id: userId,
-          email: profile?.email || `user-${userId.substring(0, 8)}...`,
+          email: profile?.email || 'Sem email',
           projectCount: stats.count,
           lastProject: stats.lastProject,
           totalTokens: usage.tokens,
@@ -289,12 +289,7 @@ const AdminUsers = () => {
                 filteredUsers.map((user) => (
                   <TableRow key={user.user_id}>
                     <TableCell>
-                      <div>
-                        <p className="font-medium">{user.email}</p>
-                        <p className="text-xs text-muted-foreground font-mono">
-                          {user.user_id.substring(0, 12)}...
-                        </p>
-                      </div>
+                      <p className="font-medium">{user.email}</p>
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge className={getPlanBadge(user.planName)}>
