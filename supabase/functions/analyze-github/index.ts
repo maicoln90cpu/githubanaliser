@@ -511,6 +511,34 @@ ${githubData.configContent}
 // Média estimada: ~$0.000001 por token (considerando proporção input/output)
 const COST_PER_TOKEN = 0.000001;
 
+// Helper to save analysis with error checking
+async function saveAnalysis(
+  supabase: any,
+  projectId: string,
+  analysisType: string,
+  content: string
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.from("analyses").upsert({
+      project_id: projectId,
+      type: analysisType,
+      content: content,
+    }, { onConflict: 'project_id,type' });
+    
+    if (error) {
+      console.error(`❌ Erro ao salvar análise ${analysisType}:`, error.message);
+      console.error(`   Detalhes:`, JSON.stringify(error));
+      return false;
+    }
+    
+    console.log(`✅ Análise ${analysisType} salva com sucesso`);
+    return true;
+  } catch (e) {
+    console.error(`❌ Exceção ao salvar análise ${analysisType}:`, e);
+    return false;
+  }
+}
+
 async function trackAnalysisUsage(
   supabase: any,
   userId: string,
@@ -672,13 +700,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "prd",
-        content: prdResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model, depth);
-      console.log("✓ PRD salvo");
+      const prdSaved = await saveAnalysis(supabase, projectId, "prd", prdResult.content);
+      if (prdSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model, depth);
+      }
       
       // Delay entre chamadas para evitar rate limit
       await delay(2000);
@@ -710,13 +735,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "divulgacao",
-        content: divulgacaoResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model, depth);
-      console.log("✓ Plano de divulgação salvo");
+      const divulgacaoSaved = await saveAnalysis(supabase, projectId, "divulgacao", divulgacaoResult.content);
+      if (divulgacaoSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -747,13 +769,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "captacao",
-        content: captacaoResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model, depth);
-      console.log("✓ Plano de captação salvo");
+      const captacaoSaved = await saveAnalysis(supabase, projectId, "captacao", captacaoResult.content);
+      if (captacaoSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -784,13 +803,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "seguranca",
-        content: segurancaResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model, depth);
-      console.log("✓ Análise de segurança salva");
+      const segurancaSaved = await saveAnalysis(supabase, projectId, "seguranca", segurancaResult.content);
+      if (segurancaSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -821,13 +837,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "ui_theme",
-        content: uiResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model, depth);
-      console.log("✓ Melhorias de UI salvas");
+      const uiSaved = await saveAnalysis(supabase, projectId, "ui_theme", uiResult.content);
+      if (uiSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -858,13 +871,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "ferramentas",
-        content: ferramentasResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model, depth);
-      console.log("✓ Melhorias de ferramentas salvas");
+      const ferramentasSaved = await saveAnalysis(supabase, projectId, "ferramentas", ferramentasResult.content);
+      if (ferramentasSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -895,13 +905,10 @@ Estruture o documento com estas seções:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "features",
-        content: featuresResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model, depth);
-      console.log("✓ Sugestões de features salvas");
+      const featuresSaved = await saveAnalysis(supabase, projectId, "features", featuresResult.content);
+      if (featuresSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model, depth);
+      }
       
       await delay(2000);
     }
@@ -961,13 +968,10 @@ Se houver edge functions ou APIs:
         depthConfig.model
       );
       
-      await supabase.from("analyses").upsert({
-        project_id: projectId,
-        type: "documentacao",
-        content: documentacaoResult.content,
-      }, { onConflict: 'project_id,type' });
-      await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model, depth);
-      console.log("✓ Documentação técnica salva");
+      const documentacaoSaved = await saveAnalysis(supabase, projectId, "documentacao", documentacaoResult.content);
+      if (documentacaoSaved) {
+        await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model, depth);
+      }
     }
 
     // === CONCLUÍDO ===
