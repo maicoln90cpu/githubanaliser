@@ -138,16 +138,36 @@ const AdminSettings = () => {
     setSaving(true);
     
     try {
-      const { error } = await supabase
+      // Check if setting exists
+      const { data: existing } = await supabase
         .from("system_settings")
-        .update({ 
-          value: newMode, 
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq("key", "analysis_mode");
+        .select("key")
+        .eq("key", "analysis_mode")
+        .maybeSingle();
 
-      if (error) throw error;
+      if (existing) {
+        const { error } = await supabase
+          .from("system_settings")
+          .update({ 
+            value: newMode, 
+            updated_by: user?.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq("key", "analysis_mode");
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("system_settings")
+          .insert({ 
+            key: "analysis_mode",
+            value: newMode,
+            description: "Modo global de análise (economic/detailed)",
+            updated_by: user?.id
+          });
+
+        if (error) throw error;
+      }
 
       setAnalysisMode(newMode);
       toast.success(`Modo ${newMode === 'detailed' ? 'Detalhado' : 'Econômico'} ativado`);
