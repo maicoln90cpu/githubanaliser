@@ -1,1 +1,0 @@
-ALTER TABLE analysis_usage ADD COLUMN IF NOT EXISTS depth_level TEXT DEFAULT 'balanced';
