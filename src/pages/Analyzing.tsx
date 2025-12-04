@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Github, Check, Circle, AlertCircle } from "lucide-react";
+import { Loader2, Github, Check, Circle, AlertCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,7 @@ const Analyzing = () => {
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>("~2min");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const hasCompletedRef = useRef(false);
   
@@ -321,6 +322,44 @@ const Analyzing = () => {
     }
   };
 
+  const handleCancel = async () => {
+    setIsCancelling(true);
+    
+    // Stop polling
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    try {
+      // Check if there are any completed analyses for this project
+      if (projectId) {
+        const { data: analyses } = await supabase
+          .from("analyses")
+          .select("id, type")
+          .eq("project_id", projectId);
+
+        if (analyses && analyses.length > 0) {
+          // Has completed analyses, go to project page
+          toast.info(`Análise cancelada. ${analyses.length} análise(s) já concluída(s) foram salvas.`);
+          navigate(`/projeto/${projectId}`);
+        } else {
+          // No completed analyses, just go to dashboard
+          toast.info("Análise cancelada.");
+          navigate("/dashboard");
+        }
+      } else {
+        // No project created yet
+        toast.info("Análise cancelada.");
+        navigate("/dashboard");
+      }
+    } catch (error) {
+      console.error("Erro ao cancelar:", error);
+      toast.error("Erro ao cancelar análise");
+      navigate("/dashboard");
+    }
+  };
+
   const currentStep = steps.findIndex(s => s.status === "loading");
 
   if (errorMessage) {
@@ -395,6 +434,23 @@ const Analyzing = () => {
               </span>
             </div>
           ))}
+        </div>
+
+        {/* Cancel Button */}
+        <div className="pt-4">
+          <Button 
+            variant="outline" 
+            onClick={handleCancel}
+            disabled={isCancelling}
+            className="gap-2"
+          >
+            {isCancelling ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <XCircle className="w-4 h-4" />
+            )}
+            {isCancelling ? "Cancelando..." : "Cancelar análise"}
+          </Button>
         </div>
       </div>
     </div>
