@@ -22,7 +22,10 @@ import {
   Play,
   Zap,
   Scale,
-  BarChart3
+  BarChart3,
+  Flame,
+  Leaf,
+  Layers
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,9 +61,12 @@ interface Analysis {
   created_at: string;
 }
 
-interface AnalysisUsage {
+interface AnalysisVersion {
   analysis_type: string;
   depth_level: string | null;
+  model_used: string | null;
+  created_at: string | null;
+  mode: 'detailed' | 'economic';
 }
 
 const analysisTypes = [
@@ -158,7 +164,7 @@ const ProjectHub = () => {
   const { user, isLoading: authLoading } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [analysisUsage, setAnalysisUsage] = useState<AnalysisUsage[]>([]);
+  const [analysisVersions, setAnalysisVersions] = useState<AnalysisVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [reanalyzing, setReanalyzing] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -168,6 +174,13 @@ const ProjectHub = () => {
     type: "",
     title: "",
     isGenerate: false
+  });
+  const [versionDialog, setVersionDialog] = useState<{ open: boolean; type: string; title: string; route: string; versions: AnalysisVersion[] }>({
+    open: false,
+    type: "",
+    title: "",
+    route: "",
+    versions: []
   });
 
   useEffect(() => {
@@ -201,13 +214,22 @@ const ProjectHub = () => {
 
         setAnalyses(analysesData || []);
 
-        // Fetch depth levels from analysis_usage
+        // Fetch all analysis versions with mode info
         const { data: usageData } = await supabase
           .from("analysis_usage")
-          .select("analysis_type, depth_level")
-          .eq("project_id", id);
+          .select("analysis_type, depth_level, model_used, created_at")
+          .eq("project_id", id)
+          .order("created_at", { ascending: false });
 
-        setAnalysisUsage(usageData || []);
+        const versions: AnalysisVersion[] = (usageData || []).map(u => ({
+          analysis_type: u.analysis_type,
+          depth_level: u.depth_level,
+          model_used: u.model_used,
+          created_at: u.created_at,
+          mode: u.model_used?.includes('lite') ? 'economic' : 'detailed'
+        }));
+
+        setAnalysisVersions(versions);
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
         toast.error("Erro ao carregar projeto");
@@ -225,8 +247,31 @@ const ProjectHub = () => {
   };
 
   const getDepthLevel = (type: string): string | null => {
-    const usage = analysisUsage.find(u => u.analysis_type === type);
-    return usage?.depth_level || null;
+    const versions = analysisVersions.filter(u => u.analysis_type === type);
+    if (versions.length > 0) {
+      return versions[0].depth_level;
+    }
+    return null;
+  };
+
+  const getVersionsForType = (type: string): AnalysisVersion[] => {
+    return analysisVersions.filter(u => u.analysis_type === type);
+  };
+
+  const getUniqueVersions = (type: string): AnalysisVersion[] => {
+    const versions = getVersionsForType(type);
+    const unique = new Map<string, AnalysisVersion>();
+    versions.forEach(v => {
+      const key = `${v.mode}-${v.depth_level}`;
+      if (!unique.has(key)) {
+        unique.set(key, v);
+      }
+    });
+    return Array.from(unique.values());
+  };
+
+  const hasMultipleVersions = (type: string): boolean => {
+    return getUniqueVersions(type).length > 1;
   };
 
   const hasCachedData = () => {
@@ -343,6 +388,24 @@ const ProjectHub = () => {
             const isGenerating = generating === analysis.type;
             const depthLevel = getDepthLevel(analysis.type);
             const depthBadge = depthLevel ? depthBadges[depthLevel] : null;
+            const uniqueVersions = getUniqueVersions(analysis.type);
+            const multipleVersions = uniqueVersions.length > 1;
+            
+            const handleCardClick = () => {
+              if (!available) return;
+              
+              if (multipleVersions) {
+                setVersionDialog({
+                  open: true,
+                  type: analysis.type,
+                  title: analysis.title,
+                  route: analysis.route,
+                  versions: uniqueVersions
+                });
+              } else {
+                navigate(`${analysis.route}/${id}`);
+              }
+            };
             
             return (
               <div
@@ -353,7 +416,7 @@ const ProjectHub = () => {
                     : "bg-muted/30 border-border/50"
                 }`}
                 style={{ animationDelay: `${index * 0.05}s` }}
-                onClick={() => available && navigate(`${analysis.route}/${id}`)}
+                onClick={handleCardClick}
               >
                 {/* Status indicator */}
                 <div className="absolute top-4 right-4 flex items-center gap-2">
@@ -398,6 +461,12 @@ const ProjectHub = () => {
                         <Badge variant="outline" className={`text-xs ${depthBadge.className}`}>
                           <depthBadge.icon className="w-3 h-3 mr-1" />
                           {depthBadge.label}
+                        </Badge>
+                      )}
+                      {multipleVersions && (
+                        <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-500 border-purple-500/20">
+                          <Layers className="w-3 h-3 mr-1" />
+                          {uniqueVersions.length} versões
                         </Badge>
                       )}
                     </>
@@ -508,6 +577,78 @@ const ProjectHub = () => {
             <AlertDialogAction onClick={() => handleGenerateOrReanalyze(confirmDialog.type, !confirmDialog.isGenerate)}>
               {confirmDialog.isGenerate ? "Gerar Análise" : "Refazer Análise"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Version Selector Dialog */}
+      <AlertDialog open={versionDialog.open} onOpenChange={(open) => setVersionDialog({ ...versionDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-purple-500" />
+              Selecionar versão
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Esta análise possui múltiplas versões. Selecione qual deseja visualizar:
+                </p>
+                
+                <div className="space-y-2">
+                  {versionDialog.versions.map((version, index) => {
+                    const versionDepthBadge = version.depth_level ? depthBadges[version.depth_level] : null;
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          navigate(`${versionDialog.route}/${id}`);
+                          setVersionDialog({ ...versionDialog, open: false });
+                        }}
+                        className="w-full p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-muted/50 transition-all text-left"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {version.mode === 'detailed' ? (
+                              <div className="p-2 rounded-lg bg-orange-500/10">
+                                <Flame className="w-4 h-4 text-orange-500" />
+                              </div>
+                            ) : (
+                              <div className="p-2 rounded-lg bg-green-500/10">
+                                <Leaf className="w-4 h-4 text-green-500" />
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-medium">
+                                Modo {version.mode === 'detailed' ? 'Detalhado' : 'Econômico'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {version.created_at && new Date(version.created_at).toLocaleDateString("pt-BR", {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          {versionDepthBadge && (
+                            <Badge variant="outline" className={`text-xs ${versionDepthBadge.className}`}>
+                              <versionDepthBadge.icon className="w-3 h-3 mr-1" />
+                              {versionDepthBadge.label}
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
