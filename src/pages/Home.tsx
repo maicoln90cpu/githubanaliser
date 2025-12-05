@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,11 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { 
   Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, 
   Zap, Scale, Rocket, Check, ChevronDown, ArrowRight, FileText, Target, 
-  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star
+  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -89,7 +90,17 @@ const analysisOptions: AnalysisOption[] = [
   { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖", iconComponent: <BookOpen className="w-6 h-6" />, fullDescription: "README profissional, guia de instalação, referência de API, guia de contribuição e changelog." },
 ];
 
-// Plans are now loaded dynamically from the database
+interface DynamicPlan {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  monthly_analyses: number | null;
+  daily_analyses: number | null;
+  price_monthly: number | null;
+  features: string[];
+  is_active: boolean | null;
+}
 
 const faqs = [
   {
@@ -148,9 +159,36 @@ const Home = () => {
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>(analysisOptions.map(a => a.id));
   const [selectedDepth, setSelectedDepth] = useState<AnalysisDepth>('complete');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [plans, setPlans] = useState<DynamicPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
   const { plan, isLoading: planLoading } = useUserPlan();
+
+  // Load plans dynamically from database
+  useEffect(() => {
+    const loadPlans = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("plans")
+          .select("*")
+          .eq("is_active", true)
+          .order("price_monthly", { ascending: true });
+
+        if (error) throw error;
+        
+        setPlans(data?.map(p => ({
+          ...p,
+          features: Array.isArray(p.features) ? (p.features as string[]) : []
+        })) || []);
+      } catch (error) {
+        console.error("Erro ao carregar planos:", error);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    loadPlans();
+  }, []);
 
   const validateGithubUrl = (url: string): boolean => {
     const githubPattern = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
@@ -577,49 +615,53 @@ const Home = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {plans.map((plan) => (
-              <Card 
-                key={plan.name} 
-                className={`relative ${plan.popular ? 'border-primary shadow-lg scale-105' : 'border-border/50'}`}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-full">
-                    Mais Popular
-                  </div>
-                )}
-                <CardHeader className="text-center pb-2">
-                  <CardTitle className="text-xl">{plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                  <div className="pt-4">
-                    <span className="text-4xl font-bold">{plan.price}</span>
-                    <span className="text-muted-foreground">{plan.period}</span>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="space-y-3">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2 text-sm">
-                        <Check className="w-4 h-4 text-accent shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                    {plan.limitations.map((limitation) => (
-                      <li key={limitation} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span className="w-4 h-4 flex items-center justify-center shrink-0">—</span>
-                        <span>{limitation}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button 
-                    variant={plan.popular ? "default" : "outline"} 
-                    className="w-full"
-                    onClick={() => navigate("/auth")}
-                  >
-                    {plan.cta}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+            {plansLoading ? (
+              <div className="col-span-3 flex justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : plans.map((p) => {
+              const isPopular = p.slug === 'basic';
+              const price = p.price_monthly === 0 ? 'R$ 0' : `R$ ${p.price_monthly?.toFixed(0)}`;
+              const cta = p.slug === 'free' ? 'Começar Grátis' : `Assinar ${p.name}`;
+              
+              return (
+                <Card 
+                  key={p.id} 
+                  className={`relative ${isPopular ? 'border-primary shadow-lg scale-105' : 'border-border/50'}`}
+                >
+                  {isPopular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-full">
+                      Mais Popular
+                    </div>
+                  )}
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="text-xl">{p.name}</CardTitle>
+                    <CardDescription>{p.description}</CardDescription>
+                    <div className="pt-4">
+                      <span className="text-4xl font-bold">{price}</span>
+                      <span className="text-muted-foreground">/mês</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ul className="space-y-3">
+                      {p.features.map((feature) => (
+                        <li key={feature} className="flex items-center gap-2 text-sm">
+                          <Check className="w-4 h-4 text-accent shrink-0" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button 
+                      variant={isPopular ? "default" : "outline"} 
+                      className="w-full"
+                      onClick={() => navigate("/auth")}
+                    >
+                      {cta}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       </section>
