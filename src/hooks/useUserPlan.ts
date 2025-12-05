@@ -2,6 +2,14 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
+interface PlanConfig {
+  allowed_depths?: string[];
+  allowed_analysis_types?: string[];
+  allow_economic_mode?: boolean;
+  can_export_pdf?: boolean;
+  max_tokens_monthly?: number;
+}
+
 interface UserPlan {
   planId: string | null;
   planName: string;
@@ -13,7 +21,31 @@ interface UserPlan {
   canAnalyze: boolean;
   limitMessage: string | null;
   isAdmin: boolean;
+  // Config fields
+  allowedDepths: string[];
+  allowedAnalysisTypes: string[];
+  allowEconomicMode: boolean;
+  canExportPDF: boolean;
+  maxTokensMonthly: number | null;
 }
+
+// Default values for free plan
+const FREE_PLAN_DEFAULTS: PlanConfig = {
+  allowed_depths: ['critical'],
+  allowed_analysis_types: ['prd', 'divulgacao', 'captacao'],
+  allow_economic_mode: false,
+  can_export_pdf: false,
+  max_tokens_monthly: null,
+};
+
+// Default values for paid plans (if not configured)
+const PAID_PLAN_DEFAULTS: PlanConfig = {
+  allowed_depths: ['critical', 'balanced', 'complete'],
+  allowed_analysis_types: ['prd', 'divulgacao', 'captacao', 'seguranca', 'ui_theme', 'ferramentas', 'features', 'documentacao'],
+  allow_economic_mode: true,
+  can_export_pdf: true,
+  max_tokens_monthly: null,
+};
 
 export const useUserPlan = () => {
   const { user } = useAuth();
@@ -58,12 +90,18 @@ export const useUserPlan = () => {
             canAnalyze: true,
             limitMessage: null,
             isAdmin: true,
+            // Admin has all permissions
+            allowedDepths: ['critical', 'balanced', 'complete'],
+            allowedAnalysisTypes: ['prd', 'divulgacao', 'captacao', 'seguranca', 'ui_theme', 'ferramentas', 'features', 'documentacao'],
+            allowEconomicMode: true,
+            canExportPDF: true,
+            maxTokensMonthly: null,
           });
           setIsLoading(false);
           return;
         }
 
-        // Get user's plan
+        // Get user's plan with config
         const { data: planData } = await supabase
           .rpc('get_user_plan', { p_user_id: user.id });
 
@@ -81,6 +119,11 @@ export const useUserPlan = () => {
 
         const monthlyLimit = userPlan?.monthly_analyses || 3;
         const dailyLimit = userPlan?.daily_analyses || 1;
+
+        // Parse config from plan
+        const planConfig = userPlan?.plan_config as PlanConfig || {};
+        const isFree = userPlan?.plan_slug === 'free';
+        const defaults = isFree ? FREE_PLAN_DEFAULTS : PAID_PLAN_DEFAULTS;
 
         // Check limits
         let canAnalyze = true;
@@ -105,6 +148,12 @@ export const useUserPlan = () => {
           canAnalyze,
           limitMessage,
           isAdmin: false,
+          // Config fields with defaults
+          allowedDepths: planConfig.allowed_depths || defaults.allowed_depths || ['critical'],
+          allowedAnalysisTypes: planConfig.allowed_analysis_types || defaults.allowed_analysis_types || ['prd', 'divulgacao', 'captacao'],
+          allowEconomicMode: planConfig.allow_economic_mode ?? defaults.allow_economic_mode ?? false,
+          canExportPDF: planConfig.can_export_pdf ?? defaults.can_export_pdf ?? false,
+          maxTokensMonthly: planConfig.max_tokens_monthly ?? defaults.max_tokens_monthly ?? null,
         });
       } catch (error) {
         console.error("Erro ao carregar plano:", error);
@@ -120,6 +169,11 @@ export const useUserPlan = () => {
           canAnalyze: true,
           limitMessage: null,
           isAdmin: false,
+          allowedDepths: FREE_PLAN_DEFAULTS.allowed_depths || ['critical'],
+          allowedAnalysisTypes: FREE_PLAN_DEFAULTS.allowed_analysis_types || ['prd', 'divulgacao', 'captacao'],
+          allowEconomicMode: false,
+          canExportPDF: false,
+          maxTokensMonthly: null,
         });
       } finally {
         setIsLoading(false);

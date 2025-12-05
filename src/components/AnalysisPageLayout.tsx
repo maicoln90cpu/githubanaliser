@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
 import html2pdf from "html2pdf.js";
 import { CheckableMarkdown } from "./CheckableMarkdown";
 import { useChecklistState } from "@/hooks/useChecklistState";
+import { useUserPlan } from "@/hooks/useUserPlan";
 import { Progress } from "@/components/ui/progress";
 import {
   Breadcrumb,
@@ -16,6 +17,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AnalysisPageLayoutProps {
   type: string;
@@ -51,12 +58,15 @@ const AnalysisPageLayout = ({
 }: AnalysisPageLayoutProps) => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { plan } = useUserPlan();
   const [project, setProject] = useState<Project | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [analysisNotFound, setAnalysisNotFound] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [showOnlyPending, setShowOnlyPending] = useState(false);
+  
+  const canExportPDF = plan?.canExportPDF || plan?.isAdmin;
 
   // Checklist state
   const {
@@ -255,10 +265,26 @@ const AnalysisPageLayout = ({
               <Grid3X3 className="w-4 h-4 mr-2" />
               Análises
             </Button>
-            <Button variant="outline" size="sm" onClick={exportToPDF}>
-              <Download className="w-4 h-4 mr-2" />
-              PDF
-            </Button>
+            {canExportPDF ? (
+              <Button variant="outline" size="sm" onClick={exportToPDF}>
+                <Download className="w-4 h-4 mr-2" />
+                PDF
+              </Button>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" disabled className="opacity-50">
+                      <Lock className="w-4 h-4 mr-2" />
+                      PDF
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Faça upgrade para exportar em PDF</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
         </div>
       </header>
