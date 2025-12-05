@@ -854,6 +854,75 @@ const AdminCosts = () => {
           </div>
         </div>
 
+        {/* Evolution Charts */}
+        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.22s" }}>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-green-500" />
+              Custo Acumulado (R$)
+            </h3>
+            <div className="h-64">
+              {dailyUsage.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyUsage.reduce((acc, d, i) => {
+                    const prevCumulative = i > 0 ? acc[i - 1].cumulative : 0;
+                    acc.push({ ...d, cumulative: prevCumulative + d.cost });
+                    return acc;
+                  }, [] as (DailyUsage & { cumulative: number })[] )}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="date" className="text-muted-foreground text-xs" />
+                    <YAxis className="text-muted-foreground text-xs" tickFormatter={(v) => `R$${(v * USD_TO_BRL).toFixed(2)}`} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                      formatter={(value: number) => [`R$ ${(value * USD_TO_BRL).toFixed(4)}`, 'Acumulado']}
+                    />
+                    <Line type="monotone" dataKey="cumulative" stroke="hsl(142, 76%, 36%)" strokeWidth={2} dot={{ fill: 'hsl(142, 76%, 36%)' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Sem dados de custo acumulado
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.24s" }}>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-purple-500" />
+              Evolução de Tokens
+            </h3>
+            <div className="h-64">
+              {dailyUsage.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyUsage}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="date" className="text-muted-foreground text-xs" />
+                    <YAxis className="text-muted-foreground text-xs" tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                      formatter={(value: number) => [`${value.toLocaleString()} tokens`, 'Tokens']}
+                    />
+                    <Bar dataKey="tokens" fill="hsl(262, 83%, 58%)" name="Tokens" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Sem dados de tokens
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Projections */}
         <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up" style={{ animationDelay: "0.25s" }}>
           <h3 className="font-semibold text-lg mb-4">Projeções de Crescimento</h3>
