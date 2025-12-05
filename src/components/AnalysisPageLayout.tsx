@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff, Lock } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff, Lock, Info } from "lucide-react";
 import { toast } from "sonner";
 import html2pdf from "html2pdf.js";
 import { CheckableMarkdown } from "./CheckableMarkdown";
@@ -344,14 +344,28 @@ const AnalysisPageLayout = ({
         </Breadcrumb>
 
         {/* Header with icon */}
-        <div className="flex items-center gap-4 mb-8 animate-fade-in">
-          <div className={`w-14 h-14 rounded-xl ${iconBgColor} flex items-center justify-center`}>
-            <Icon className={`w-7 h-7 ${iconColor}`} />
+        <div className="flex items-center justify-between mb-8 animate-fade-in">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-xl ${iconBgColor} flex items-center justify-center`}>
+              <Icon className={`w-7 h-7 ${iconColor}`} />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">{title}</h1>
+              <p className="text-muted-foreground">{project?.name}</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold">{title}</h1>
-            <p className="text-muted-foreground">{project?.name}</p>
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-muted-foreground">
+                  <Info className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-xs">
+                <p>💡 Dica: Passe o mouse sobre os títulos para ver o botão de copiar seção</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {/* Analysis Content */}
