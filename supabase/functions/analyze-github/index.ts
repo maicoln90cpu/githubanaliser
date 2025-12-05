@@ -257,6 +257,90 @@ async function loadSystemSettings(supabase: any): Promise<SystemSettings> {
 // Delay helper
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Interface for prompts from database
+interface AnalysisPrompt {
+  analysis_type: string;
+  name: string;
+  system_prompt: string;
+  user_prompt_template: string;
+  is_active: boolean;
+}
+
+// Load prompts from database
+async function loadPromptsFromDB(supabase: any): Promise<Map<string, AnalysisPrompt>> {
+  const promptsMap = new Map<string, AnalysisPrompt>();
+  
+  try {
+    const { data, error } = await supabase
+      .from("analysis_prompts")
+      .select("analysis_type, name, system_prompt, user_prompt_template, is_active")
+      .eq("is_active", true);
+    
+    if (error) {
+      console.log("⚠️ Erro ao carregar prompts do banco:", error.message);
+      return promptsMap;
+    }
+    
+    data?.forEach((prompt: AnalysisPrompt) => {
+      promptsMap.set(prompt.analysis_type, prompt);
+    });
+    
+    console.log(`✅ Carregados ${promptsMap.size} prompts do banco de dados`);
+    return promptsMap;
+  } catch (e) {
+    console.log("⚠️ Exceção ao carregar prompts:", e);
+    return promptsMap;
+  }
+}
+
+// Replace variables in prompt template
+function replacePromptVariables(
+  template: string, 
+  variables: Record<string, string>
+): string {
+  let result = template;
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+  }
+  return result;
+}
+
+// Default prompts fallback (used when DB prompts not available)
+const DEFAULT_PROMPTS: Record<string, { system: string; user: string }> = {
+  prd: {
+    system: "Você é um analista de produtos técnico sênior especializado em documentação de software.",
+    user: "Analise o seguinte projeto GitHub e crie um PRD (Product Requirements Document) completo em português."
+  },
+  divulgacao: {
+    system: "Você é um especialista em marketing digital e growth hacking.",
+    user: "Analise o projeto e crie um plano de divulgação e marketing em português."
+  },
+  captacao: {
+    system: "Você é um especialista em captação de recursos e investimentos para startups.",
+    user: "Analise o projeto e crie um plano de captação de recursos em português."
+  },
+  seguranca: {
+    system: "Você é um especialista em segurança da informação e cibersegurança.",
+    user: "Analise o código do projeto e identifique vulnerabilidades e melhorias de segurança em português."
+  },
+  ui_theme: {
+    system: "Você é um designer de UX/UI especializado em interfaces modernas e acessíveis.",
+    user: "Analise o código do projeto e sugira melhorias visuais e de experiência em português."
+  },
+  ferramentas: {
+    system: "Você é um arquiteto de software sênior especializado em otimização de código.",
+    user: "Analise o código existente e sugira melhorias nas funcionalidades atuais em português."
+  },
+  features: {
+    system: "Você é um product manager visionário especializado em inovação de produtos.",
+    user: "Analise o projeto e sugira novas funcionalidades inovadoras em português."
+  },
+  documentacao: {
+    system: "Você é um technical writer sênior especializado em documentação de software open source e profissional.",
+    user: "Analise o projeto e gere uma documentação técnica completa e profissional em português."
+  }
+};
+
 async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string, model: string): Promise<AIResponse> {
   console.log(`🤖 Chamando Lovable AI (${model})...`);
   const startTime = Date.now();
@@ -662,6 +746,10 @@ async function processAnalysisInBackground(
       throw new Error("LOVABLE_API_KEY não configurada");
     }
 
+    // Load prompts from database
+    const dbPrompts = await loadPromptsFromDB(supabase);
+    const apiKey = lovableApiKey; // Type assertion after null check
+    
     const markdownFormatInstructions = `
 IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
 - Use tabelas markdown com | para organizar dados comparativos
@@ -674,303 +762,91 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
 - Use \`código\` para termos técnicos
 `;
 
-    // === GERAR PRD ===
-    if (typesToGenerate.includes("prd")) {
-      await updateProjectStatus(supabase, projectId, "generating_prd");
-      console.log("Gerando PRD...");
+    // Variables for prompt template replacement
+    const promptVariables: Record<string, string> = {
+      projectName: projectName,
+      githubUrl: githubUrl,
+      readme: projectContext.includes("## README") 
+        ? projectContext.split("## README")[1]?.split("##")[0]?.trim() || "" 
+        : "",
+      structure: projectContext.includes("## Estrutura") 
+        ? projectContext.split("## Estrutura")[1]?.split("##")[0]?.trim() || ""
+        : "",
+      dependencies: projectContext.includes("## package.json")
+        ? projectContext.split("## package.json")[1]?.split("##")[0]?.trim() || ""
+        : "",
+      sourceCode: projectContext.includes("## Código Fonte")
+        ? projectContext.split("## Código Fonte")[1]?.split("##")[0]?.trim() || ""
+        : "",
+    };
 
-      const prdResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um analista de produtos técnico sênior especializado em documentação de software.",
-        `Analise o seguinte projeto GitHub e crie um PRD (Product Requirements Document) completo em português.
+    // Helper function to generate analysis using DB prompt or fallback
+    async function generateAnalysis(
+      analysisType: string,
+      statusKey: string
+    ): Promise<void> {
+      await updateProjectStatus(supabase, projectId, statusKey);
+      console.log(`Gerando ${analysisType}...`);
 
-${projectContext}
+      // Get prompt from DB or use fallback
+      const dbPrompt = dbPrompts.get(analysisType);
+      let systemPrompt: string;
+      let userPrompt: string;
 
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **📋 Visão Geral do Produto** - Resumo executivo
-2. **🎯 Objetivos e Metas** - Com métricas mensuráveis em tabela
-3. **👥 Público-Alvo** - Personas detalhadas
-4. **🏗️ Arquitetura Técnica** - Diagrama em texto e componentes
-5. **⚙️ Funcionalidades Principais** - Tabela com prioridade e status
-6. **📦 Requisitos Técnicos** - Stack, dependências, infraestrutura
-7. **⚠️ Riscos e Mitigações** - Tabela com probabilidade e impacto
-8. **📊 Métricas de Sucesso** - KPIs em tabela`,
-        depthConfig.model
-      );
-      
-      const prdSaved = await saveAnalysis(supabase, projectId, "prd", prdResult.content);
-      if (prdSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "prd", prdResult.tokensUsed, prdResult.model, depth);
+      if (dbPrompt) {
+        console.log(`📝 Usando prompt do banco para ${analysisType}`);
+        systemPrompt = dbPrompt.system_prompt;
+        userPrompt = replacePromptVariables(dbPrompt.user_prompt_template, promptVariables);
+      } else {
+        console.log(`⚠️ Prompt não encontrado no banco, usando fallback para ${analysisType}`);
+        const fallback = DEFAULT_PROMPTS[analysisType];
+        systemPrompt = fallback?.system || "Você é um assistente especializado.";
+        userPrompt = `${fallback?.user || "Analise o projeto."}\n\n${projectContext}`;
       }
-      
-      // Delay entre chamadas para evitar rate limit
-      await delay(2000);
-    }
 
-    // === GERAR PLANO DE DIVULGAÇÃO ===
-    if (typesToGenerate.includes("divulgacao")) {
-      await updateProjectStatus(supabase, projectId, "generating_divulgacao");
-      console.log("Gerando plano de divulgação...");
-
-      const divulgacaoResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um especialista em marketing digital e growth hacking.",
-        `Analise o projeto e crie um plano de divulgação e marketing em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **📢 Estratégia de Comunicação** - Mensagens-chave e tom de voz
-2. **🎯 Canais de Marketing** - Tabela com canal, público, custo e ROI esperado
-3. **📱 Redes Sociais** - Estratégia por plataforma com cronograma
-4. **✍️ Marketing de Conteúdo** - Tipos de conteúdo e calendário editorial
-5. **🔍 SEO e SEM** - Keywords, estratégias orgânicas e pagas
-6. **🤝 Parcerias e Influenciadores** - Potenciais parceiros e abordagem
-7. **📅 Cronograma de Lançamento** - Timeline em tabela
-8. **📊 Métricas e KPIs** - Tabela com meta e baseline`,
-        depthConfig.model
-      );
-      
-      const divulgacaoSaved = await saveAnalysis(supabase, projectId, "divulgacao", divulgacaoResult.content);
-      if (divulgacaoSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "divulgacao", divulgacaoResult.tokensUsed, divulgacaoResult.model, depth);
+      // Add markdown instructions to user prompt if not already present
+      if (!userPrompt.includes("markdown")) {
+        userPrompt = `${userPrompt}\n\n${markdownFormatInstructions}`;
       }
-      
-      await delay(2000);
-    }
 
-    // === GERAR PLANO DE CAPTAÇÃO ===
-    if (typesToGenerate.includes("captacao")) {
-      await updateProjectStatus(supabase, projectId, "generating_captacao");
-      console.log("Gerando plano de captação...");
+      // Add project context if using DB prompt (template might not include full context)
+      if (dbPrompt && !userPrompt.includes(projectContext.substring(0, 100))) {
+        userPrompt = `${userPrompt}\n\nContexto do Projeto:\n${projectContext}`;
+      }
 
-      const captacaoResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um especialista em captação de recursos e investimentos para startups.",
-        `Analise o projeto e crie um plano de captação de recursos em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **💰 Modelo de Negócio** - Canvas resumido e monetização
-2. **📈 Oportunidade de Mercado** - TAM, SAM, SOM em tabela
-3. **🎯 Proposta de Valor para Investidores** - Diferenciais competitivos
-4. **💵 Projeções Financeiras** - Tabela com receita, custos e lucro
-5. **🚀 Uso dos Recursos** - Alocação do investimento em tabela
-6. **👥 Tipos de Investidores** - Perfil ideal e abordagem
-7. **📋 Documentação Necessária** - Checklist para pitch
-8. **📅 Roadmap de Captação** - Timeline e milestones`,
+      const result = await callLovableAI(
+        apiKey,
+        systemPrompt,
+        userPrompt,
         depthConfig.model
       );
       
-      const captacaoSaved = await saveAnalysis(supabase, projectId, "captacao", captacaoResult.content);
-      if (captacaoSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "captacao", captacaoResult.tokensUsed, captacaoResult.model, depth);
+      const saved = await saveAnalysis(supabase, projectId, analysisType, result.content);
+      if (saved) {
+        await trackAnalysisUsage(supabase, userId, projectId, analysisType, result.tokensUsed, result.model, depth);
       }
       
       await delay(2000);
     }
 
-    // === GERAR MELHORIAS DE SEGURANÇA ===
-    if (typesToGenerate.includes("seguranca")) {
-      await updateProjectStatus(supabase, projectId, "generating_seguranca");
-      console.log("Gerando análise de segurança...");
+    // Generate each selected analysis type
+    const analysisTypeMap: Record<string, string> = {
+      prd: "generating_prd",
+      divulgacao: "generating_divulgacao",
+      captacao: "generating_captacao",
+      seguranca: "generating_seguranca",
+      ui_theme: "generating_ui",
+      ferramentas: "generating_ferramentas",
+      features: "generating_features",
+      documentacao: "generating_documentacao"
+    };
 
-      const segurancaResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um especialista em segurança da informação e cibersegurança.",
-        `Analise o código do projeto e identifique vulnerabilidades e melhorias de segurança em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **🛡️ Resumo de Segurança** - Score geral e principais riscos
-2. **🔴 Vulnerabilidades Críticas** - Tabela com descrição, arquivo, severidade e correção
-3. **🟡 Vulnerabilidades Médias** - Tabela similar
-4. **🟢 Boas Práticas Implementadas** - O que já está bom
-5. **🔐 Autenticação e Autorização** - Análise e recomendações
-6. **🗄️ Segurança de Dados** - Criptografia, sanitização, LGPD
-7. **🌐 Segurança de API** - Rate limiting, CORS, validações
-8. **📋 Checklist de Implementação** - Tabela com prioridade e esforço`,
-        depthConfig.model
-      );
-      
-      const segurancaSaved = await saveAnalysis(supabase, projectId, "seguranca", segurancaResult.content);
-      if (segurancaSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "seguranca", segurancaResult.tokensUsed, segurancaResult.model, depth);
-      }
-      
-      await delay(2000);
-    }
-
-    // === GERAR MELHORIAS DE UI/THEME ===
-    if (typesToGenerate.includes("ui_theme")) {
-      await updateProjectStatus(supabase, projectId, "generating_ui");
-      console.log("Gerando melhorias de UI...");
-
-      const uiResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um designer de UX/UI especializado em interfaces modernas e acessíveis.",
-        `Analise o código do projeto e sugira melhorias visuais e de experiência em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **🎨 Análise Visual Atual** - Pontos fortes e fracos do design
-2. **🎯 Melhorias de UX** - Tabela com problema, solução e impacto
-3. **🖼️ Design System** - Sugestões de cores, tipografia, espaçamento
-4. **📱 Responsividade** - Análise mobile e tablet
-5. **♿ Acessibilidade** - WCAG compliance e melhorias
-6. **✨ Animações e Micro-interações** - Sugestões específicas
-7. **🌙 Tema Escuro/Claro** - Implementação ou melhorias
-8. **📋 Roadmap Visual** - Tabela com prioridade e complexidade`,
-        depthConfig.model
-      );
-      
-      const uiSaved = await saveAnalysis(supabase, projectId, "ui_theme", uiResult.content);
-      if (uiSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "ui_theme", uiResult.tokensUsed, uiResult.model, depth);
-      }
-      
-      await delay(2000);
-    }
-
-    // === GERAR MELHORIAS DE FERRAMENTAS ===
-    if (typesToGenerate.includes("ferramentas")) {
-      await updateProjectStatus(supabase, projectId, "generating_ferramentas");
-      console.log("Gerando melhorias de ferramentas...");
-
-      const ferramentasResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um arquiteto de software sênior especializado em otimização de código.",
-        `Analise o código existente e sugira melhorias nas funcionalidades atuais em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **📊 Análise das Funcionalidades Atuais** - Inventário com status
-2. **⚡ Otimizações de Performance** - Tabela com problema, solução e ganho esperado
-3. **🔧 Refatorações Recomendadas** - Código específico a melhorar
-4. **📦 Dependências** - Atualizar, remover ou adicionar
-5. **🧪 Testes** - Cobertura atual e sugestões
-6. **📝 Documentação de Código** - Melhorias específicas
-7. **🔄 CI/CD e DevOps** - Automações sugeridas
-8. **📋 Backlog Técnico** - Tabela com prioridade, esforço e impacto`,
-        depthConfig.model
-      );
-      
-      const ferramentasSaved = await saveAnalysis(supabase, projectId, "ferramentas", ferramentasResult.content);
-      if (ferramentasSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "ferramentas", ferramentasResult.tokensUsed, ferramentasResult.model, depth);
-      }
-      
-      await delay(2000);
-    }
-
-    // === GERAR SUGESTÕES DE NOVAS FEATURES ===
-    if (typesToGenerate.includes("features")) {
-      await updateProjectStatus(supabase, projectId, "generating_features");
-      console.log("Gerando sugestões de features...");
-
-      const featuresResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um product manager visionário especializado em inovação de produtos.",
-        `Analise o projeto e sugira novas funcionalidades inovadoras em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-1. **💡 Visão de Produto** - Onde o produto pode chegar
-2. **🚀 Features de Alto Impacto** - Tabela com feature, descrição, valor para usuário, complexidade
-3. **🤖 Integrações com IA** - Oportunidades de usar IA/ML
-4. **🔗 Integrações Externas** - APIs e serviços complementares
-5. **📱 Features Mobile/PWA** - Se aplicável
-6. **👥 Features Sociais/Colaborativas** - Funcionalidades de comunidade
-7. **💰 Features de Monetização** - Modelos de receita
-8. **📋 Roadmap de Features** - Tabela com fase, features, timeline e recursos`,
-        depthConfig.model
-      );
-      
-      const featuresSaved = await saveAnalysis(supabase, projectId, "features", featuresResult.content);
-      if (featuresSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "features", featuresResult.tokensUsed, featuresResult.model, depth);
-      }
-      
-      await delay(2000);
-    }
-
-    // === GERAR DOCUMENTAÇÃO TÉCNICA ===
-    if (typesToGenerate.includes("documentacao")) {
-      await updateProjectStatus(supabase, projectId, "generating_documentacao");
-      console.log("Gerando documentação técnica...");
-
-      const documentacaoResult = await callLovableAI(
-        lovableApiKey,
-        "Você é um technical writer sênior especializado em documentação de software open source e profissional.",
-        `Analise o projeto e gere uma documentação técnica completa e profissional em português.
-
-${projectContext}
-
-${markdownFormatInstructions}
-
-Estruture o documento com estas seções:
-
-## 📖 README.md Profissional
-Gere um README completo com:
-- Badge de status, versão, licença
-- Descrição clara do projeto
-- Screenshots/GIFs sugeridos
-- Pré-requisitos e dependências
-
-## 🚀 Guia de Instalação
-- Passos detalhados de instalação
-- Configuração de variáveis de ambiente
-- Compatibilidade entre ambientes (dev, staging, prod)
-- Docker/containerização se aplicável
-
-## 📚 API Reference
-Se houver edge functions ou APIs:
-- Lista de endpoints com método HTTP
-- Parâmetros obrigatórios e opcionais
-- Exemplos de request/response em tabela
-- Códigos de erro e tratamento
-
-## 🤝 Guia de Contribuição
-- Padrão de branches (main, develop, feature/*)
-- Commits semânticos (feat:, fix:, docs:, etc)
-- Pull Request template sugerido
-- Code review checklist
-
-## 📋 Changelog Sugerido
-- Formato Keep a Changelog
-- Versão atual e histórico
-- Categorias: Added, Changed, Deprecated, Removed, Fixed, Security
-- Exemplo de entradas
-
-## 🔧 Scripts e Comandos
-- Tabela com todos scripts do package.json
-- Descrição do que cada comando faz
-- Ordem recomendada de execução`,
-        depthConfig.model
-      );
-      
-      const documentacaoSaved = await saveAnalysis(supabase, projectId, "documentacao", documentacaoResult.content);
-      if (documentacaoSaved) {
-        await trackAnalysisUsage(supabase, userId, projectId, "documentacao", documentacaoResult.tokensUsed, documentacaoResult.model, depth);
+    for (const analysisType of typesToGenerate) {
+      const statusKey = analysisTypeMap[analysisType];
+      if (statusKey) {
+        await generateAnalysis(analysisType, statusKey);
+      } else {
+        console.log(`⚠️ Tipo de análise desconhecido: ${analysisType}`);
       }
     }
 

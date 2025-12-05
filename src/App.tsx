@@ -24,6 +24,7 @@ import AdminProjects from "./pages/admin/AdminProjects";
 import AdminCosts from "./pages/admin/AdminCosts";
 import AdminPlans from "./pages/admin/AdminPlans";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminPrompts from "./pages/admin/AdminPrompts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
           <Route path="/admin/custos" element={<AdminCosts />} />
           <Route path="/admin/planos" element={<AdminPlans />} />
           <Route path="/admin/configuracoes" element={<AdminSettings />} />
+          <Route path="/admin/prompts" element={<AdminPrompts />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
