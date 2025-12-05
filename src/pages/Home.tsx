@@ -190,6 +190,15 @@ const Home = () => {
     loadPlans();
   }, []);
 
+  // Filter out disabled analyses when plan loads
+  useEffect(() => {
+    if (!plan || plan.isAdmin) return;
+    
+    if (plan.allowedAnalysisTypes) {
+      setSelectedAnalyses(prev => prev.filter(a => plan.allowedAnalysisTypes!.includes(a)));
+    }
+  }, [plan]);
+
   const validateGithubUrl = (url: string): boolean => {
     const githubPattern = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
     return githubPattern.test(url);
@@ -535,16 +544,25 @@ const Home = () => {
                   })}
                 </div>
 
-                <Button 
-                  variant="hero" 
-                  size="lg" 
-                  className="w-full"
-                  onClick={handleAnalyze}
-                  disabled={isValidating || selectedAnalyses.length === 0}
-                >
-                  {isValidating ? "Iniciando..." : `Analisar (${selectedAnalyses.length} análises)`}
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </Button>
+                {(() => {
+                  // Calculate allowed analyses count
+                  const allowedCount = plan?.isAdmin 
+                    ? selectedAnalyses.length 
+                    : selectedAnalyses.filter(a => plan?.allowedAnalysisTypes?.includes(a) ?? true).length;
+                  
+                  return (
+                    <Button 
+                      variant="hero" 
+                      size="lg" 
+                      className="w-full"
+                      onClick={handleAnalyze}
+                      disabled={isValidating || allowedCount === 0}
+                    >
+                      {isValidating ? "Iniciando..." : `Analisar (${allowedCount} análises)`}
+                      <ArrowRight className="w-5 h-5 ml-2" />
+                    </Button>
+                  );
+                })()}
               </div>
             )}
           </div>
