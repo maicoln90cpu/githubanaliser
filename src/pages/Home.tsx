@@ -89,56 +89,7 @@ const analysisOptions: AnalysisOption[] = [
   { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖", iconComponent: <BookOpen className="w-6 h-6" />, fullDescription: "README profissional, guia de instalação, referência de API, guia de contribuição e changelog." },
 ];
 
-const plans = [
-  {
-    name: "Free",
-    price: "R$ 0",
-    period: "/mês",
-    description: "Ideal para experimentar",
-    features: [
-      "3 análises por mês",
-      "1 análise por dia",
-      "PRD, Divulgação e Captação",
-      "Suporte por email"
-    ],
-    limitations: ["Sem análises avançadas", "Sem exportação PDF"],
-    cta: "Começar Grátis",
-    popular: false
-  },
-  {
-    name: "Basic",
-    price: "R$ 29",
-    period: "/mês",
-    description: "Para desenvolvedores",
-    features: [
-      "20 análises por mês",
-      "5 análises por dia",
-      "Todos os 8 tipos de análise",
-      "Exportação PDF",
-      "Suporte prioritário"
-    ],
-    limitations: [],
-    cta: "Assinar Basic",
-    popular: true
-  },
-  {
-    name: "Pro",
-    price: "R$ 79",
-    period: "/mês",
-    description: "Para times e empresas",
-    features: [
-      "Análises ilimitadas/mês",
-      "15 análises por dia",
-      "Todos os 8 tipos de análise",
-      "Exportação PDF",
-      "Re-análise com cache",
-      "Suporte 24/7"
-    ],
-    limitations: [],
-    cta: "Assinar Pro",
-    popular: false
-  }
-];
+// Plans are now loaded dynamically from the database
 
 const faqs = [
   {
