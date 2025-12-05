@@ -325,6 +325,7 @@ export type Database = {
         Returns: {
           daily_analyses: number
           monthly_analyses: number
+          plan_config: Json
           plan_id: string
           plan_name: string
           plan_slug: string

@@ -226,14 +226,21 @@ const Home = () => {
       return;
     }
 
-    if (plan?.planSlug === 'free' && !plan?.isAdmin) {
-      const basicAnalyses = ['prd', 'divulgacao', 'captacao'];
-      const advancedSelected = selectedAnalyses.filter(a => !basicAnalyses.includes(a));
-      if (advancedSelected.length > 0) {
-        toast.error("Plano Free permite apenas PRD, Divulgação e Captação. Faça upgrade para mais análises.");
-        setSelectedAnalyses(selectedAnalyses.filter(a => basicAnalyses.includes(a)));
+    // Filter selected analyses by allowed types from plan config
+    if (!plan?.isAdmin && plan?.allowedAnalysisTypes) {
+      const allowedTypes = plan.allowedAnalysisTypes;
+      const disallowedSelected = selectedAnalyses.filter(a => !allowedTypes.includes(a));
+      if (disallowedSelected.length > 0) {
+        toast.error(`Seu plano ${plan.planName} não permite algumas análises selecionadas. Faça upgrade para mais análises.`);
+        setSelectedAnalyses(selectedAnalyses.filter(a => allowedTypes.includes(a)));
         return;
       }
+    }
+    
+    // Validate depth is allowed
+    if (!plan?.isAdmin && plan?.allowedDepths && !plan.allowedDepths.includes(selectedDepth)) {
+      toast.error(`Seu plano ${plan.planName} não permite a profundidade "${selectedDepth}". Selecione outra opção.`);
+      return;
     }
 
     setIsValidating(true);
@@ -408,29 +415,42 @@ const Home = () => {
                     Profundidade da Análise
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {depthOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => setSelectedDepth(option.id)}
-                        className={`p-4 rounded-lg border text-left transition-all ${
-                          selectedDepth === option.id
-                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                            : 'border-border hover:bg-muted/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={option.color}>{option.icon}</span>
-                          <span className="font-medium text-sm">{option.label}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-2">{option.description}</p>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Contexto: {option.context}</span>
-                          <span className={`font-medium ${option.id === 'complete' ? 'text-green-500' : 'text-yellow-500'}`}>
-                            {option.savings}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                    {depthOptions.map((option) => {
+                      const isDepthAllowed = plan?.allowedDepths?.includes(option.id) ?? true;
+                      const isDisabledDepth = !plan?.isAdmin && !isDepthAllowed;
+                      
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => !isDisabledDepth && setSelectedDepth(option.id)}
+                          disabled={isDisabledDepth}
+                          className={`p-4 rounded-lg border text-left transition-all relative ${
+                            isDisabledDepth 
+                              ? 'opacity-50 cursor-not-allowed bg-muted/30' 
+                              : selectedDepth === option.id
+                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                : 'border-border hover:bg-muted/50'
+                          }`}
+                        >
+                          {isDisabledDepth && (
+                            <span className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium">
+                              PRO
+                            </span>
+                          )}
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={option.color}>{option.icon}</span>
+                            <span className="font-medium text-sm">{option.label}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">{option.description}</p>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Contexto: {option.context}</span>
+                            <span className={`font-medium ${option.id === 'complete' ? 'text-green-500' : 'text-yellow-500'}`}>
+                              {option.savings}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -481,8 +501,8 @@ const Home = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {analysisOptions.map((option) => {
-                    const isBasicAnalysis = ['prd', 'divulgacao', 'captacao'].includes(option.id);
-                    const isDisabled = plan?.planSlug === 'free' && !isBasicAnalysis && !plan?.isAdmin;
+                    const isAnalysisAllowed = plan?.allowedAnalysisTypes?.includes(option.id) ?? true;
+                    const isDisabled = !plan?.isAdmin && !isAnalysisAllowed;
                     
                     return (
                       <label
@@ -496,7 +516,7 @@ const Home = () => {
                         }`}
                       >
                         <Checkbox
-                          checked={selectedAnalyses.includes(option.id)}
+                          checked={selectedAnalyses.includes(option.id) && !isDisabled}
                           onCheckedChange={() => !isDisabled && toggleAnalysis(option.id)}
                           disabled={isDisabled}
                         />
