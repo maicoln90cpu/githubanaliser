@@ -100,6 +100,10 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
   onTotalItemsChange,
   showOnlyPending = false,
 }) => {
+  // Pre-process content to fix <br> tags in markdown
+  const processedContent = useMemo(() => {
+    return content.replace(/<br\s*\/?>/gi, '\n');
+  }, [content]);
   // Count and track actionable items
   const actionableItems = useMemo(() => {
     const items: { hash: string; text: string }[] = [];
@@ -111,7 +115,7 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
 
     // Extract from list items
     let match;
-    while ((match = listItemRegex.exec(content)) !== null) {
+    while ((match = listItemRegex.exec(processedContent)) !== null) {
       const text = match[1].trim();
       if (isActionableItem(text) && text.length > 10) {
         items.push({
@@ -122,7 +126,7 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
     }
 
     // Extract from table cells (first column usually contains the action)
-    const lines = content.split('\n');
+    const lines = processedContent.split('\n');
     for (const line of lines) {
       if (line.includes('|') && !line.includes('---')) {
         const cells = line.split('|').filter(cell => cell.trim());
@@ -139,7 +143,7 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
     }
 
     return items;
-  }, [content]);
+  }, [processedContent]);
 
   useEffect(() => {
     onTotalItemsChange(actionableItems.length);
@@ -255,7 +259,7 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
     return (
       <Tag className={cn(baseClasses[level], 'flex items-center group')}>
         {children}
-        <CopyButton content={content} sectionTitle={text} />
+        <CopyButton content={processedContent} sectionTitle={text} />
       </Tag>
     );
   };
@@ -302,7 +306,10 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
         ),
       }}
     >
-      {content}
+      {processedContent}
     </ReactMarkdown>
   );
 };
+
+// Re-export with processed content
+CheckableMarkdown.displayName = 'CheckableMarkdown';
