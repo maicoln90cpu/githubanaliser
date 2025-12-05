@@ -158,6 +158,9 @@ const AdminPlans = () => {
   const savePlan = async () => {
     if (!editingPlan) return;
     try {
+      // Convert config to JSON-compatible format
+      const configJson = JSON.parse(JSON.stringify(editingPlan.config));
+      
       const { error } = await supabase
         .from("plans")
         .update({
@@ -167,7 +170,7 @@ const AdminPlans = () => {
           daily_analyses: editingPlan.daily_analyses,
           price_monthly: editingPlan.price_monthly,
           features: editingPlan.features,
-          config: editingPlan.config as unknown as Record<string, unknown>,
+          config: configJson,
           is_active: editingPlan.is_active
         })
         .eq("id", editingPlan.id);
