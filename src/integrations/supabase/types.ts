@@ -92,36 +92,42 @@ export type Database = {
       }
       plans: {
         Row: {
+          config: Json | null
           created_at: string | null
           daily_analyses: number | null
           description: string | null
           features: Json | null
           id: string
           is_active: boolean | null
+          max_tokens_monthly: number | null
           monthly_analyses: number | null
           name: string
           price_monthly: number | null
           slug: string
         }
         Insert: {
+          config?: Json | null
           created_at?: string | null
           daily_analyses?: number | null
           description?: string | null
           features?: Json | null
           id?: string
           is_active?: boolean | null
+          max_tokens_monthly?: number | null
           monthly_analyses?: number | null
           name: string
           price_monthly?: number | null
           slug: string
         }
         Update: {
+          config?: Json | null
           created_at?: string | null
           daily_analyses?: number | null
           description?: string | null
           features?: Json | null
           id?: string
           is_active?: boolean | null
+          max_tokens_monthly?: number | null
           monthly_analyses?: number | null
           name?: string
           price_monthly?: number | null

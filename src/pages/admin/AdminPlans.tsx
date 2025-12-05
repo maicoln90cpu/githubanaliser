@@ -1,66 +1,55 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { 
-  Github, 
-  Home, 
-  Loader2, 
-  Crown,
-  Check,
-  ArrowLeft,
-  Zap,
-  Scale,
-  BarChart3,
-  AlertTriangle,
-  TrendingUp,
-  DollarSign,
-  Calculator
+  Github, Home, Loader2, Crown, Check, ArrowLeft, Zap, Scale, BarChart3,
+  AlertTriangle, TrendingUp, DollarSign, Calculator, Edit, Save, X, Plus, Trash2, Leaf, Flame
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+interface PlanConfig {
+  allowed_depths: string[];
+  allowed_analysis_types: string[];
+  max_tokens_monthly: number | null;
+  allow_economic_mode: boolean;
+  limitations: string[];
+}
 
 interface Plan {
   id: string;
   name: string;
   slug: string;
-  description: string;
-  monthly_analyses: number;
-  daily_analyses: number;
-  price_monthly: number;
+  description: string | null;
+  monthly_analyses: number | null;
+  daily_analyses: number | null;
+  price_monthly: number | null;
   features: string[];
-  is_active: boolean;
+  is_active: boolean | null;
+  config: PlanConfig;
 }
 
-// Cost estimates per depth level (USD)
-const DEPTH_COSTS = {
-  critical: 0.022,
-  balanced: 0.044,
-  complete: 0.110,
-};
-
-// Analysis types with their names
 const ANALYSIS_TYPES = [
-  { key: 'prd', name: 'Análise PRD' },
-  { key: 'divulgacao', name: 'Plano Divulgação' },
-  { key: 'captacao', name: 'Plano Captação' },
+  { key: 'prd', name: 'PRD' },
+  { key: 'divulgacao', name: 'Divulgação' },
+  { key: 'captacao', name: 'Captação' },
   { key: 'seguranca', name: 'Segurança' },
   { key: 'ui_theme', name: 'UI/Theme' },
   { key: 'ferramentas', name: 'Ferramentas' },
@@ -68,162 +57,161 @@ const ANALYSIS_TYPES = [
   { key: 'documentacao', name: 'Documentação' },
 ];
 
-// Plan configurations
-const PLAN_CONFIGS = {
-  free: {
-    name: 'Free',
-    price: 0,
-    monthlyProjects: 3,
-    dailyProjects: 1,
-    analysisTypes: ['prd', 'divulgacao', 'captacao'], // 3 types
-    allowedDepths: ['critical'],
-  },
-  basic: {
-    name: 'Basic',
-    price: 29.90,
-    monthlyProjects: 20,
-    dailyProjects: 5,
-    analysisTypes: ANALYSIS_TYPES.map(a => a.key), // all 8 types
-    allowedDepths: ['critical', 'balanced'],
-  },
-  pro: {
-    name: 'Pro',
-    price: 79.90,
-    monthlyProjects: 100,
-    dailyProjects: 15,
-    analysisTypes: ANALYSIS_TYPES.map(a => a.key), // all 8 types
-    allowedDepths: ['critical', 'balanced', 'complete'],
-  },
-};
+const DEPTH_LEVELS = [
+  { key: 'critical', name: 'Crítico', icon: Zap, color: 'text-yellow-500' },
+  { key: 'balanced', name: 'Balanceado', icon: Scale, color: 'text-blue-500' },
+  { key: 'complete', name: 'Completo', icon: BarChart3, color: 'text-purple-500' },
+];
 
-// Distribution scenarios for simulation
-const DISTRIBUTION_SCENARIOS = {
-  pessimistic: { critical: 0, balanced: 0.3, complete: 0.7 }, // Most expensive
-  realistic: { critical: 0.3, balanced: 0.5, complete: 0.2 },
-  optimistic: { critical: 0.6, balanced: 0.3, complete: 0.1 }, // Most economic
-  economic_mode: { critical: 0.8, balanced: 0.2, complete: 0 },
-};
-
-const USD_TO_BRL = 5.0; // Exchange rate
+const USD_TO_BRL = 5.0;
 
 const AdminPlans = () => {
   const navigate = useNavigate();
   const { isAdmin, isLoading: adminLoading } = useAdmin();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedScenario, setSelectedScenario] = useState<keyof typeof DISTRIBUTION_SCENARIOS>('realistic');
-  const [economicMode, setEconomicMode] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  
+  // Real cost data from database
+  const [realCosts, setRealCosts] = useState<{
+    byDepth: Record<string, { avgCost: number; avgTokens: number; count: number }>;
+    byModel: Record<string, { avgCost: number; avgTokens: number; count: number }>;
+    overall: { avgCost: number; avgTokens: number; totalCount: number };
+  } | null>(null);
+
+  // Simulator state
+  const [depthDistribution, setDepthDistribution] = useState({ critical: 30, balanced: 50, complete: 20 });
+  const [modeDistribution, setModeDistribution] = useState({ detailed: 70, economic: 30 });
+  const [targetMargin, setTargetMargin] = useState(50);
 
   useEffect(() => {
     if (adminLoading) return;
-
     if (!isAdmin) {
-      toast.error("Acesso negado. Área restrita para administradores.");
+      toast.error("Acesso negado.");
       navigate("/dashboard");
       return;
     }
-
-    const loadPlans = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("plans")
-          .select("*")
-          .order("price_monthly", { ascending: true });
-
-        if (error) throw error;
-        
-        setPlans(data.map(p => ({
-          ...p,
-          features: Array.isArray(p.features) ? (p.features as string[]) : []
-        })));
-
-        // Load economic mode setting
-        const { data: settings } = await supabase
-          .from("system_settings")
-          .select("value")
-          .eq("key", "analysis_mode")
-          .maybeSingle();
-        
-        setEconomicMode(settings?.value === 'economic');
-      } catch (error) {
-        console.error("Erro ao carregar planos:", error);
-        toast.error("Erro ao carregar planos");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPlans();
+    loadData();
   }, [isAdmin, adminLoading, navigate]);
 
-  // Calculate cost per project based on depth distribution
-  const calculateProjectCost = (
-    analysisTypes: string[],
-    allowedDepths: string[],
-    scenario: typeof DISTRIBUTION_SCENARIOS[keyof typeof DISTRIBUTION_SCENARIOS]
-  ) => {
-    const numAnalyses = analysisTypes.length;
-    let avgCostPerAnalysis = 0;
+  const loadData = async () => {
+    try {
+      // Load plans
+      const { data: plansData, error: plansError } = await supabase
+        .from("plans")
+        .select("*")
+        .order("price_monthly", { ascending: true });
 
-    // Calculate weighted average cost based on allowed depths and scenario distribution
-    allowedDepths.forEach(depth => {
-      const depthKey = depth as keyof typeof DEPTH_COSTS;
-      const weight = scenario[depthKey] || 0;
-      avgCostPerAnalysis += DEPTH_COSTS[depthKey] * weight;
-    });
+      if (plansError) throw plansError;
+      
+      setPlans(plansData.map(p => ({
+        ...p,
+        features: Array.isArray(p.features) ? (p.features as string[]) : [],
+        config: (p.config as unknown as PlanConfig) || { allowed_depths: [], allowed_analysis_types: [], max_tokens_monthly: null, allow_economic_mode: false, limitations: [] }
+      })));
 
-    // Normalize weights if not all depths are allowed
-    const totalWeight = allowedDepths.reduce((sum, d) => sum + (scenario[d as keyof typeof DISTRIBUTION_SCENARIOS['realistic']] || 0), 0);
-    if (totalWeight > 0) {
-      avgCostPerAnalysis = avgCostPerAnalysis / totalWeight;
-    } else {
-      // Default to critical if no weights match
-      avgCostPerAnalysis = DEPTH_COSTS.critical;
+      // Load real costs from analysis_usage
+      const { data: usageData } = await supabase
+        .from("analysis_usage")
+        .select("depth_level, model_used, tokens_estimated, cost_estimated");
+
+      if (usageData && usageData.length > 0) {
+        const byDepth: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
+        const byModel: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
+        let totalCost = 0, totalTokens = 0;
+
+        usageData.forEach(u => {
+          const depth = u.depth_level || 'balanced';
+          const model = u.model_used || 'unknown';
+          const cost = u.cost_estimated || 0;
+          const tokens = u.tokens_estimated || 0;
+
+          if (!byDepth[depth]) byDepth[depth] = { totalCost: 0, totalTokens: 0, count: 0 };
+          byDepth[depth].totalCost += cost;
+          byDepth[depth].totalTokens += tokens;
+          byDepth[depth].count++;
+
+          if (!byModel[model]) byModel[model] = { totalCost: 0, totalTokens: 0, count: 0 };
+          byModel[model].totalCost += cost;
+          byModel[model].totalTokens += tokens;
+          byModel[model].count++;
+
+          totalCost += cost;
+          totalTokens += tokens;
+        });
+
+        setRealCosts({
+          byDepth: Object.fromEntries(Object.entries(byDepth).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
+          byModel: Object.fromEntries(Object.entries(byModel).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
+          overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length }
+        });
+      }
+    } catch (error) {
+      console.error("Erro:", error);
+      toast.error("Erro ao carregar dados");
+    } finally {
+      setLoading(false);
     }
-
-    return numAnalyses * avgCostPerAnalysis;
   };
 
-  // Calculate plan profitability
-  const calculatePlanProfitability = (planSlug: keyof typeof PLAN_CONFIGS) => {
-    const config = PLAN_CONFIGS[planSlug];
-    const scenario = DISTRIBUTION_SCENARIOS[selectedScenario];
-    
-    const costPerProject = calculateProjectCost(config.analysisTypes, config.allowedDepths, scenario);
-    const maxMonthlyCost = costPerProject * config.monthlyProjects;
-    const maxMonthlyCostBRL = maxMonthlyCost * USD_TO_BRL;
-    
-    const revenue = config.price;
-    const margin = revenue > 0 ? ((revenue - maxMonthlyCostBRL) / revenue) * 100 : -100;
-    const profit = revenue - maxMonthlyCostBRL;
+  const savePlan = async () => {
+    if (!editingPlan) return;
+    try {
+      const { error } = await supabase
+        .from("plans")
+        .update({
+          name: editingPlan.name,
+          description: editingPlan.description,
+          monthly_analyses: editingPlan.monthly_analyses,
+          daily_analyses: editingPlan.daily_analyses,
+          price_monthly: editingPlan.price_monthly,
+          features: editingPlan.features,
+          config: editingPlan.config as unknown as Record<string, unknown>,
+          is_active: editingPlan.is_active
+        })
+        .eq("id", editingPlan.id);
 
-    return {
-      costPerProject,
-      costPerProjectBRL: costPerProject * USD_TO_BRL,
-      maxMonthlyCost,
-      maxMonthlyCostBRL,
-      revenue,
-      margin,
-      profit,
-      numAnalysesPerProject: config.analysisTypes.length,
-      monthlyProjects: config.monthlyProjects,
+      if (error) throw error;
+      toast.success("Plano atualizado!");
+      setEditDialogOpen(false);
+      loadData();
+    } catch (error) {
+      console.error("Erro:", error);
+      toast.error("Erro ao salvar plano");
+    }
+  };
+
+  // Calculate weighted average cost based on simulator settings
+  const simulatedCost = useMemo(() => {
+    if (!realCosts) return null;
+    
+    const depthCosts = {
+      critical: realCosts.byDepth['critical']?.avgCost || 0.0044,
+      balanced: realCosts.byDepth['balanced']?.avgCost || 0.0088,
+      complete: realCosts.byDepth['complete']?.avgCost || 0.022,
     };
-  };
 
-  // Get margin color class
+    // Weighted by depth
+    const depthWeightedCost = 
+      (depthDistribution.critical / 100) * depthCosts.critical +
+      (depthDistribution.balanced / 100) * depthCosts.balanced +
+      (depthDistribution.complete / 100) * depthCosts.complete;
+
+    // Economic mode uses Flash Lite (~30% cheaper)
+    const economicDiscount = 0.7;
+    const modeWeightedCost = 
+      (modeDistribution.detailed / 100) * depthWeightedCost +
+      (modeDistribution.economic / 100) * depthWeightedCost * economicDiscount;
+
+    return modeWeightedCost * 8; // 8 analysis types per project
+  }, [realCosts, depthDistribution, modeDistribution]);
+
   const getMarginColor = (margin: number) => {
     if (margin >= 50) return 'text-green-500';
     if (margin >= 20) return 'text-yellow-500';
     if (margin >= 0) return 'text-orange-500';
     return 'text-destructive';
-  };
-
-  // Get margin badge variant
-  const getMarginBadge = (margin: number) => {
-    if (margin >= 50) return 'bg-green-500/10 text-green-500 border-green-500/20';
-    if (margin >= 20) return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
-    if (margin >= 0) return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-    return 'bg-destructive/10 text-destructive border-destructive/20';
   };
 
   if (adminLoading || loading) {
@@ -234,469 +222,432 @@ const AdminPlans = () => {
     );
   }
 
-  const freePlan = calculatePlanProfitability('free');
-  const basicPlan = calculatePlanProfitability('basic');
-  const proPlan = calculatePlanProfitability('pro');
-
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
             <Github className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-xl">GitAnalyzer</span>
-            <span className="px-2 py-0.5 text-xs bg-red-500/10 text-red-500 rounded-full font-medium">
-              Admin
-            </span>
+            <Badge variant="destructive" className="text-xs">Admin</Badge>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-              <Home className="w-4 h-4 mr-2" />
-              Dashboard
-            </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8 space-y-8">
         {/* Title */}
-        <div className="mb-8 animate-fade-in">
-          <div className="flex items-center gap-3 mb-2">
-            <Crown className="w-8 h-8 text-yellow-500" />
-            <h1 className="text-3xl font-bold">Planos de Assinatura</h1>
-          </div>
-          <p className="text-muted-foreground">
-            Análise detalhada de custos e lucratividade por plano
-          </p>
-        </div>
-
-        {/* Cost per Depth Level */}
-        <div className="grid md:grid-cols-3 gap-4 mb-8 animate-slide-up">
-          <div className="p-6 bg-card border border-border rounded-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-yellow-500/10 rounded-lg flex items-center justify-center">
-                <Zap className="w-5 h-5 text-yellow-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold">⚡ Crítico</h3>
-                <p className="text-xs text-muted-foreground">8KB context</p>
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-yellow-500">
-              ${DEPTH_COSTS.critical.toFixed(3)}
-            </p>
-            <p className="text-sm text-muted-foreground">por análise</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              ≈ R$ {(DEPTH_COSTS.critical * USD_TO_BRL).toFixed(2)}
-            </p>
-          </div>
-
-          <div className="p-6 bg-card border border-border rounded-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                <Scale className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold">⚖️ Balanceado</h3>
-                <p className="text-xs text-muted-foreground">20KB context</p>
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-blue-500">
-              ${DEPTH_COSTS.balanced.toFixed(3)}
-            </p>
-            <p className="text-sm text-muted-foreground">por análise</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              ≈ R$ {(DEPTH_COSTS.balanced * USD_TO_BRL).toFixed(2)}
-            </p>
-          </div>
-
-          <div className="p-6 bg-card border border-border rounded-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-purple-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold">📊 Completo</h3>
-                <p className="text-xs text-muted-foreground">40KB context</p>
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-purple-500">
-              ${DEPTH_COSTS.complete.toFixed(3)}
-            </p>
-            <p className="text-sm text-muted-foreground">por análise</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              ≈ R$ {(DEPTH_COSTS.complete * USD_TO_BRL).toFixed(2)}
-            </p>
+        <div className="flex items-center gap-3">
+          <Crown className="w-8 h-8 text-yellow-500" />
+          <div>
+            <h1 className="text-3xl font-bold">Gestão de Planos</h1>
+            <p className="text-muted-foreground">Edite planos, simule cenários e analise viabilidade</p>
           </div>
         </div>
 
-        {/* Scenario Selector */}
-        <div className="mb-8 p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.05s" }}>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <Calculator className="w-5 h-5 text-primary" />
-              <div>
-                <h3 className="font-semibold">Simulador de Cenários</h3>
-                <p className="text-sm text-muted-foreground">
-                  Selecione a distribuição de profundidade esperada
+        {/* Real Cost Cards */}
+        {realCosts && (
+          <div className="grid md:grid-cols-4 gap-4">
+            {DEPTH_LEVELS.map(depth => {
+              const data = realCosts.byDepth[depth.key];
+              return (
+                <Card key={depth.key}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <depth.icon className={`w-4 h-4 ${depth.color}`} />
+                      {depth.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className={`text-2xl font-bold ${depth.color}`}>
+                      R$ {((data?.avgCost || 0) * USD_TO_BRL).toFixed(4)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {data?.count || 0} análises • ~{Math.round(data?.avgTokens || 0)} tokens
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-primary" />
+                  Média Geral
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-primary">
+                  R$ {(realCosts.overall.avgCost * USD_TO_BRL).toFixed(4)}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {realCosts.overall.totalCount} total
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Simulator */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calculator className="w-5 h-5" />
+              Simulador de Cenários Avançado
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid md:grid-cols-3 gap-6">
+              {/* Depth Distribution */}
+              <div className="space-y-4">
+                <Label>Distribuição de Profundidade</Label>
+                {['critical', 'balanced', 'complete'].map(depth => (
+                  <div key={depth} className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="capitalize">{depth === 'critical' ? '⚡ Crítico' : depth === 'balanced' ? '⚖️ Balanceado' : '📊 Completo'}</span>
+                      <span>{depthDistribution[depth as keyof typeof depthDistribution]}%</span>
+                    </div>
+                    <Slider
+                      value={[depthDistribution[depth as keyof typeof depthDistribution]]}
+                      onValueChange={([v]) => {
+                        const remaining = 100 - v;
+                        const others = Object.keys(depthDistribution).filter(k => k !== depth);
+                        const otherSum = others.reduce((sum, k) => sum + depthDistribution[k as keyof typeof depthDistribution], 0);
+                        if (otherSum > 0) {
+                          setDepthDistribution(prev => ({
+                            ...prev,
+                            [depth]: v,
+                            [others[0]]: Math.round((prev[others[0] as keyof typeof prev] / otherSum) * remaining),
+                            [others[1]]: remaining - Math.round((prev[others[0] as keyof typeof prev] / otherSum) * remaining),
+                          }));
+                        }
+                      }}
+                      max={100}
+                      step={5}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Mode Distribution */}
+              <div className="space-y-4">
+                <Label>Modo de Análise</Label>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /> Detalhado</span>
+                    <span>{modeDistribution.detailed}%</span>
+                  </div>
+                  <Slider
+                    value={[modeDistribution.detailed]}
+                    onValueChange={([v]) => setModeDistribution({ detailed: v, economic: 100 - v })}
+                    max={100}
+                    step={5}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1"><Leaf className="w-3 h-3 text-green-500" /> Econômico</span>
+                    <span>{modeDistribution.economic}%</span>
+                  </div>
+                </div>
+
+                <div className="pt-4 space-y-2">
+                  <Label>Margem Alvo</Label>
+                  <div className="flex justify-between text-sm">
+                    <span>Meta de lucro</span>
+                    <span className={getMarginColor(targetMargin)}>{targetMargin}%</span>
+                  </div>
+                  <Slider
+                    value={[targetMargin]}
+                    onValueChange={([v]) => setTargetMargin(v)}
+                    max={80}
+                    min={10}
+                    step={5}
+                  />
+                </div>
+              </div>
+
+              {/* Results */}
+              <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+                <Label>Resultados Simulados</Label>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Custo/Projeto:</span>
+                    <span className="font-mono font-semibold">R$ {((simulatedCost || 0) * USD_TO_BRL).toFixed(2)}</span>
+                  </div>
+                  {plans.map(plan => {
+                    const maxCost = ((simulatedCost || 0) * USD_TO_BRL) * (plan.monthly_analyses || 0);
+                    const revenue = plan.price_monthly || 0;
+                    const margin = revenue > 0 ? ((revenue - maxCost) / revenue) * 100 : -100;
+                    const suggestedPrice = maxCost / (1 - targetMargin / 100);
+                    
+                    return (
+                      <div key={plan.id} className="p-3 bg-background rounded border">
+                        <div className="flex justify-between items-center mb-2">
+                          <Badge variant="outline">{plan.name}</Badge>
+                          <span className={`font-bold ${getMarginColor(margin)}`}>{margin.toFixed(0)}%</span>
+                        </div>
+                        <div className="text-xs space-y-1 text-muted-foreground">
+                          <div className="flex justify-between">
+                            <span>Custo máx:</span>
+                            <span>R$ {maxCost.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Preço sugerido ({targetMargin}%):</span>
+                            <span className="text-primary">R$ {suggestedPrice.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        {margin < targetMargin && (
+                          <p className="text-xs text-destructive mt-2">⚠️ Abaixo da margem alvo</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-            <Select value={selectedScenario} onValueChange={(v) => setSelectedScenario(v as keyof typeof DISTRIBUTION_SCENARIOS)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pessimistic">
-                  <span className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-destructive" />
-                    Pessimista (70% Completo)
-                  </span>
-                </SelectItem>
-                <SelectItem value="realistic">
-                  <span className="flex items-center gap-2">
-                    <Scale className="w-4 h-4 text-blue-500" />
-                    Realista (Misto)
-                  </span>
-                </SelectItem>
-                <SelectItem value="optimistic">
-                  <span className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                    Otimista (60% Crítico)
-                  </span>
-                </SelectItem>
-                <SelectItem value="economic_mode">
-                  <span className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-yellow-500" />
-                    Modo Econômico
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="mt-4 grid md:grid-cols-4 gap-4 text-sm">
-            <div className="p-3 bg-muted/30 rounded-lg text-center">
-              <p className="text-muted-foreground mb-1">Crítico</p>
-              <p className="font-semibold text-yellow-500">
-                {(DISTRIBUTION_SCENARIOS[selectedScenario].critical * 100).toFixed(0)}%
-              </p>
-            </div>
-            <div className="p-3 bg-muted/30 rounded-lg text-center">
-              <p className="text-muted-foreground mb-1">Balanceado</p>
-              <p className="font-semibold text-blue-500">
-                {(DISTRIBUTION_SCENARIOS[selectedScenario].balanced * 100).toFixed(0)}%
-              </p>
-            </div>
-            <div className="p-3 bg-muted/30 rounded-lg text-center">
-              <p className="text-muted-foreground mb-1">Completo</p>
-              <p className="font-semibold text-purple-500">
-                {(DISTRIBUTION_SCENARIOS[selectedScenario].complete * 100).toFixed(0)}%
-              </p>
-            </div>
-            <div className="p-3 bg-primary/10 rounded-lg text-center">
-              <p className="text-muted-foreground mb-1">Modo Atual</p>
-              <p className="font-semibold text-primary">
-                {economicMode ? '💰 Econômico' : '📊 Normal'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Profitability Analysis Table */}
-        <div className="mb-8 p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <div className="flex items-center gap-3 mb-6">
-            <DollarSign className="w-5 h-5 text-green-500" />
-            <h3 className="font-semibold text-lg">Análise de Lucratividade por Plano</h3>
-          </div>
-
-          <div className="overflow-x-auto">
+        {/* Token Viability */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Viabilidade por Tokens
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Plano</TableHead>
-                  <TableHead className="text-right">Receita</TableHead>
-                  <TableHead className="text-right">Proj/Mês</TableHead>
-                  <TableHead className="text-right">Análises/Proj</TableHead>
-                  <TableHead className="text-right">Custo/Proj</TableHead>
-                  <TableHead className="text-right">Custo Máx/Mês</TableHead>
-                  <TableHead className="text-right">Lucro</TableHead>
-                  <TableHead className="text-right">Margem</TableHead>
+                  <TableHead className="text-right">Limite Projetos</TableHead>
+                  <TableHead className="text-right">Tokens/Projeto</TableHead>
+                  <TableHead className="text-right">Limite Tokens</TableHead>
+                  <TableHead className="text-right">Custo Estimado</TableHead>
+                  <TableHead className="text-right">Recomendação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[
-                  { name: 'Free', data: freePlan, slug: 'free' },
-                  { name: 'Basic', data: basicPlan, slug: 'basic' },
-                  { name: 'Pro', data: proPlan, slug: 'pro' },
-                ].map(({ name, data, slug }) => (
-                  <TableRow key={slug}>
-                    <TableCell className="font-medium">
-                      <Badge variant="outline" className={
-                        slug === 'pro' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
-                        slug === 'basic' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
-                        'bg-muted'
-                      }>
-                        {name}
-                      </Badge>
+                {plans.map(plan => {
+                  const avgTokensPerProject = (realCosts?.overall.avgTokens || 4000) * 8;
+                  const estimatedTokens = avgTokensPerProject * (plan.monthly_analyses || 0);
+                  const tokenLimit = plan.config?.max_tokens_monthly;
+                  const costPerToken = 0.000001;
+                  const estimatedCost = (tokenLimit || estimatedTokens) * costPerToken * USD_TO_BRL;
+                  
+                  return (
+                    <TableRow key={plan.id}>
+                      <TableCell><Badge variant="outline">{plan.name}</Badge></TableCell>
+                      <TableCell className="text-right font-mono">{plan.monthly_analyses}</TableCell>
+                      <TableCell className="text-right font-mono">~{Math.round(avgTokensPerProject).toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {tokenLimit ? tokenLimit.toLocaleString() : '∞'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">R$ {estimatedCost.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
+                        {!tokenLimit ? (
+                          <Badge className="bg-yellow-500/10 text-yellow-500">Definir limite</Badge>
+                        ) : tokenLimit < estimatedTokens ? (
+                          <Badge className="bg-green-500/10 text-green-500">Protegido</Badge>
+                        ) : (
+                          <Badge className="bg-blue-500/10 text-blue-500">OK</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* Plans Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Planos Configurados
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Plano</TableHead>
+                  <TableHead>Preço</TableHead>
+                  <TableHead>Limites</TableHead>
+                  <TableHead>Profundidades</TableHead>
+                  <TableHead>Análises</TableHead>
+                  <TableHead>Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plans.map(plan => (
+                  <TableRow key={plan.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-semibold">{plan.name}</p>
+                        <p className="text-xs text-muted-foreground">{plan.description}</p>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right font-mono">
-                      R$ {data.revenue.toFixed(2)}
+                    <TableCell className="font-mono">R$ {(plan.price_monthly || 0).toFixed(2)}</TableCell>
+                    <TableCell className="text-sm">
+                      {plan.monthly_analyses}/mês • {plan.daily_analyses}/dia
                     </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {data.monthlyProjects}
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {plan.config?.allowed_depths?.map(d => (
+                          <Badge key={d} variant="outline" className="text-xs">
+                            {d === 'critical' ? '⚡' : d === 'balanced' ? '⚖️' : '📊'}
+                          </Badge>
+                        ))}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {data.numAnalysesPerProject}
+                    <TableCell className="text-sm">
+                      {plan.config?.allowed_analysis_types?.length || 0}/8
                     </TableCell>
-                    <TableCell className="text-right font-mono">
-                      R$ {data.costPerProjectBRL.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      R$ {data.maxMonthlyCostBRL.toFixed(2)}
-                    </TableCell>
-                    <TableCell className={`text-right font-mono ${data.profit >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                      R$ {data.profit.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge className={getMarginBadge(data.margin)}>
-                        {data.margin.toFixed(0)}%
-                      </Badge>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingPlan(plan);
+                          setEditDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </div>
-
-          {/* Margin Alerts */}
-          <div className="mt-6 space-y-2">
-            {proPlan.margin < 0 && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-                <div>
-                  <p className="font-medium text-destructive">Alerta: Plano Pro com margem negativa!</p>
-                  <p className="text-sm text-muted-foreground">
-                    No cenário {selectedScenario}, o plano Pro pode ter prejuízo de R$ {Math.abs(proPlan.profit).toFixed(2)}/usuário
-                  </p>
-                </div>
-              </div>
-            )}
-            {basicPlan.margin < 20 && basicPlan.margin >= 0 && (
-              <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                <div>
-                  <p className="font-medium text-yellow-500">Atenção: Margem baixa no plano Basic</p>
-                  <p className="text-sm text-muted-foreground">
-                    Considere ajustar limites ou preço para melhorar rentabilidade
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Cost per Analysis Type */}
-        <div className="mb-8 p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.15s" }}>
-          <div className="flex items-center gap-3 mb-6">
-            <BarChart3 className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold text-lg">Custo por Tipo de Análise</h3>
-          </div>
-
-          <div className="grid md:grid-cols-4 gap-4">
-            {ANALYSIS_TYPES.map((type) => {
-              const scenario = DISTRIBUTION_SCENARIOS[selectedScenario];
-              const avgCost = (DEPTH_COSTS.critical * scenario.critical) + 
-                             (DEPTH_COSTS.balanced * scenario.balanced) + 
-                             (DEPTH_COSTS.complete * scenario.complete);
-              
-              return (
-                <div key={type.key} className="p-4 bg-muted/30 rounded-lg">
-                  <p className="text-sm font-medium mb-2">{type.name}</p>
-                  <p className="text-xl font-bold">R$ {(avgCost * USD_TO_BRL).toFixed(2)}</p>
-                  <p className="text-xs text-muted-foreground">${avgCost.toFixed(3)} USD</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Plans Grid */}
-        <div className="mb-8">
-          <h3 className="font-semibold text-lg mb-4">Detalhes dos Planos</h3>
-          <div className="grid md:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-            {plans.map((plan, index) => {
-              const profitability = plan.slug === 'free' ? freePlan : 
-                                   plan.slug === 'basic' ? basicPlan : proPlan;
-              
-              return (
-                <div 
-                  key={plan.id}
-                  className={`p-6 bg-card border rounded-xl relative ${
-                    plan.slug === 'pro' 
-                      ? 'border-primary shadow-lg' 
-                      : 'border-border'
-                  }`}
-                >
-                  {plan.slug === 'pro' && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-full">
-                      Mais Popular
-                    </div>
-                  )}
-                  
-                  <div className="text-center mb-6">
-                    <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
-                    <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
-                    <div className="flex items-baseline justify-center gap-1">
-                      <span className="text-3xl font-bold">
-                        {plan.price_monthly === 0 ? 'Grátis' : `R$${plan.price_monthly.toFixed(2)}`}
-                      </span>
-                      {plan.price_monthly > 0 && (
-                        <span className="text-muted-foreground">/mês</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Profitability Indicator */}
-                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm">Margem Estimada</span>
-                      <Badge className={getMarginBadge(profitability.margin)}>
-                        {profitability.margin.toFixed(0)}%
-                      </Badge>
-                    </div>
-                    <Progress 
-                      value={Math.max(0, Math.min(100, profitability.margin))} 
-                      className="h-2"
-                    />
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Custo máx: R$ {profitability.maxMonthlyCostBRL.toFixed(2)}/mês
-                    </p>
-                  </div>
-
-                  <div className="space-y-4 mb-6">
-                    <div className="p-3 bg-muted/30 rounded-lg">
-                      <div className="flex justify-between text-sm">
-                        <span>Projetos/mês</span>
-                        <span className="font-medium">{plan.monthly_analyses}</span>
-                      </div>
-                      <div className="flex justify-between text-sm mt-1">
-                        <span>Projetos/dia</span>
-                        <span className="font-medium">{plan.daily_analyses}</span>
-                      </div>
-                    </div>
-
-                    <ul className="space-y-2">
-                      {plan.features.map((feature, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="pt-4 border-t border-border">
-                    <p className="text-xs text-muted-foreground text-center">
-                      {plan.is_active ? '✅ Plano ativo' : '❌ Plano inativo'}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Revenue Projections */}
-        <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.25s" }}>
-          <div className="flex items-center gap-3 mb-6">
-            <TrendingUp className="w-5 h-5 text-green-500" />
-            <h3 className="font-semibold text-lg">Projeção de Receita vs Custo</h3>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">100 usuários Basic</p>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-sm">Receita:</span>
-                  <span className="font-bold text-green-500">R$ {(100 * basicPlan.revenue).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Custo máx:</span>
-                  <span className="font-medium text-destructive">R$ {(100 * basicPlan.maxMonthlyCostBRL).toFixed(0)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-1 mt-1">
-                  <span className="text-sm font-medium">Lucro:</span>
-                  <span className={`font-bold ${100 * basicPlan.profit >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                    R$ {(100 * basicPlan.profit).toFixed(0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">50 Basic + 50 Pro</p>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-sm">Receita:</span>
-                  <span className="font-bold text-green-500">
-                    R$ {((50 * basicPlan.revenue) + (50 * proPlan.revenue)).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Custo máx:</span>
-                  <span className="font-medium text-destructive">
-                    R$ {((50 * basicPlan.maxMonthlyCostBRL) + (50 * proPlan.maxMonthlyCostBRL)).toFixed(0)}
-                  </span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-1 mt-1">
-                  <span className="text-sm font-medium">Lucro:</span>
-                  <span className={`font-bold ${((50 * basicPlan.profit) + (50 * proPlan.profit)) >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                    R$ {((50 * basicPlan.profit) + (50 * proPlan.profit)).toFixed(0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">100 usuários Pro</p>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-sm">Receita:</span>
-                  <span className="font-bold text-green-500">R$ {(100 * proPlan.revenue).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm">Custo máx:</span>
-                  <span className="font-medium text-destructive">R$ {(100 * proPlan.maxMonthlyCostBRL).toFixed(0)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-1 mt-1">
-                  <span className="text-sm font-medium">Lucro:</span>
-                  <span className={`font-bold ${100 * proPlan.profit >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-                    R$ {(100 * proPlan.profit).toFixed(0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Break-even info */}
-          <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
-            <h4 className="font-medium mb-2">💡 Dica de Break-even</h4>
-            <p className="text-sm text-muted-foreground">
-              Para o plano Pro ser lucrativo no cenário <strong>{selectedScenario}</strong>, 
-              os usuários precisam usar em média menos de{' '}
-              <strong>{proPlan.margin >= 0 ? '100%' : Math.floor((proPlan.revenue / proPlan.maxMonthlyCostBRL) * proPlan.monthlyProjects)}</strong> projetos/mês,
-              ou migrar para profundidades mais econômicas (Crítico/Balanceado).
-            </p>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </main>
+
+      {/* Edit Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Plano: {editingPlan?.name}</DialogTitle>
+            <DialogDescription>Configure todos os parâmetros do plano</DialogDescription>
+          </DialogHeader>
+          
+          {editingPlan && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nome</Label>
+                  <Input value={editingPlan.name} onChange={e => setEditingPlan({...editingPlan, name: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Preço (R$/mês)</Label>
+                  <Input type="number" step="0.01" value={editingPlan.price_monthly || 0} onChange={e => setEditingPlan({...editingPlan, price_monthly: parseFloat(e.target.value)})} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Descrição</Label>
+                <Textarea value={editingPlan.description || ''} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Limite Mensal</Label>
+                  <Input type="number" value={editingPlan.monthly_analyses || 0} onChange={e => setEditingPlan({...editingPlan, monthly_analyses: parseInt(e.target.value)})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Limite Diário</Label>
+                  <Input type="number" value={editingPlan.daily_analyses || 0} onChange={e => setEditingPlan({...editingPlan, daily_analyses: parseInt(e.target.value)})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tokens/Mês</Label>
+                  <Input type="number" value={editingPlan.config?.max_tokens_monthly || ''} placeholder="∞" onChange={e => setEditingPlan({...editingPlan, config: {...editingPlan.config, max_tokens_monthly: e.target.value ? parseInt(e.target.value) : null}})} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Profundidades Permitidas</Label>
+                <div className="flex gap-4">
+                  {DEPTH_LEVELS.map(depth => (
+                    <label key={depth.key} className="flex items-center gap-2">
+                      <Checkbox
+                        checked={editingPlan.config?.allowed_depths?.includes(depth.key)}
+                        onCheckedChange={checked => {
+                          const depths = editingPlan.config?.allowed_depths || [];
+                          setEditingPlan({
+                            ...editingPlan,
+                            config: {
+                              ...editingPlan.config,
+                              allowed_depths: checked ? [...depths, depth.key] : depths.filter(d => d !== depth.key)
+                            }
+                          });
+                        }}
+                      />
+                      <span className={depth.color}>{depth.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipos de Análise Permitidos</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {ANALYSIS_TYPES.map(type => (
+                    <label key={type.key} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={editingPlan.config?.allowed_analysis_types?.includes(type.key)}
+                        onCheckedChange={checked => {
+                          const types = editingPlan.config?.allowed_analysis_types || [];
+                          setEditingPlan({
+                            ...editingPlan,
+                            config: {
+                              ...editingPlan.config,
+                              allowed_analysis_types: checked ? [...types, type.key] : types.filter(t => t !== type.key)
+                            }
+                          });
+                        }}
+                      />
+                      {type.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={editingPlan.config?.allow_economic_mode}
+                  onCheckedChange={checked => setEditingPlan({...editingPlan, config: {...editingPlan.config, allow_economic_mode: !!checked}})}
+                />
+                <Label>Permitir Modo Econômico</Label>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Features (uma por linha)</Label>
+                <Textarea 
+                  value={editingPlan.features?.join('\n') || ''} 
+                  onChange={e => setEditingPlan({...editingPlan, features: e.target.value.split('\n').filter(f => f.trim())})}
+                  rows={4}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={savePlan}><Save className="w-4 h-4 mr-2" />Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
