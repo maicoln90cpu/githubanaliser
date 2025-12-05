@@ -89,7 +89,7 @@ const AnalysisComparison = () => {
         .eq("type", analysisType)
         .order("created_at", { ascending: false });
 
-      // Load version info from usage
+      // Load version info from usage - match by analysis dates
       const { data: usageData } = await supabase
         .from("analysis_usage")
         .select("depth_level, model_used, created_at")
@@ -97,8 +97,23 @@ const AnalysisComparison = () => {
         .eq("analysis_type", analysisType)
         .order("created_at", { ascending: false });
 
+      // Match analyses with their usage info by creation time proximity
+      const enrichedVersions: VersionInfo[] = (analysesData || []).map(analysis => {
+        // Find usage entry with closest timestamp
+        const usage = usageData?.find(u => {
+          if (!u.created_at || !analysis.created_at) return false;
+          const diff = Math.abs(new Date(u.created_at).getTime() - new Date(analysis.created_at).getTime());
+          return diff < 60000; // Within 1 minute
+        });
+        return {
+          depth_level: usage?.depth_level || null,
+          model_used: usage?.model_used || null,
+          created_at: analysis.created_at
+        };
+      });
+
       setAnalyses(analysesData || []);
-      setVersions(usageData || []);
+      setVersions(enrichedVersions);
 
       // Set initial selections from URL params
       if (version1Param) setSelectedV1(parseInt(version1Param));

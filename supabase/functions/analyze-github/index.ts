@@ -603,11 +603,12 @@ async function saveAnalysis(
   content: string
 ): Promise<boolean> {
   try {
-    const { error } = await supabase.from("analyses").upsert({
+    // Use INSERT to allow multiple versions of the same analysis type
+    const { error } = await supabase.from("analyses").insert({
       project_id: projectId,
       type: analysisType,
       content: content,
-    }, { onConflict: 'project_id,type' });
+    });
     
     if (error) {
       console.error(`❌ Erro ao salvar análise ${analysisType}:`, error.message);
@@ -615,7 +616,7 @@ async function saveAnalysis(
       return false;
     }
     
-    console.log(`✅ Análise ${analysisType} salva com sucesso`);
+    console.log(`✅ Análise ${analysisType} salva com sucesso (nova versão)`);
     return true;
   } catch (e) {
     console.error(`❌ Exceção ao salvar análise ${analysisType}:`, e);
