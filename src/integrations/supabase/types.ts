@@ -46,6 +46,51 @@ export type Database = {
           },
         ]
       }
+      analysis_prompts: {
+        Row: {
+          analysis_type: string
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          system_prompt: string
+          updated_at: string | null
+          updated_by: string | null
+          user_prompt_template: string
+          variables_hint: Json | null
+          version: number | null
+        }
+        Insert: {
+          analysis_type: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          system_prompt: string
+          updated_at?: string | null
+          updated_by?: string | null
+          user_prompt_template: string
+          variables_hint?: Json | null
+          version?: number | null
+        }
+        Update: {
+          analysis_type?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          system_prompt?: string
+          updated_at?: string | null
+          updated_by?: string | null
+          user_prompt_template?: string
+          variables_hint?: Json | null
+          version?: number | null
+        }
+        Relationships: []
+      }
       analysis_usage: {
         Row: {
           analysis_type: string

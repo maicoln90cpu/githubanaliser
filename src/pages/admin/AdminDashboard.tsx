@@ -11,7 +11,8 @@ import {
   FileText, 
   BarChart3,
   Shield,
-  Settings
+  Settings,
+  MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -267,6 +268,24 @@ const AdminDashboard = () => {
             </div>
             <Button variant="outline" className="w-full">
               Configurar
+            </Button>
+          </div>
+
+          <div 
+            className="p-6 bg-card border border-border rounded-xl hover:shadow-lg transition-all cursor-pointer"
+            onClick={() => navigate("/admin/prompts")}
+          >
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-cyan-500/10 rounded-lg flex items-center justify-center">
+                <MessageSquare className="w-6 h-6 text-cyan-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Prompts IA</h3>
+                <p className="text-sm text-muted-foreground">Gerenciar prompts de análise</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full">
+              Ver Prompts
             </Button>
           </div>
         </div>
