@@ -18,6 +18,7 @@ import NewFeatures from "./pages/NewFeatures";
 import TechnicalDocumentation from "./pages/TechnicalDocumentation";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
+import AnalysisComparison from "./pages/AnalysisComparison";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminProjects from "./pages/admin/AdminProjects";
@@ -51,6 +52,7 @@ const App = () => (
           <Route path="/documentacao-tecnica/:id" element={<TechnicalDocumentation />} />
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
+          <Route path="/comparar/:id" element={<AnalysisComparison />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/usuarios" element={<AdminUsers />} />
           <Route path="/admin/projetos" element={<AdminProjects />} />

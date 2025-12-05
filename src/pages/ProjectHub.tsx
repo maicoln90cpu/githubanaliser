@@ -25,7 +25,8 @@ import {
   BarChart3,
   Flame,
   Leaf,
-  Layers
+  Layers,
+  GitCompare
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -464,10 +465,24 @@ const ProjectHub = () => {
                         </Badge>
                       )}
                       {multipleVersions && (
-                        <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-500 border-purple-500/20">
-                          <Layers className="w-3 h-3 mr-1" />
-                          {uniqueVersions.length} versões
-                        </Badge>
+                        <>
+                          <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-500 border-purple-500/20">
+                            <Layers className="w-3 h-3 mr-1" />
+                            {uniqueVersions.length} versões
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/comparar/${id}?type=${analysis.type}`);
+                            }}
+                          >
+                            <GitCompare className="w-3 h-3" />
+                            Comparar
+                          </Button>
+                        </>
                       )}
                     </>
                   ) : (
