@@ -916,6 +916,28 @@ serve(async (req) => {
       console.log("✓ Projeto já existe:", existingProject.id);
       project = existingProject;
       
+      // VERIFICAÇÃO ANTI-DUPLICAÇÃO: Se análise já está em andamento, retornar sem duplicar
+      const currentStatus = existingProject.analysis_status;
+      const inProgressStatuses = [
+        "pending", "extracting", 
+        "generating_prd", "generating_divulgacao", "generating_captacao",
+        "generating_seguranca", "generating_ui", "generating_ferramentas",
+        "generating_features", "generating_documentacao"
+      ];
+      
+      if (inProgressStatuses.includes(currentStatus)) {
+        console.log(`⚠️ Análise já em andamento (status: ${currentStatus}). Retornando sem duplicar.`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            projectId: existingProject.id,
+            alreadyInProgress: true,
+            message: "Análise já em andamento" 
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
       // Only delete analyses for the types being regenerated
       if (isSingleTypeReanalysis) {
         await supabase

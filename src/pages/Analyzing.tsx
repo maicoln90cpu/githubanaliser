@@ -65,6 +65,7 @@ const Analyzing = () => {
   const [isCancelling, setIsCancelling] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const hasCompletedRef = useRef(false);
+  const analysisStartedRef = useRef(false); // Lock para evitar análises duplicadas
   
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
@@ -251,6 +252,13 @@ const Analyzing = () => {
     }
 
     const startAnalysis = async () => {
+      // Lock para evitar chamadas duplicadas (React StrictMode chama useEffect 2x)
+      if (analysisStartedRef.current) {
+        console.log("⚠️ Análise já iniciada, ignorando chamada duplicada");
+        return;
+      }
+      analysisStartedRef.current = true;
+      
       try {
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "loading" } : step
@@ -270,14 +278,21 @@ const Analyzing = () => {
         if (error) {
           console.error("Erro ao iniciar análise:", error);
           toast.error("Erro ao iniciar análise");
+          analysisStartedRef.current = false; // Reset lock on error
           navigate("/dashboard");
           return;
         }
 
         if (!data?.projectId) {
           toast.error("Resposta inválida do servidor");
+          analysisStartedRef.current = false; // Reset lock on error
           navigate("/dashboard");
           return;
+        }
+
+        // Se a análise já estava em andamento, não duplicar polling
+        if (data.alreadyInProgress) {
+          console.log("✓ Análise já em andamento, apenas acompanhando...");
         }
 
         setSteps(prev => prev.map((step, i) => 
@@ -296,6 +311,7 @@ const Analyzing = () => {
       } catch (error) {
         console.error("Erro:", error);
         toast.error("Erro ao processar análise");
+        analysisStartedRef.current = false; // Reset lock on error
         navigate("/dashboard");
       }
     };
