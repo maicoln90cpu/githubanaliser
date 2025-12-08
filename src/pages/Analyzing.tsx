@@ -25,6 +25,7 @@ type AnalysisStatus =
   | "generating_ferramentas"
   | "generating_features"
   | "generating_documentacao"
+  | "generating_prompts"
   | "completed" 
   | "error";
 
@@ -37,6 +38,7 @@ const analysisTypeToStatus: Record<string, AnalysisStatus> = {
   ferramentas: "generating_ferramentas",
   features: "generating_features",
   documentacao: "generating_documentacao",
+  prompts: "generating_prompts",
 };
 
 const allSteps: Step[] = [
@@ -50,6 +52,7 @@ const allSteps: Step[] = [
   { id: "ferramentas", label: "Analisando ferramentas", status: "pending", analysisType: "ferramentas" },
   { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
   { id: "documentacao", label: "Gerando documentação técnica", status: "pending", analysisType: "documentacao" },
+  { id: "prompts", label: "Gerando prompts otimizados", status: "pending", analysisType: "prompts" },
   { id: "complete", label: "Finalizando análise", status: "pending" },
 ];
 
@@ -120,6 +123,7 @@ const Analyzing = () => {
       generating_ferramentas: -1,
       generating_features: -1,
       generating_documentacao: -1,
+      generating_prompts: -1,
       completed: steps.length - 1,
       error: -1,
     };

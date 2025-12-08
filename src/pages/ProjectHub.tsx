@@ -26,7 +26,8 @@ import {
   Flame,
   Leaf,
   Layers,
-  GitCompare
+  GitCompare,
+  Terminal
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -150,6 +151,16 @@ const analysisTypes = [
     textColor: "text-cyan-500",
     bgColor: "bg-cyan-500/10",
     route: "/documentacao-tecnica"
+  },
+  { 
+    type: "prompts", 
+    title: "Prompts Otimizados", 
+    description: "Prompts prontos para desenvolvimento",
+    icon: Terminal, 
+    color: "bg-violet-500",
+    textColor: "text-violet-500",
+    bgColor: "bg-violet-500/10",
+    route: "/prompts-otimizados"
   },
 ];
 
