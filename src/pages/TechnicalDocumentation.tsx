@@ -10,6 +10,7 @@ const TechnicalDocumentation = () => {
       iconColor="text-cyan-500"
       iconBgColor="bg-cyan-500/10"
       prevRoute={{ path: "/novas-features", label: "Novas Features" }}
+      nextRoute={{ path: "/prompts-otimizados", label: "Prompts Otimizados" }}
     />
   );
 };
