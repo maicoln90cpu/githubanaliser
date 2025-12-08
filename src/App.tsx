@@ -16,6 +16,7 @@ import UIImprovements from "./pages/UIImprovements";
 import ToolsImprovements from "./pages/ToolsImprovements";
 import NewFeatures from "./pages/NewFeatures";
 import TechnicalDocumentation from "./pages/TechnicalDocumentation";
+import AnalysisPrompts from "./pages/AnalysisPrompts";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
 import AnalysisComparison from "./pages/AnalysisComparison";
@@ -50,6 +51,7 @@ const App = () => (
           <Route path="/melhorias-ferramentas/:id" element={<ToolsImprovements />} />
           <Route path="/novas-features/:id" element={<NewFeatures />} />
           <Route path="/documentacao-tecnica/:id" element={<TechnicalDocumentation />} />
+          <Route path="/prompts-otimizados/:id" element={<AnalysisPrompts />} />
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
           <Route path="/comparar/:id" element={<AnalysisComparison />} />

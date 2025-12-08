@@ -88,6 +88,7 @@ const analysisOptions: AnalysisOption[] = [
   { id: "ferramentas", label: "Ferramentas", description: "Otimizações de código", icon: "🔧", iconComponent: <Wrench className="w-6 h-6" />, fullDescription: "Análise de dependências, otimizações de performance, refatorações sugeridas e melhores práticas de código." },
   { id: "features", label: "Novas Features", description: "Sugestões de funcionalidades", icon: "✨", iconComponent: <Lightbulb className="w-6 h-6" />, fullDescription: "Novas funcionalidades baseadas em tendências de mercado, análise de concorrentes e feedback de usuários." },
   { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖", iconComponent: <BookOpen className="w-6 h-6" />, fullDescription: "README profissional, guia de instalação, referência de API, guia de contribuição e changelog." },
+  { id: "prompts", label: "Prompts Otimizados", description: "Prompts para desenvolvimento", icon: "💻", iconComponent: <Sparkles className="w-6 h-6" />, fullDescription: "Prompts prontos para usar em ferramentas de IA (Cursor, Lovable, Copilot) para implementar funcionalidades do projeto." },
 ];
 
 interface DynamicPlan {

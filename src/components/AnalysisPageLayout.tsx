@@ -9,6 +9,7 @@ import { CheckableMarkdown } from "./CheckableMarkdown";
 import { useChecklistState } from "@/hooks/useChecklistState";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { Progress } from "@/components/ui/progress";
+import { ViabilityScore } from "./ViabilityScore";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -367,6 +368,14 @@ const AnalysisPageLayout = ({
             </Tooltip>
           </TooltipProvider>
         </div>
+
+        {/* Viability Score - Only for PRD */}
+        {type === "prd" && analysis?.content && (
+          <ViabilityScore 
+            content={analysis.content} 
+            className="mb-6 animate-slide-up"
+          />
+        )}
 
         {/* Analysis Content */}
         <div 
