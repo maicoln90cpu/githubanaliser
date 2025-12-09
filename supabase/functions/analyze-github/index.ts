@@ -342,6 +342,10 @@ const DEFAULT_PROMPTS: Record<string, { system: string; user: string }> = {
   prompts: {
     system: "Você é um especialista em Prompt Engineering e AI-Assisted Development.",
     user: "Analise o projeto e gere prompts otimizados prontos para usar em ferramentas de IA para desenvolvimento."
+  },
+  quality: {
+    system: "Você é um arquiteto de software sênior especializado em análise de qualidade de código.",
+    user: "Analise o projeto e gere métricas de qualidade de código estimadas."
   }
 };
 
@@ -688,7 +692,7 @@ async function processAnalysisInBackground(
   // Default to all types if not specified
   const typesToGenerate = analysisTypes.length > 0 
     ? analysisTypes 
-    : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features", "documentacao", "prompts"];
+    : ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features", "documentacao", "prompts", "quality"];
 
   console.log("Tipos de análise selecionados:", typesToGenerate);
   console.log("Usar cache:", useCache);
@@ -844,7 +848,8 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
       ferramentas: "generating_ferramentas",
       features: "generating_features",
       documentacao: "generating_documentacao",
-      prompts: "generating_prompts"
+      prompts: "generating_prompts",
+      quality: "generating_quality"
     };
 
     for (const analysisType of typesToGenerate) {
@@ -927,7 +932,7 @@ serve(async (req) => {
         "pending", "extracting", 
         "generating_prd", "generating_divulgacao", "generating_captacao",
         "generating_seguranca", "generating_ui", "generating_ferramentas",
-        "generating_features", "generating_documentacao", "generating_prompts"
+        "generating_features", "generating_documentacao", "generating_prompts", "generating_quality"
       ];
       
       if (inProgressStatuses.includes(currentStatus)) {
