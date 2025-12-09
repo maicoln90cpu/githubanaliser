@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { 
   Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, 
   Zap, Scale, Rocket, Check, ChevronDown, ArrowRight, FileText, Target, 
-  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2
+  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2, Activity
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -81,14 +81,15 @@ interface AnalysisOption {
 
 const analysisOptions: AnalysisOption[] = [
   { id: "prd", label: "Análise PRD", description: "Documento técnico completo", icon: "📋", iconComponent: <FileText className="w-6 h-6" />, fullDescription: "Gera um Product Requirements Document completo com objetivos, público-alvo, arquitetura técnica e análise de riscos." },
-  { id: "divulgacao", label: "Plano de Divulgação", description: "Estratégia de marketing", icon: "📢", iconComponent: <Target className="w-6 h-6" />, fullDescription: "Estratégia completa de marketing digital, canais de aquisição, calendário editorial e métricas de sucesso." },
-  { id: "captacao", label: "Plano de Captação", description: "Estratégia de investimentos", icon: "💰", iconComponent: <TrendingUp className="w-6 h-6" />, fullDescription: "Análise de mercado, proposta de valor para investidores, projeções financeiras e roadmap de crescimento." },
+  { id: "divulgacao", label: "Marketing & Lançamento", description: "Estratégia de marketing", icon: "📢", iconComponent: <Target className="w-6 h-6" />, fullDescription: "Estratégia completa de marketing digital, canais de aquisição, calendário editorial e métricas de sucesso." },
+  { id: "captacao", label: "Pitch para Investidores", description: "Estratégia de investimentos", icon: "💰", iconComponent: <TrendingUp className="w-6 h-6" />, fullDescription: "Análise de mercado, proposta de valor para investidores, projeções financeiras e roadmap de crescimento." },
   { id: "seguranca", label: "Segurança", description: "Análise de vulnerabilidades", icon: "🛡️", iconComponent: <Shield className="w-6 h-6" />, fullDescription: "Identificação de vulnerabilidades, boas práticas de segurança, compliance e recomendações de proteção." },
   { id: "ui_theme", label: "UI/Theme", description: "Melhorias visuais", icon: "🎨", iconComponent: <Palette className="w-6 h-6" />, fullDescription: "Sugestões de design, paleta de cores, tipografia, componentes UI e melhorias de experiência do usuário." },
   { id: "ferramentas", label: "Ferramentas", description: "Otimizações de código", icon: "🔧", iconComponent: <Wrench className="w-6 h-6" />, fullDescription: "Análise de dependências, otimizações de performance, refatorações sugeridas e melhores práticas de código." },
   { id: "features", label: "Novas Features", description: "Sugestões de funcionalidades", icon: "✨", iconComponent: <Lightbulb className="w-6 h-6" />, fullDescription: "Novas funcionalidades baseadas em tendências de mercado, análise de concorrentes e feedback de usuários." },
   { id: "documentacao", label: "Documentação", description: "README e guias técnicos", icon: "📖", iconComponent: <BookOpen className="w-6 h-6" />, fullDescription: "README profissional, guia de instalação, referência de API, guia de contribuição e changelog." },
   { id: "prompts", label: "Prompts Otimizados", description: "Prompts para desenvolvimento", icon: "💻", iconComponent: <Sparkles className="w-6 h-6" />, fullDescription: "Prompts prontos para usar em ferramentas de IA (Cursor, Lovable, Copilot) para implementar funcionalidades do projeto." },
+  { id: "quality", label: "Qualidade de Código", description: "Métricas de qualidade", icon: "📊", iconComponent: <Activity className="w-6 h-6" />, fullDescription: "Análise de complexidade ciclomática, manutenibilidade, cobertura de testes estimada e code smells." },
 ];
 
 interface DynamicPlan {

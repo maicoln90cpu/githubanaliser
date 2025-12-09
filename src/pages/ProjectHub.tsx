@@ -27,7 +27,10 @@ import {
   Leaf,
   Layers,
   GitCompare,
-  Terminal
+  Terminal,
+  Activity,
+  LayoutDashboard,
+  MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -84,7 +87,7 @@ const analysisTypes = [
   },
   { 
     type: "divulgacao", 
-    title: "Plano de Divulgação", 
+    title: "Marketing & Lançamento", 
     description: "Estratégias de marketing e comunicação",
     icon: Megaphone, 
     color: "bg-purple-500",
@@ -94,7 +97,7 @@ const analysisTypes = [
   },
   { 
     type: "captacao", 
-    title: "Plano de Captação", 
+    title: "Pitch para Investidores", 
     description: "Estratégias de investimento e recursos",
     icon: DollarSign, 
     color: "bg-green-500",
@@ -161,6 +164,16 @@ const analysisTypes = [
     textColor: "text-violet-500",
     bgColor: "bg-violet-500/10",
     route: "/prompts-otimizados"
+  },
+  { 
+    type: "quality", 
+    title: "Qualidade de Código", 
+    description: "Métricas e análise de qualidade",
+    icon: Activity, 
+    color: "bg-emerald-500",
+    textColor: "text-emerald-500",
+    bgColor: "bg-emerald-500/10",
+    route: "/qualidade-codigo"
   },
 ];
 

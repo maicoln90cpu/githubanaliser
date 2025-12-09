@@ -26,6 +26,7 @@ type AnalysisStatus =
   | "generating_features"
   | "generating_documentacao"
   | "generating_prompts"
+  | "generating_quality"
   | "completed" 
   | "error";
 
@@ -39,20 +40,22 @@ const analysisTypeToStatus: Record<string, AnalysisStatus> = {
   features: "generating_features",
   documentacao: "generating_documentacao",
   prompts: "generating_prompts",
+  quality: "generating_quality",
 };
 
 const allSteps: Step[] = [
   { id: "connect", label: "Conectando ao GitHub", status: "pending" },
   { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
   { id: "prd", label: "Gerando análise PRD", status: "pending", analysisType: "prd" },
-  { id: "divulgacao", label: "Criando plano de divulgação", status: "pending", analysisType: "divulgacao" },
-  { id: "captacao", label: "Criando plano de captação", status: "pending", analysisType: "captacao" },
+  { id: "divulgacao", label: "Criando plano de marketing", status: "pending", analysisType: "divulgacao" },
+  { id: "captacao", label: "Criando pitch para investidores", status: "pending", analysisType: "captacao" },
   { id: "seguranca", label: "Analisando segurança", status: "pending", analysisType: "seguranca" },
   { id: "ui", label: "Sugerindo melhorias visuais", status: "pending", analysisType: "ui_theme" },
   { id: "ferramentas", label: "Analisando ferramentas", status: "pending", analysisType: "ferramentas" },
   { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
   { id: "documentacao", label: "Gerando documentação técnica", status: "pending", analysisType: "documentacao" },
   { id: "prompts", label: "Gerando prompts otimizados", status: "pending", analysisType: "prompts" },
+  { id: "quality", label: "Analisando qualidade do código", status: "pending", analysisType: "quality" },
   { id: "complete", label: "Finalizando análise", status: "pending" },
 ];
 
@@ -124,6 +127,7 @@ const Analyzing = () => {
       generating_features: -1,
       generating_documentacao: -1,
       generating_prompts: -1,
+      generating_quality: -1,
       completed: steps.length - 1,
       error: -1,
     };
