@@ -15,7 +15,8 @@ import {
   Zap,
   BarChart3,
   Flame,
-  Leaf
+  Leaf,
+  AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -923,8 +924,133 @@ const AdminCosts = () => {
           </div>
         </div>
 
-        {/* Projections */}
+        {/* ROI Dashboard */}
         <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up" style={{ animationDelay: "0.25s" }}>
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-green-500" />
+            Dashboard de ROI por Plano
+          </h3>
+          <div className="grid md:grid-cols-3 gap-6 mb-6">
+            {/* Free Plan ROI */}
+            <div className="p-4 bg-muted/30 rounded-lg border border-border">
+              <div className="flex items-center justify-between mb-3">
+                <Badge className="bg-muted text-muted-foreground">Free</Badge>
+                <span className="text-xs text-muted-foreground">R$ 0/mês</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Receita:</span>
+                  <span className="font-medium">R$ 0,00</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Custo estimado:</span>
+                  <span className="font-medium text-red-500">-R$ {((stats?.avgCostPerAnalysis || 0) * 5 * 7 * USD_TO_BRL).toFixed(2)}</span>
+                </div>
+                <div className="border-t border-border pt-2 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Margem:</span>
+                  <span className="font-bold text-red-500">-100%</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                * Custo de aquisição, usuários migram para pago
+              </p>
+            </div>
+
+            {/* Basic Plan ROI */}
+            <div className="p-4 bg-blue-500/5 rounded-lg border border-blue-500/20">
+              <div className="flex items-center justify-between mb-3">
+                <Badge className="bg-blue-500/10 text-blue-500">Basic</Badge>
+                <span className="text-xs text-muted-foreground">R$ 29,90/mês</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Receita:</span>
+                  <span className="font-medium text-green-500">R$ 29,90</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Custo estimado:</span>
+                  <span className="font-medium">-R$ {((stats?.avgCostPerAnalysis || 0) * 20 * 7 * USD_TO_BRL).toFixed(2)}</span>
+                </div>
+                <div className="border-t border-border pt-2 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Margem:</span>
+                  <span className={`font-bold ${29.90 - ((stats?.avgCostPerAnalysis || 0) * 20 * 7 * USD_TO_BRL) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {((29.90 - ((stats?.avgCostPerAnalysis || 0) * 20 * 7 * USD_TO_BRL)) / 29.90 * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                * 20 projetos × 7 análises/projeto
+              </p>
+            </div>
+
+            {/* Pro Plan ROI */}
+            <div className="p-4 bg-purple-500/5 rounded-lg border border-purple-500/20">
+              <div className="flex items-center justify-between mb-3">
+                <Badge className="bg-purple-500/10 text-purple-500">Pro</Badge>
+                <span className="text-xs text-muted-foreground">R$ 79,90/mês</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Receita:</span>
+                  <span className="font-medium text-green-500">R$ 79,90</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Custo estimado:</span>
+                  <span className="font-medium">-R$ {((stats?.avgCostPerAnalysis || 0) * 50 * 7 * USD_TO_BRL).toFixed(2)}</span>
+                </div>
+                <div className="border-t border-border pt-2 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Margem:</span>
+                  <span className={`font-bold ${79.90 - ((stats?.avgCostPerAnalysis || 0) * 50 * 7 * USD_TO_BRL) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {((79.90 - ((stats?.avgCostPerAnalysis || 0) * 50 * 7 * USD_TO_BRL)) / 79.90 * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                * 50 projetos × 7 análises/projeto
+              </p>
+            </div>
+          </div>
+
+          {/* ROI Alerts */}
+          <div className="space-y-3">
+            {((stats?.avgCostPerAnalysis || 0) * 20 * 7 * USD_TO_BRL) > 29.90 && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-600">Alerta: Plano Basic não é lucrativo</p>
+                  <p className="text-xs text-muted-foreground">
+                    Considere aumentar o preço ou reduzir limites de análise para este plano.
+                  </p>
+                </div>
+              </div>
+            )}
+            {((stats?.avgCostPerAnalysis || 0) * 50 * 7 * USD_TO_BRL) > 79.90 && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-600">Alerta: Plano Pro não é lucrativo</p>
+                  <p className="text-xs text-muted-foreground">
+                    Considere ajustar preços ou promover uso do modo econômico.
+                  </p>
+                </div>
+              </div>
+            )}
+            {potentialSavings > 0.5 && (
+              <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center gap-3">
+                <Leaf className="w-5 h-5 text-green-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-green-600">Economia potencial: R$ {(potentialSavings * USD_TO_BRL).toFixed(2)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Se todas as análises detalhadas usassem modo econômico.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Projections */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up" style={{ animationDelay: "0.3s" }}>
           <h3 className="font-semibold text-lg mb-4">Projeções de Crescimento</h3>
           <div className="grid md:grid-cols-3 gap-6">
             <div className="p-4 bg-muted/30 rounded-lg">

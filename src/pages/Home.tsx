@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { supabase } from "@/integrations/supabase/client";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
+import { canUserAnalyze, suggestDepthBasedOnLimits } from "@/components/SpendingAlert";
 import {
   Dialog,
   DialogContent,
@@ -163,6 +164,7 @@ const Home = () => {
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>(analysisOptions.map(a => a.id));
   const [selectedDepth, setSelectedDepth] = useState<AnalysisDepth>('complete');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [depthSuggestion, setDepthSuggestion] = useState<{ depth: AnalysisDepth; reason: string } | null>(null);
   const [plans, setPlans] = useState<DynamicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const navigate = useNavigate();
@@ -219,6 +221,33 @@ const Home = () => {
     }
   }, [plan]);
 
+  // Suggest optimal depth based on user limits
+  useEffect(() => {
+    if (!plan || plan.isAdmin || planLoading) {
+      setDepthSuggestion(null);
+      return;
+    }
+
+    const dailyRemaining = plan.dailyLimit - plan.dailyUsage;
+    const monthlyRemaining = plan.monthlyLimit - plan.monthlyUsage;
+
+    if (dailyRemaining <= 2 || monthlyRemaining <= 5) {
+      const suggested = suggestDepthBasedOnLimits(plan);
+      if (suggested !== 'complete') {
+        setDepthSuggestion({
+          depth: suggested,
+          reason: dailyRemaining <= 2 
+            ? `Você tem apenas ${dailyRemaining} análise(s) restante(s) hoje. Modo "${suggested === 'critical' ? 'Crítico' : 'Balanceado'}" é recomendado.`
+            : `Você tem apenas ${monthlyRemaining} análise(s) restante(s) este mês. Considere economizar.`
+        });
+      } else {
+        setDepthSuggestion(null);
+      }
+    } else {
+      setDepthSuggestion(null);
+    }
+  }, [plan, planLoading]);
+
   const validateGithubUrl = (url: string): boolean => {
     const githubPattern = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
     return githubPattern.test(url);
@@ -245,9 +274,14 @@ const Home = () => {
       return;
     }
 
-    if (plan && !plan.canAnalyze) {
-      setShowUpgradeModal(true);
-      return;
+    // Check limits using canUserAnalyze
+    if (plan) {
+      const { canAnalyze, reason } = canUserAnalyze(plan);
+      if (!canAnalyze) {
+        toast.error(reason);
+        setShowUpgradeModal(true);
+        return;
+      }
     }
 
     if (selectedAnalyses.length === 0) {
@@ -499,6 +533,26 @@ const Home = () => {
                       );
                     })}
                   </div>
+
+                  {/* Depth Suggestion Alert */}
+                  {depthSuggestion && (
+                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-3">
+                      <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-yellow-600">{depthSuggestion.reason}</p>
+                        {selectedDepth !== depthSuggestion.depth && (
+                          <Button 
+                            variant="link" 
+                            size="sm" 
+                            className="h-auto p-0 text-yellow-600 underline"
+                            onClick={() => setSelectedDepth(depthSuggestion.depth)}
+                          >
+                            Usar modo {depthSuggestion.depth === 'critical' ? 'Crítico' : 'Balanceado'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-border pt-4">
