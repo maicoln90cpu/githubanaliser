@@ -127,7 +127,10 @@ async function updateProjectStatus(supabase: any, projectId: string, status: str
 interface AIResponse {
   content: string;
   tokensUsed: number;
+  inputTokens: number;
+  outputTokens: number;
   model: string;
+  provider: 'lovable' | 'openai';
 }
 
 // Models by mode
@@ -135,6 +138,43 @@ const MODELS = {
   detailed: "google/gemini-2.5-flash",
   economic: "google/gemini-2.5-flash-lite"
 };
+
+// OpenAI models and costs (per token in USD)
+const OPENAI_MODELS = {
+  'gpt-5': { 
+    apiName: 'gpt-5-2025-08-07',
+    inputCostPerToken: 0.000005,  // $0.005/1K
+    outputCostPerToken: 0.000015  // $0.015/1K
+  },
+  'gpt-5-mini': { 
+    apiName: 'gpt-5-mini-2025-08-07',
+    inputCostPerToken: 0.00000015,  // $0.00015/1K
+    outputCostPerToken: 0.0000006   // $0.0006/1K
+  },
+  'gpt-4.1': { 
+    apiName: 'gpt-4.1-2025-04-14',
+    inputCostPerToken: 0.000002,  // $0.002/1K
+    outputCostPerToken: 0.000008  // $0.008/1K
+  },
+};
+
+// Lovable AI (Gemini) costs (per token in USD)
+const LOVABLE_COSTS = {
+  'google/gemini-2.5-flash': {
+    inputCostPerToken: 0.00000015,  // ~$0.15/1M
+    outputCostPerToken: 0.0000006   // ~$0.60/1M
+  },
+  'google/gemini-2.5-flash-lite': {
+    inputCostPerToken: 0.000000075, // ~$0.075/1M
+    outputCostPerToken: 0.0000003   // ~$0.30/1M
+  }
+};
+
+// AI Provider settings interface
+interface AIProviderSettings {
+  provider: 'lovable' | 'openai';
+  openaiModel: string;
+}
 
 // Depth levels configuration
 type DepthLevel = 'critical' | 'balanced' | 'complete';
@@ -175,6 +215,35 @@ interface SystemSettings {
   maxContext: number;
   model: string;
   promptStyle: 'concise' | 'moderate' | 'detailed';
+}
+
+async function loadAIProviderSettings(supabase: any): Promise<AIProviderSettings> {
+  try {
+    const { data, error } = await supabase
+      .from("system_settings")
+      .select("key, value")
+      .in("key", ["ai_provider", "openai_model"]);
+    
+    if (error) {
+      console.log("⚠️ Erro ao carregar configurações do provider, usando Lovable AI:", error.message);
+      return { provider: 'lovable', openaiModel: 'gpt-5-mini' };
+    }
+    
+    const settings: Record<string, string> = {};
+    data?.forEach((s: { key: string; value: string }) => {
+      settings[s.key] = s.value;
+    });
+    
+    const provider = (settings.ai_provider || 'lovable') as 'lovable' | 'openai';
+    const openaiModel = settings.openai_model || 'gpt-5-mini';
+    
+    console.log(`🤖 Provider de IA: ${provider}${provider === 'openai' ? ` (modelo: ${openaiModel})` : ''}`);
+    
+    return { provider, openaiModel };
+  } catch (e) {
+    console.log("⚠️ Exceção ao carregar configurações do provider:", e);
+    return { provider: 'lovable', openaiModel: 'gpt-5-mini' };
+  }
 }
 
 async function loadDepthSettings(supabase: any, depth: DepthLevel): Promise<DepthConfig> {
@@ -374,8 +443,7 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
       });
 
       if (response.status === 429) {
-        // Rate limit - wait and retry with exponential backoff
-        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000); // Max 30s
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
         console.log(`⚠️ Rate limit (429). Tentativa ${attempt}/${maxRetries}. Aguardando ${waitTime/1000}s...`);
         await delay(waitTime);
         continue;
@@ -390,19 +458,91 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
       const data = await response.json();
       const elapsed = Date.now() - startTime;
       
-      // Log detalhado do uso de tokens
-      const promptTokens = data.usage?.prompt_tokens || 0;
-      const completionTokens = data.usage?.completion_tokens || 0;
-      const totalTokens = data.usage?.total_tokens || promptTokens + completionTokens ||
-        Math.ceil((systemPrompt.length + userPrompt.length + (data.choices[0].message.content?.length || 0)) / 4);
+      const inputTokens = data.usage?.prompt_tokens || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+      const outputTokens = data.usage?.completion_tokens || Math.ceil((data.choices[0].message.content?.length || 0) / 4);
+      const totalTokens = data.usage?.total_tokens || inputTokens + outputTokens;
       
       console.log(`✅ Resposta recebida em ${elapsed}ms (tentativa ${attempt})`);
-      console.log(`📊 Tokens: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
+      console.log(`📊 Tokens: input=${inputTokens}, output=${outputTokens}, total=${totalTokens}`);
       
       return {
         content: data.choices[0].message.content,
         tokensUsed: totalTokens,
-        model: model
+        inputTokens,
+        outputTokens,
+        model: model,
+        provider: 'lovable'
+      };
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
+        console.log(`⚠️ Erro na tentativa ${attempt}. Aguardando ${waitTime/1000}s antes de retry...`);
+        await delay(waitTime);
+      }
+    }
+  }
+  
+  throw lastError || new Error("Falha após múltiplas tentativas");
+}
+
+async function callOpenAI(openaiApiKey: string, systemPrompt: string, userPrompt: string, modelKey: string): Promise<AIResponse> {
+  const modelConfig = OPENAI_MODELS[modelKey as keyof typeof OPENAI_MODELS] || OPENAI_MODELS['gpt-5-mini'];
+  console.log(`🤖 Chamando OpenAI (${modelConfig.apiName})...`);
+  const startTime = Date.now();
+  
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: modelConfig.apiName,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          // GPT-5 and newer models use max_completion_tokens instead of max_tokens
+          max_completion_tokens: 8000,
+        }),
+      });
+
+      if (response.status === 429) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
+        console.log(`⚠️ Rate limit (429). Tentativa ${attempt}/${maxRetries}. Aguardando ${waitTime/1000}s...`);
+        await delay(waitTime);
+        continue;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Erro na API OpenAI: ${response.status} - ${errorText}`);
+        throw new Error(`Erro na API OpenAI: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const elapsed = Date.now() - startTime;
+      
+      const inputTokens = data.usage?.prompt_tokens || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+      const outputTokens = data.usage?.completion_tokens || Math.ceil((data.choices[0].message.content?.length || 0) / 4);
+      const totalTokens = data.usage?.total_tokens || inputTokens + outputTokens;
+      
+      console.log(`✅ Resposta recebida em ${elapsed}ms (tentativa ${attempt})`);
+      console.log(`📊 Tokens: input=${inputTokens}, output=${outputTokens}, total=${totalTokens}`);
+      
+      return {
+        content: data.choices[0].message.content,
+        tokensUsed: totalTokens,
+        inputTokens,
+        outputTokens,
+        model: modelKey,
+        provider: 'openai'
       };
     } catch (error) {
       lastError = error as Error;
@@ -598,10 +738,23 @@ ${githubData.configContent}
 `;
 }
 
-// Custo por token baseado em Lovable AI gateway (gemini-2.5-flash)
-// Input: ~$0.15/1M tokens, Output: ~$0.60/1M tokens
-// Média estimada: ~$0.000001 por token (considerando proporção input/output)
-const COST_PER_TOKEN = 0.000001;
+// Calculate real cost based on provider, model, and actual token counts
+function calculateRealCost(
+  result: AIResponse
+): number {
+  if (result.provider === 'openai') {
+    const modelConfig = OPENAI_MODELS[result.model as keyof typeof OPENAI_MODELS] || OPENAI_MODELS['gpt-5-mini'];
+    const inputCost = result.inputTokens * modelConfig.inputCostPerToken;
+    const outputCost = result.outputTokens * modelConfig.outputCostPerToken;
+    return inputCost + outputCost;
+  } else {
+    // Lovable AI (Gemini)
+    const modelCosts = LOVABLE_COSTS[result.model as keyof typeof LOVABLE_COSTS] || LOVABLE_COSTS['google/gemini-2.5-flash'];
+    const inputCost = result.inputTokens * modelCosts.inputCostPerToken;
+    const outputCost = result.outputTokens * modelCosts.outputCostPerToken;
+    return inputCost + outputCost;
+  }
+}
 
 // Helper to save analysis with error checking
 async function saveAnalysis(
@@ -637,16 +790,16 @@ async function trackAnalysisUsage(
   userId: string,
   projectId: string,
   analysisType: string,
-  tokensUsed: number,
-  modelUsed: string = MODELS.detailed,
+  result: AIResponse,
   depthLevel: DepthLevel = "balanced"
 ) {
-  const costEstimated = tokensUsed * COST_PER_TOKEN;
+  const costEstimated = calculateRealCost(result);
   
   console.log(`📊 Registrando uso: ${analysisType}`);
-  console.log(`   - Tokens: ${tokensUsed}`);
-  console.log(`   - Custo estimado: $${costEstimated.toFixed(6)}`);
-  console.log(`   - Modelo: ${modelUsed}`);
+  console.log(`   - Provider: ${result.provider}`);
+  console.log(`   - Tokens: input=${result.inputTokens}, output=${result.outputTokens}, total=${result.tokensUsed}`);
+  console.log(`   - Custo real calculado: $${costEstimated.toFixed(6)}`);
+  console.log(`   - Modelo: ${result.model}`);
   console.log(`   - Profundidade: ${depthLevel}`);
   
   try {
@@ -654,9 +807,9 @@ async function trackAnalysisUsage(
       user_id: userId,
       project_id: projectId,
       analysis_type: analysisType,
-      tokens_estimated: tokensUsed,
+      tokens_estimated: result.tokensUsed,
       cost_estimated: costEstimated,
-      model_used: modelUsed,
+      model_used: result.model,
       depth_level: depthLevel,
     });
     
@@ -685,6 +838,9 @@ async function processAnalysisInBackground(
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Load AI provider settings
+  const aiProviderSettings = await loadAIProviderSettings(supabase);
+  
   // Load depth-specific settings
   const depthConfig = await loadDepthSettings(supabase, depth);
   console.log(`🎛️ Profundidade: ${depth} (modelo: ${depthConfig.model}, contexto: ${depthConfig.maxContext})`);
@@ -750,14 +906,23 @@ async function processAnalysisInBackground(
 
     console.log(`Contexto preparado: ${projectContext.length} caracteres`);
 
+    // Get API keys based on provider
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) {
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    
+    if (aiProviderSettings.provider === 'openai') {
+      if (!openaiApiKey) {
+        console.log("⚠️ OPENAI_API_KEY não configurada, usando Lovable AI");
+        aiProviderSettings.provider = 'lovable';
+      }
+    }
+    
+    if (aiProviderSettings.provider === 'lovable' && !lovableApiKey) {
       throw new Error("LOVABLE_API_KEY não configurada");
     }
 
     // Load prompts from database
     const dbPrompts = await loadPromptsFromDB(supabase);
-    const apiKey = lovableApiKey; // Type assertion after null check
     
     const markdownFormatInstructions = `
 IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
@@ -823,16 +988,28 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
         userPrompt = `${userPrompt}\n\nContexto do Projeto:\n${projectContext}`;
       }
 
-      const result = await callLovableAI(
-        apiKey,
-        systemPrompt,
-        userPrompt,
-        depthConfig.model
-      );
+      // Call the appropriate AI provider
+      let result: AIResponse;
+      
+      if (aiProviderSettings.provider === 'openai' && openaiApiKey) {
+        result = await callOpenAI(
+          openaiApiKey,
+          systemPrompt,
+          userPrompt,
+          aiProviderSettings.openaiModel
+        );
+      } else {
+        result = await callLovableAI(
+          lovableApiKey!,
+          systemPrompt,
+          userPrompt,
+          depthConfig.model
+        );
+      }
       
       const saved = await saveAnalysis(supabase, projectId, analysisType, result.content);
       if (saved) {
-        await trackAnalysisUsage(supabase, userId, projectId, analysisType, result.tokensUsed, result.model, depth);
+        await trackAnalysisUsage(supabase, userId, projectId, analysisType, result, depth);
       }
       
       await delay(2000);
