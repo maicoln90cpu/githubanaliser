@@ -16,7 +16,8 @@ import {
   BarChart3,
   Flame,
   Leaf,
-  AlertTriangle
+  AlertTriangle,
+  Trophy
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -123,6 +124,27 @@ const ANALYSIS_TYPES_PT: Record<string, string> = {
   'features': 'Novas Features',
   'documentacao': 'Documentação',
 };
+
+// All available AI models ranked by cost
+const ALL_MODELS = [
+  // Lovable AI (Gemini)
+  { provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', inputPer1M: 0.075, outputPer1M: 0.30, costPer1K: 0.000375 },
+  { provider: 'Lovable AI', name: 'Gemini 2.5 Flash', inputPer1M: 0.15, outputPer1M: 0.60, costPer1K: 0.00075 },
+  { provider: 'Lovable AI', name: 'Gemini 2.5 Pro', inputPer1M: 1.25, outputPer1M: 10.00, costPer1K: 0.01125 },
+  // OpenAI (Standard tier - from official pricing)
+  { provider: 'OpenAI', name: 'GPT-5 Nano', inputPer1M: 0.05, outputPer1M: 0.40, costPer1K: 0.00045 },
+  { provider: 'OpenAI', name: 'GPT-4.1 Nano', inputPer1M: 0.10, outputPer1M: 0.40, costPer1K: 0.0005 },
+  { provider: 'OpenAI', name: 'GPT-4o Mini', inputPer1M: 0.15, outputPer1M: 0.60, costPer1K: 0.00075 },
+  { provider: 'OpenAI', name: 'GPT-5 Mini', inputPer1M: 0.25, outputPer1M: 2.00, costPer1K: 0.00225 },
+  { provider: 'OpenAI', name: 'GPT-4.1 Mini', inputPer1M: 0.40, outputPer1M: 1.60, costPer1K: 0.002 },
+  { provider: 'OpenAI', name: 'O4 Mini', inputPer1M: 1.10, outputPer1M: 4.40, costPer1K: 0.0055 },
+  { provider: 'OpenAI', name: 'O3', inputPer1M: 2.00, outputPer1M: 8.00, costPer1K: 0.01 },
+  { provider: 'OpenAI', name: 'GPT-4.1', inputPer1M: 2.00, outputPer1M: 8.00, costPer1K: 0.01 },
+  { provider: 'OpenAI', name: 'GPT-5', inputPer1M: 1.25, outputPer1M: 10.00, costPer1K: 0.01125 },
+  { provider: 'OpenAI', name: 'GPT-4o', inputPer1M: 2.50, outputPer1M: 10.00, costPer1K: 0.0125 },
+].sort((a, b) => a.costPer1K - b.costPer1K);
+
+const RANKING_BADGES = ['🥇', '🥈', '🥉'];
 
 const AdminCosts = () => {
   const navigate = useNavigate();
@@ -515,6 +537,150 @@ const AdminCosts = () => {
                 <p className="text-2xl font-bold">R$ {(monthlyProjectedCost * USD_TO_BRL).toFixed(2)}</p>
                 <p className="text-sm text-muted-foreground">Projeção Mensal</p>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Top 10 Cheapest Models Section */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-8 animate-slide-up">
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            Top 10 Modelos Mais Baratos
+          </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Ranking de modelos ordenado por custo (input + output médio). Custos baseados em tier Standard.
+          </p>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-2">#</th>
+                  <th className="text-left py-3 px-2">Provider</th>
+                  <th className="text-left py-3 px-2">Modelo</th>
+                  <th className="text-right py-3 px-2">Input/1M</th>
+                  <th className="text-right py-3 px-2">Output/1M</th>
+                  <th className="text-right py-3 px-2">Custo/1K</th>
+                  <th className="text-right py-3 px-2">10 Análises</th>
+                  <th className="text-right py-3 px-2">100 Análises</th>
+                  <th className="text-right py-3 px-2">1000 Análises</th>
+                  <th className="text-right py-3 px-2">Economia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ALL_MODELS.slice(0, 10).map((model, index) => {
+                  const tokensPerAnalysis = 15000; // Average tokens per analysis
+                  const costPer10 = (tokensPerAnalysis * 10 / 1000) * model.costPer1K;
+                  const costPer100 = (tokensPerAnalysis * 100 / 1000) * model.costPer1K;
+                  const costPer1000 = (tokensPerAnalysis * 1000 / 1000) * model.costPer1K;
+                  const maxCost = ALL_MODELS[ALL_MODELS.length - 1].costPer1K;
+                  const savings = ((maxCost - model.costPer1K) / maxCost) * 100;
+                  
+                  return (
+                    <tr key={`${model.provider}-${model.name}`} className={`border-b border-border/50 ${index < 3 ? 'bg-yellow-500/5' : ''}`}>
+                      <td className="py-3 px-2 text-center">
+                        {index < 3 ? (
+                          <span className="text-lg">{RANKING_BADGES[index]}</span>
+                        ) : (
+                          <span className="text-muted-foreground">{index + 1}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2">
+                        <Badge 
+                          variant="outline"
+                          className={model.provider === 'Lovable AI' 
+                            ? 'border-purple-500/50 text-purple-500' 
+                            : 'border-blue-500/50 text-blue-500'
+                          }
+                        >
+                          {model.provider}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2 font-medium">{model.name}</td>
+                      <td className="text-right py-3 px-2 font-mono text-xs text-muted-foreground">
+                        ${model.inputPer1M.toFixed(2)}
+                      </td>
+                      <td className="text-right py-3 px-2 font-mono text-xs text-muted-foreground">
+                        ${model.outputPer1M.toFixed(2)}
+                      </td>
+                      <td className="text-right py-3 px-2 font-mono">
+                        ${model.costPer1K.toFixed(5)}
+                      </td>
+                      <td className="text-right py-3 px-2">
+                        <div className="flex flex-col items-end">
+                          <span className="font-medium">${costPer10.toFixed(3)}</span>
+                          <span className="text-xs text-muted-foreground">R$ {(costPer10 * USD_TO_BRL).toFixed(2)}</span>
+                        </div>
+                      </td>
+                      <td className="text-right py-3 px-2">
+                        <div className="flex flex-col items-end">
+                          <span className="font-medium">${costPer100.toFixed(2)}</span>
+                          <span className="text-xs text-muted-foreground">R$ {(costPer100 * USD_TO_BRL).toFixed(2)}</span>
+                        </div>
+                      </td>
+                      <td className="text-right py-3 px-2">
+                        <div className="flex flex-col items-end">
+                          <span className="font-medium">${costPer1000.toFixed(2)}</span>
+                          <span className="text-xs text-muted-foreground">R$ {(costPer1000 * USD_TO_BRL).toFixed(2)}</span>
+                        </div>
+                      </td>
+                      <td className="text-right py-3 px-2">
+                        <Badge 
+                          className={savings > 80 
+                            ? 'bg-green-500/10 text-green-500' 
+                            : savings > 50 
+                              ? 'bg-yellow-500/10 text-yellow-500'
+                              : 'bg-muted text-muted-foreground'
+                          }
+                        >
+                          {savings.toFixed(0)}%
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Summary Cards */}
+          <div className="grid md:grid-cols-3 gap-4 mt-6">
+            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">🥇</span>
+                <span className="font-medium text-green-600">Mais Econômico</span>
+              </div>
+              <p className="text-lg font-bold">{ALL_MODELS[0].name}</p>
+              <p className="text-sm text-muted-foreground">{ALL_MODELS[0].provider}</p>
+              <p className="text-xs text-green-500 mt-1">${ALL_MODELS[0].costPer1K.toFixed(5)}/1K tokens</p>
+            </div>
+            
+            <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="w-4 h-4 text-purple-500" />
+                <span className="font-medium text-purple-600">Melhor Lovable AI</span>
+              </div>
+              <p className="text-lg font-bold">
+                {ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name}
+              </p>
+              <p className="text-sm text-muted-foreground">Lovable AI</p>
+              <p className="text-xs text-purple-500 mt-1">
+                ${ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5)}/1K tokens
+              </p>
+            </div>
+            
+            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Calculator className="w-4 h-4 text-blue-500" />
+                <span className="font-medium text-blue-600">Melhor OpenAI</span>
+              </div>
+              <p className="text-lg font-bold">
+                {ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name}
+              </p>
+              <p className="text-sm text-muted-foreground">OpenAI</p>
+              <p className="text-xs text-blue-500 mt-1">
+                ${ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5)}/1K tokens
+              </p>
             </div>
           </div>
         </div>
