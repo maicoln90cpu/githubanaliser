@@ -8,7 +8,7 @@ import {
   Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, 
   Zap, Scale, Rocket, Check, ChevronDown, ArrowRight, FileText, Target, 
   TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2, Activity,
-  Import
+  Import, Info, ExternalLink, AlertCircle, Lock
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -168,6 +168,8 @@ const Home = () => {
   const [depthSuggestion, setDepthSuggestion] = useState<{ depth: AnalysisDepth; reason: string } | null>(null);
   const [plans, setPlans] = useState<DynamicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [showGitHubHelpDialog, setShowGitHubHelpDialog] = useState(false);
+  const [repoValidationError, setRepoValidationError] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -254,7 +256,9 @@ const Home = () => {
     return githubPattern.test(url);
   };
 
-  const handleUrlSubmit = () => {
+  const handleUrlSubmit = async () => {
+    setRepoValidationError(null);
+    
     if (!githubUrl.trim()) {
       toast.error("Por favor, insira uma URL do GitHub");
       return;
@@ -265,7 +269,38 @@ const Home = () => {
       return;
     }
 
-    setShowAnalysisOptions(true);
+    // Proactive validation - check if repo exists and is public
+    setIsValidating(true);
+    try {
+      const urlParts = githubUrl.replace(/\/$/, '').split('/');
+      const owner = urlParts[urlParts.length - 2];
+      const repo = urlParts[urlParts.length - 1];
+      
+      const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+      
+      if (response.status === 404) {
+        setRepoValidationError('private');
+        setShowGitHubHelpDialog(true);
+        toast.error("Repositório não encontrado ou privado. Verifique se está público.");
+        setIsValidating(false);
+        return;
+      }
+      
+      if (!response.ok) {
+        setRepoValidationError('error');
+        toast.error("Erro ao verificar repositório. Tente novamente.");
+        setIsValidating(false);
+        return;
+      }
+      
+      setShowAnalysisOptions(true);
+    } catch (error) {
+      console.error('Error validating repo:', error);
+      // Continue anyway - GitHub API might be rate limited
+      setShowAnalysisOptions(true);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   const handleAnalyze = async () => {
@@ -436,14 +471,17 @@ const Home = () => {
                 onChange={(e) => {
                   setGithubUrl(e.target.value);
                   setShowAnalysisOptions(false);
+                  setRepoValidationError(null);
                 }}
                 onKeyPress={handleKeyPress}
-                className="h-14 text-base pl-12 pr-14 border-2 rounded-xl shadow-lg focus:shadow-xl transition-all"
+                className={`h-14 text-base pl-12 pr-14 border-2 rounded-xl shadow-lg focus:shadow-xl transition-all ${
+                  repoValidationError ? 'border-red-500/50 focus:border-red-500' : ''
+                }`}
                 disabled={isValidating}
               />
               <Github className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               
-              <Dialog>
+              <Dialog open={showGitHubHelpDialog} onOpenChange={setShowGitHubHelpDialog}>
                 <DialogTrigger asChild>
                   <button 
                     className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-muted-foreground hover:text-foreground transition-colors"
@@ -452,31 +490,90 @@ const Home = () => {
                     <HelpCircle className="w-5 h-5" />
                   </button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Como deixar seu projeto público</DialogTitle>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-primary" />
+                      Como deixar seu projeto público
+                    </DialogTitle>
                     <DialogDescription>
                       Para analisar seu repositório, ele precisa estar público no GitHub.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4 py-4">
+                  <div className="space-y-5 py-4">
+                    {/* Error Alert if triggered by validation */}
+                    {repoValidationError === 'private' && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-red-600">Repositório não encontrado ou privado</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            O repositório parece estar privado ou a URL está incorreta. Siga os passos abaixo para torná-lo público.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Steps */}
                     <div className="space-y-3">
                       {[
-                        "Acesse seu repositório no GitHub",
-                        "Clique em Settings (Configurações)",
-                        "Role até a seção \"Danger Zone\"",
-                        "Clique em \"Change repository visibility\"",
-                        "Selecione \"Make public\" e confirme"
+                        { text: "Acesse seu repositório no GitHub", tip: null },
+                        { text: "Clique em Settings (⚙️ Configurações)", tip: "Aba no canto superior direito" },
+                        { text: "Role até a seção \"Danger Zone\"", tip: "Final da página de configurações" },
+                        { text: "Clique em \"Change repository visibility\"", tip: null },
+                        { text: "Selecione \"Make public\" e confirme", tip: "Digite o nome do repositório para confirmar" }
                       ].map((step, i) => (
                         <div key={i} className="flex items-start gap-3">
                           <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">{i + 1}</div>
-                          <p className="text-sm">{step}</p>
+                          <div>
+                            <p className="text-sm">{step.text}</p>
+                            {step.tip && <p className="text-xs text-muted-foreground">{step.tip}</p>}
+                          </div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Temporary Public Tip */}
+                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-600">💡 Dica: Público temporário</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Você pode tornar o repositório público apenas durante a análise e depois privatizá-lo novamente. A análise leva de 2 a 5 minutos.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Direct Link */}
+                    {githubUrl && validateGithubUrl(githubUrl) && (
+                      <a
+                        href={`${githubUrl.replace(/\/$/, '')}/settings`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors text-sm font-medium"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Abrir configurações do repositório
+                      </a>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
+            </div>
+
+            {/* Inline Warning Banner */}
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Info className="w-4 h-4" />
+              <span>Seu repositório precisa estar público.</span>
+              <button 
+                type="button"
+                onClick={() => setShowGitHubHelpDialog(true)}
+                className="text-primary hover:underline font-medium"
+              >
+                Saiba como
+              </button>
             </div>
 
             {!showAnalysisOptions ? (
@@ -486,9 +583,19 @@ const Home = () => {
                   size="lg" 
                   className="w-full sm:w-auto px-12"
                   onClick={handleUrlSubmit}
+                  disabled={isValidating}
                 >
-                  Analisar Projeto
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                  {isValidating ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Verificando...
+                    </>
+                  ) : (
+                    <>
+                      Analisar Projeto
+                      <ArrowRight className="w-5 h-5 ml-2" />
+                    </>
+                  )}
                 </Button>
                 
                 {user && (
@@ -499,6 +606,7 @@ const Home = () => {
                         variant="outline" 
                         size="lg"
                         className="w-full sm:w-auto gap-2"
+                        disabled={isValidating}
                       >
                         <Import className="w-4 h-4" />
                         Importar do GitHub
