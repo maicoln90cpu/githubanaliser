@@ -8,6 +8,7 @@ interface Project {
   github_url: string;
   created_at: string;
   analysis_status: string | null;
+  is_pinned?: boolean;
 }
 
 interface RecentActivity {

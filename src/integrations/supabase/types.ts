@@ -218,6 +218,7 @@ export type Database = {
           github_data: Json | null
           github_url: string
           id: string
+          is_pinned: boolean | null
           name: string
           user_id: string | null
         }
@@ -228,6 +229,7 @@ export type Database = {
           github_data?: Json | null
           github_url: string
           id?: string
+          is_pinned?: boolean | null
           name: string
           user_id?: string | null
         }
@@ -238,6 +240,7 @@ export type Database = {
           github_data?: Json | null
           github_url?: string
           id?: string
+          is_pinned?: boolean | null
           name?: string
           user_id?: string | null
         }
