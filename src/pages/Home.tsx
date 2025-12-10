@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,12 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { 
   Github, Sparkles, LogIn, LayoutDashboard, HelpCircle, Crown, AlertTriangle, 
   Zap, Scale, Rocket, Check, ChevronDown, ArrowRight, FileText, Target, 
-  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2, Activity
+  TrendingUp, Shield, Palette, Wrench, Lightbulb, BookOpen, Star, Loader2, Activity,
+  Import
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { supabase } from "@/integrations/supabase/client";
+import { GitHubImportModal } from "@/components/GitHubImportModal";
 import {
   Dialog,
   DialogContent,
@@ -164,8 +166,24 @@ const Home = () => {
   const [plans, setPlans] = useState<DynamicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isLoading } = useAuth();
   const { plan, isLoading: planLoading } = useUserPlan();
+
+  // Handle GitHub OAuth callback
+  useEffect(() => {
+    if (searchParams.get('github_connected') === 'true') {
+      toast.success("Conta GitHub conectada com sucesso!");
+      // Clear the query param
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [searchParams]);
+
+  // Handler for GitHub import
+  const handleGitHubImport = (url: string) => {
+    setGithubUrl(url);
+    setShowAnalysisOptions(true);
+  };
 
   // Load plans dynamically from database
   useEffect(() => {
@@ -407,15 +425,33 @@ const Home = () => {
             </div>
 
             {!showAnalysisOptions ? (
-              <Button 
-                variant="hero" 
-                size="lg" 
-                className="w-full md:w-auto px-12"
-                onClick={handleUrlSubmit}
-              >
-                Analisar Projeto
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <Button 
+                  variant="hero" 
+                  size="lg" 
+                  className="w-full sm:w-auto px-12"
+                  onClick={handleUrlSubmit}
+                >
+                  Analisar Projeto
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+                
+                {user && (
+                  <GitHubImportModal 
+                    onSelectRepo={handleGitHubImport}
+                    trigger={
+                      <Button 
+                        variant="outline" 
+                        size="lg"
+                        className="w-full sm:w-auto gap-2"
+                      >
+                        <Import className="w-4 h-4" />
+                        Importar do GitHub
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
             ) : (
               /* Analysis Options Panel */
               <div className="bg-card border border-border rounded-xl p-6 space-y-5 animate-fade-in text-left">
