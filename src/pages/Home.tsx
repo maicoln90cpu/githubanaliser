@@ -272,7 +272,9 @@ const Home = () => {
     // Proactive validation - check if repo exists and is public
     setIsValidating(true);
     try {
-      const urlParts = githubUrl.replace(/\/$/, '').split('/');
+      // Clean URL: remove trailing slash and .git extension
+      const cleanUrl = githubUrl.replace(/\/$/, '').replace(/\.git$/, '');
+      const urlParts = cleanUrl.split('/');
       const owner = urlParts[urlParts.length - 2];
       const repo = urlParts[urlParts.length - 1];
       
