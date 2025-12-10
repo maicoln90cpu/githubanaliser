@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useUserPlan } from "@/hooks/useUserPlan";
+import { useUserPlan, estimateTokensForAnalysis, suggestDepthByTokens } from "@/hooks/useUserPlan";
 import { supabase } from "@/integrations/supabase/client";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -222,32 +222,32 @@ const Home = () => {
     }
   }, [plan]);
 
-  // Suggest optimal depth based on user limits
+  // Suggest optimal depth based on user token limits
   useEffect(() => {
     if (!plan || plan.isAdmin || planLoading) {
       setDepthSuggestion(null);
       return;
     }
 
-    const dailyRemaining = plan.dailyLimit - plan.dailyUsage;
-    const monthlyRemaining = plan.monthlyLimit - plan.monthlyUsage;
-
-    if (dailyRemaining <= 2 || monthlyRemaining <= 5) {
-      const suggested = suggestDepthBasedOnLimits(plan);
-      if (suggested !== 'complete') {
-        setDepthSuggestion({
-          depth: suggested,
-          reason: dailyRemaining <= 2 
-            ? `Você tem apenas ${dailyRemaining} análise(s) restante(s) hoje. Modo "${suggested === 'critical' ? 'Crítico' : 'Balanceado'}" é recomendado.`
-            : `Você tem apenas ${monthlyRemaining} análise(s) restante(s) este mês. Considere economizar.`
-        });
-      } else {
-        setDepthSuggestion(null);
+    // Use token-based suggestion
+    if (plan.maxTokensMonthly !== null && plan.tokensRemaining !== null) {
+      const tokensForComplete = estimateTokensForAnalysis('complete', selectedAnalyses.length);
+      const tokensForBalanced = estimateTokensForAnalysis('balanced', selectedAnalyses.length);
+      
+      if (plan.tokensRemaining < tokensForComplete && plan.tokensUsedPercent >= 60) {
+        const suggested = suggestDepthByTokens(plan.tokensRemaining, selectedAnalyses.length);
+        if (suggested !== 'complete') {
+          setDepthSuggestion({
+            depth: suggested,
+            reason: `Você tem ${(plan.tokensRemaining / 1000).toFixed(1)}K tokens restantes. Modo "${suggested === 'critical' ? 'Crítico' : 'Balanceado'}" é recomendado para economizar.`
+          });
+          return;
+        }
       }
-    } else {
-      setDepthSuggestion(null);
     }
-  }, [plan, planLoading]);
+    
+    setDepthSuggestion(null);
+  }, [plan, planLoading, selectedAnalyses.length]);
 
   const validateGithubUrl = (url: string): boolean => {
     const githubPattern = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
@@ -275,13 +275,30 @@ const Home = () => {
       return;
     }
 
-    // Check limits using canUserAnalyze
+    // Check token-based limits
     if (plan) {
       const { canAnalyze, reason } = canUserAnalyze(plan);
       if (!canAnalyze) {
         toast.error(reason);
         setShowUpgradeModal(true);
         return;
+      }
+      
+      // Check if selected analysis would exceed remaining tokens
+      if (plan.maxTokensMonthly !== null && plan.tokensRemaining !== null) {
+        const estimatedTokens = estimateTokensForAnalysis(selectedDepth, selectedAnalyses.length);
+        if (estimatedTokens > plan.tokensRemaining) {
+          toast.error(
+            `Esta análise requer ~${(estimatedTokens / 1000).toFixed(0)}K tokens, mas você só tem ${(plan.tokensRemaining / 1000).toFixed(1)}K restantes. Reduza a profundidade ou número de análises.`
+          );
+          // Suggest a better depth
+          const suggestedDepth = suggestDepthByTokens(plan.tokensRemaining, selectedAnalyses.length);
+          if (suggestedDepth !== selectedDepth) {
+            setSelectedDepth(suggestedDepth);
+            toast.info(`Profundidade alterada para "${suggestedDepth === 'critical' ? 'Crítica' : 'Balanceada'}" automaticamente.`);
+          }
+          return;
+        }
       }
     }
 
@@ -640,23 +657,58 @@ const Home = () => {
                   })}
                 </div>
 
+                {/* Token Estimation */}
+                {user && plan && plan.maxTokensMonthly !== null && (
+                  <div className="p-3 bg-muted/50 rounded-lg flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-primary" />
+                      <span className="text-muted-foreground">Tokens estimados:</span>
+                      <span className="font-medium">
+                        ~{(estimateTokensForAnalysis(selectedDepth, selectedAnalyses.length) / 1000).toFixed(0)}K
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      Restam: <span className={`font-medium ${plan.tokensUsedPercent >= 80 ? 'text-yellow-500' : 'text-foreground'}`}>
+                        {plan.tokensRemaining !== null ? `${(plan.tokensRemaining / 1000).toFixed(1)}K` : '∞'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {(() => {
                   // Calculate allowed analyses count
                   const allowedCount = plan?.isAdmin 
                     ? selectedAnalyses.length 
                     : selectedAnalyses.filter(a => plan?.allowedAnalysisTypes?.includes(a) ?? true).length;
                   
+                  const estimatedTokens = estimateTokensForAnalysis(selectedDepth, allowedCount);
+                  const wouldExceed = plan && plan.maxTokensMonthly !== null && plan.tokensRemaining !== null 
+                    ? estimatedTokens > plan.tokensRemaining 
+                    : false;
+                  
                   return (
-                    <Button 
-                      variant="hero" 
-                      size="lg" 
-                      className="w-full"
-                      onClick={handleAnalyze}
-                      disabled={isValidating || allowedCount === 0}
-                    >
-                      {isValidating ? "Iniciando..." : `Analisar (${allowedCount} análises)`}
-                      <ArrowRight className="w-5 h-5 ml-2" />
-                    </Button>
+                    <>
+                      {wouldExceed && (
+                        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-destructive">
+                            Esta análise requer ~{(estimatedTokens / 1000).toFixed(0)}K tokens, 
+                            mas você só tem {((plan?.tokensRemaining || 0) / 1000).toFixed(1)}K restantes. 
+                            Reduza a profundidade ou número de análises.
+                          </p>
+                        </div>
+                      )}
+                      <Button 
+                        variant="hero" 
+                        size="lg" 
+                        className="w-full"
+                        onClick={handleAnalyze}
+                        disabled={isValidating || allowedCount === 0 || wouldExceed}
+                      >
+                        {isValidating ? "Iniciando..." : `Analisar (${allowedCount} análises)`}
+                        <ArrowRight className="w-5 h-5 ml-2" />
+                      </Button>
+                    </>
                   );
                 })()}
               </div>

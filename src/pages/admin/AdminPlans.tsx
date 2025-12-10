@@ -688,51 +688,61 @@ const AdminPlans = () => {
                 <TableRow>
                   <TableHead>Plano</TableHead>
                   <TableHead>Preço</TableHead>
-                  <TableHead>Limites</TableHead>
+                  <TableHead>Limite de Tokens</TableHead>
                   <TableHead>Profundidades</TableHead>
                   <TableHead>Análises</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {plans.map(plan => (
-                  <TableRow key={plan.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-semibold">{plan.name}</p>
-                        <p className="text-xs text-muted-foreground">{plan.description}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono">R$ {(plan.price_monthly || 0).toFixed(2)}</TableCell>
-                    <TableCell className="text-sm">
-                      {plan.monthly_analyses}/mês • {plan.daily_analyses}/dia
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {plan.config?.allowed_depths?.map(d => (
-                          <Badge key={d} variant="outline" className="text-xs">
-                            {d === 'critical' ? '⚡' : d === 'balanced' ? '⚖️' : '📊'}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {plan.config?.allowed_analysis_types?.length || 0}/8
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setEditingPlan(plan);
-                          setEditDialogOpen(true);
-                        }}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {plans.map(plan => {
+                  const tokenLimit = plan.config?.max_tokens_monthly;
+                  return (
+                    <TableRow key={plan.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-semibold">{plan.name}</p>
+                          <p className="text-xs text-muted-foreground">{plan.description}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono">R$ {(plan.price_monthly || 0).toFixed(2)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className={`font-mono font-semibold ${tokenLimit ? 'text-primary' : 'text-muted-foreground'}`}>
+                            {tokenLimit ? `${(tokenLimit / 1000).toFixed(0)}K` : '∞ Ilimitado'}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ~{tokenLimit ? Math.floor(tokenLimit / (8 * 4000)) : '∞'} análises completas
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {plan.config?.allowed_depths?.map(d => (
+                            <Badge key={d} variant="outline" className="text-xs">
+                              {d === 'critical' ? '⚡' : d === 'balanced' ? '⚖️' : '📊'}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {plan.config?.allowed_analysis_types?.length || 0}/10
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingPlan(plan);
+                            setEditDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -765,18 +775,39 @@ const AdminPlans = () => {
                 <Textarea value={editingPlan.description || ''} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Limite Mensal</Label>
-                  <Input type="number" value={editingPlan.monthly_analyses || 0} onChange={e => setEditingPlan({...editingPlan, monthly_analyses: parseInt(e.target.value)})} />
+                  <Label className="flex items-center gap-1">
+                    <Zap className="w-4 h-4 text-primary" />
+                    Limite de Tokens Mensais
+                  </Label>
+                  <Input 
+                    type="number" 
+                    value={editingPlan.config?.max_tokens_monthly || ''} 
+                    placeholder="Deixe vazio para ilimitado" 
+                    onChange={e => setEditingPlan({...editingPlan, config: {...editingPlan.config, max_tokens_monthly: e.target.value ? parseInt(e.target.value) : null}})} 
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {editingPlan.config?.max_tokens_monthly 
+                      ? `~${Math.floor(editingPlan.config.max_tokens_monthly / 32000)} análises completas estimadas`
+                      : 'Sem limite (ilimitado)'}
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Limite Diário</Label>
-                  <Input type="number" value={editingPlan.daily_analyses || 0} onChange={e => setEditingPlan({...editingPlan, daily_analyses: parseInt(e.target.value)})} />
+                  <Label>Preço (R$/mês)</Label>
+                  <Input type="number" step="0.01" value={editingPlan.price_monthly || 0} onChange={e => setEditingPlan({...editingPlan, price_monthly: parseFloat(e.target.value)})} />
+                </div>
+              </div>
+
+              {/* Legacy limits - hidden but kept for compatibility */}
+              <div className="grid grid-cols-2 gap-4 p-3 bg-muted/30 rounded-lg">
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Limite Mensal (legado)</Label>
+                  <Input type="number" value={editingPlan.monthly_analyses || 0} onChange={e => setEditingPlan({...editingPlan, monthly_analyses: parseInt(e.target.value)})} className="h-8 text-sm" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Tokens/Mês</Label>
-                  <Input type="number" value={editingPlan.config?.max_tokens_monthly || ''} placeholder="∞" onChange={e => setEditingPlan({...editingPlan, config: {...editingPlan.config, max_tokens_monthly: e.target.value ? parseInt(e.target.value) : null}})} />
+                  <Label className="text-xs text-muted-foreground">Limite Diário (legado)</Label>
+                  <Input type="number" value={editingPlan.daily_analyses || 0} onChange={e => setEditingPlan({...editingPlan, daily_analyses: parseInt(e.target.value)})} className="h-8 text-sm" />
                 </div>
               </div>
 

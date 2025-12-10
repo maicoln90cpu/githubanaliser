@@ -1,5 +1,5 @@
-import { useUserPlan } from "@/hooks/useUserPlan";
-import { AlertTriangle, TrendingUp, Crown } from "lucide-react";
+import { useUserPlan, estimateTokensForAnalysis, suggestDepthByTokens } from "@/hooks/useUserPlan";
+import { AlertTriangle, TrendingUp, Crown, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
@@ -13,22 +13,21 @@ export function SpendingAlert({ className }: SpendingAlertProps) {
 
   if (isLoading || !plan) return null;
 
-  const dailyPercent = plan.dailyLimit > 0 && plan.dailyLimit !== 999999 
-    ? (plan.dailyUsage / plan.dailyLimit) * 100 
-    : 0;
-  const monthlyPercent = plan.monthlyLimit > 0 && plan.monthlyLimit !== 999999 
-    ? (plan.monthlyUsage / plan.monthlyLimit) * 100 
-    : 0;
+  // If unlimited tokens, no alert needed
+  if (plan.maxTokensMonthly === null) return null;
 
-  // Determine alert level
+  const tokensPercent = plan.tokensUsedPercent;
+  const tokensRemaining = plan.tokensRemaining || 0;
+
+  // Determine alert level based on tokens
   const getAlertLevel = () => {
-    if (dailyPercent >= 100 || monthlyPercent >= 100) {
+    if (tokensPercent >= 100) {
       return { level: 'critical', color: 'bg-destructive/10 border-destructive/20', iconColor: 'text-destructive' };
     }
-    if (dailyPercent >= 80 || monthlyPercent >= 80) {
+    if (tokensPercent >= 80) {
       return { level: 'warning', color: 'bg-yellow-500/10 border-yellow-500/20', iconColor: 'text-yellow-500' };
     }
-    if (dailyPercent >= 60 || monthlyPercent >= 60) {
+    if (tokensPercent >= 60) {
       return { level: 'info', color: 'bg-blue-500/10 border-blue-500/20', iconColor: 'text-blue-500' };
     }
     return null;
@@ -37,45 +36,44 @@ export function SpendingAlert({ className }: SpendingAlertProps) {
   const alert = getAlertLevel();
   if (!alert) return null;
 
+  const formatTokens = (tokens: number) => {
+    if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`;
+    return tokens.toString();
+  };
+
   const getMessage = () => {
-    if (dailyPercent >= 100) {
+    if (tokensPercent >= 100) {
       return {
-        title: 'Limite diário atingido',
-        description: 'Você atingiu seu limite de análises diárias. Aguarde até amanhã ou faça upgrade.',
+        title: 'Limite de tokens atingido',
+        description: 'Você atingiu seu limite de tokens mensais. Faça upgrade para continuar.',
       };
     }
-    if (monthlyPercent >= 100) {
+    if (tokensPercent >= 80) {
+      const suggestedDepth = suggestDepthByTokens(tokensRemaining);
       return {
-        title: 'Limite mensal atingido',
-        description: 'Você atingiu seu limite de análises mensais. Faça upgrade para continuar.',
+        title: `${formatTokens(tokensRemaining)} tokens restantes`,
+        description: `Você usou ${tokensPercent.toFixed(0)}% do seu limite. ${
+          suggestedDepth !== 'complete' 
+            ? `Recomendamos usar profundidade "${suggestedDepth === 'critical' ? 'Crítica' : 'Balanceada'}".` 
+            : ''
+        }`,
       };
     }
-    if (dailyPercent >= 80) {
+    if (tokensPercent >= 60) {
       return {
-        title: `${plan.dailyLimit - plan.dailyUsage} análise(s) restante(s) hoje`,
-        description: `Você usou ${dailyPercent.toFixed(0)}% do seu limite diário.`,
-      };
-    }
-    if (monthlyPercent >= 80) {
-      return {
-        title: `${plan.monthlyLimit - plan.monthlyUsage} análise(s) restante(s) este mês`,
-        description: `Você usou ${monthlyPercent.toFixed(0)}% do seu limite mensal.`,
-      };
-    }
-    if (dailyPercent >= 60) {
-      return {
-        title: 'Uso moderado hoje',
-        description: `Você já usou ${dailyPercent.toFixed(0)}% do seu limite diário.`,
+        title: 'Uso moderado de tokens',
+        description: `Você já usou ${tokensPercent.toFixed(0)}% do seu limite mensal (${formatTokens(tokensRemaining)} restantes).`,
       };
     }
     return {
-      title: 'Monitoramento de uso',
-      description: `Uso mensal: ${monthlyPercent.toFixed(0)}%`,
+      title: 'Monitoramento de tokens',
+      description: `Uso mensal: ${tokensPercent.toFixed(0)}%`,
     };
   };
 
   const message = getMessage();
-  const isBlocked = dailyPercent >= 100 || monthlyPercent >= 100;
+  const isBlocked = tokensPercent >= 100;
 
   return (
     <div className={`p-4 rounded-lg border ${alert.color} ${className}`}>
@@ -84,7 +82,7 @@ export function SpendingAlert({ className }: SpendingAlertProps) {
           {isBlocked ? (
             <AlertTriangle className={`w-5 h-5 ${alert.iconColor}`} />
           ) : (
-            <TrendingUp className={`w-5 h-5 ${alert.iconColor}`} />
+            <Zap className={`w-5 h-5 ${alert.iconColor}`} />
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -107,50 +105,47 @@ export function SpendingAlert({ className }: SpendingAlertProps) {
   );
 }
 
+// Check if user can analyze based on token limits
 export function canUserAnalyze(plan: { 
-  dailyUsage: number; 
-  dailyLimit: number; 
-  monthlyUsage: number; 
-  monthlyLimit: number;
+  tokensUsed: number;
+  maxTokensMonthly: number | null;
+  tokensRemaining: number | null;
   planName: string;
+  isAdmin?: boolean;
 }): { canAnalyze: boolean; reason?: string } {
   // Admins and unlimited plans can always analyze
-  if (plan.dailyLimit === 999999 && plan.monthlyLimit === 999999) {
+  if (plan.isAdmin || plan.maxTokensMonthly === null) {
     return { canAnalyze: true };
   }
 
-  if (plan.dailyLimit !== 999999 && plan.dailyUsage >= plan.dailyLimit) {
+  if (plan.tokensUsed >= plan.maxTokensMonthly) {
     return { 
       canAnalyze: false, 
-      reason: 'Limite diário de análises atingido. Aguarde até amanhã ou faça upgrade do plano.' 
+      reason: 'Limite de tokens mensais atingido. Faça upgrade do plano para continuar.' 
     };
   }
 
-  if (plan.monthlyLimit !== 999999 && plan.monthlyUsage >= plan.monthlyLimit) {
+  // Check if there are enough tokens for at least a critical analysis
+  const minTokensNeeded = estimateTokensForAnalysis('critical', 1);
+  if (plan.tokensRemaining !== null && plan.tokensRemaining < minTokensNeeded) {
     return { 
       canAnalyze: false, 
-      reason: 'Limite mensal de análises atingido. Faça upgrade do plano para continuar.' 
+      reason: `Tokens insuficientes. Você precisa de pelo menos ${minTokensNeeded.toLocaleString()} tokens para uma análise.` 
     };
   }
 
   return { canAnalyze: true };
 }
 
+// Suggest depth based on remaining tokens
 export function suggestDepthBasedOnLimits(plan: {
-  dailyUsage: number;
-  dailyLimit: number;
-  monthlyUsage: number;
-  monthlyLimit: number;
+  tokensRemaining: number | null;
+  maxTokensMonthly: number | null;
 }): 'critical' | 'balanced' | 'complete' {
-  const dailyRemaining = plan.dailyLimit - plan.dailyUsage;
-  const monthlyRemaining = plan.monthlyLimit - plan.monthlyUsage;
+  // Unlimited tokens
+  if (plan.maxTokensMonthly === null || plan.tokensRemaining === null) {
+    return 'complete';
+  }
 
-  // If running low on limits, suggest cheaper depth
-  if (dailyRemaining <= 2 || monthlyRemaining <= 5) {
-    return 'critical';
-  }
-  if (dailyRemaining <= 5 || monthlyRemaining <= 15) {
-    return 'balanced';
-  }
-  return 'complete';
+  return suggestDepthByTokens(plan.tokensRemaining, 8);
 }

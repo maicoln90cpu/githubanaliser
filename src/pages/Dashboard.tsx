@@ -442,34 +442,62 @@ const Dashboard = () => {
               </div>
 
               {!planLoading && plan && (
-                <div className="grid md:grid-cols-2 gap-6">
-                  {/* Daily Usage */}
+                <div className="space-y-4">
+                  {/* Token Usage - Primary */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">Uso Diário</span>
+                      <span className="text-sm font-medium">Tokens Mensais</span>
                       <span className="text-sm text-muted-foreground">
-                        {plan.dailyUsage}/{plan.dailyLimit === 999999 ? '∞' : plan.dailyLimit}
+                        {plan.maxTokensMonthly === null ? (
+                          '∞ Ilimitado'
+                        ) : (
+                          `${(plan.tokensUsed / 1000).toFixed(1)}K / ${(plan.maxTokensMonthly / 1000).toFixed(0)}K`
+                        )}
                       </span>
                     </div>
-                    <Progress value={plan.dailyLimit === 999999 ? 0 : dailyUsagePercent} className="h-2" />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {plan.dailyLimit === 999999 ? 'Ilimitado' : `${plan.dailyLimit - plan.dailyUsage} restantes hoje`}
-                    </p>
+                    <Progress 
+                      value={plan.maxTokensMonthly === null ? 0 : plan.tokensUsedPercent} 
+                      className={`h-3 ${plan.tokensUsedPercent >= 80 ? 'bg-yellow-500/20' : ''}`} 
+                    />
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {plan.maxTokensMonthly === null 
+                          ? 'Sem limite de tokens' 
+                          : plan.tokensRemaining !== null 
+                            ? `${(plan.tokensRemaining / 1000).toFixed(1)}K tokens restantes`
+                            : ''
+                        }
+                      </p>
+                      {plan.tokensUsedPercent >= 80 && plan.maxTokensMonthly !== null && (
+                        <span className="text-xs text-yellow-500 font-medium">
+                          {plan.tokensUsedPercent.toFixed(0)}% usado
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Monthly Usage */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">Uso Mensal</span>
-                      <span className="text-sm text-muted-foreground">
-                        {plan.monthlyUsage}/{plan.monthlyLimit === 999999 ? '∞' : plan.monthlyLimit}
-                      </span>
+                  {/* Token Alert if near limit */}
+                  {plan.maxTokensMonthly !== null && plan.tokensUsedPercent >= 80 && (
+                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <Zap className="w-4 h-4 text-yellow-500 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-medium text-yellow-600">
+                            {plan.tokensUsedPercent >= 100 
+                              ? 'Limite de tokens atingido' 
+                              : 'Tokens acabando'
+                            }
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {plan.tokensUsedPercent >= 100 
+                              ? 'Faça upgrade para continuar analisando'
+                              : 'Considere usar profundidade menor para economizar tokens'
+                            }
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <Progress value={plan.monthlyLimit === 999999 ? 0 : monthlyUsagePercent} className="h-2" />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {plan.monthlyLimit === 999999 ? 'Ilimitado' : `${plan.monthlyLimit - plan.monthlyUsage} restantes este mês`}
-                    </p>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
