@@ -666,7 +666,141 @@ const AdminSettings = () => {
           )}
         </div>
 
-        {/* Depth Configurations */}
+        {/* Cost Comparison Section */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-6 animate-slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="flex items-center gap-2 mb-6">
+            <DollarSign className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-semibold">Comparativo de Custos: Lovable AI vs OpenAI</h2>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Lovable AI Column */}
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-primary flex items-center gap-2">
+                  <Zap className="w-4 h-4" />
+                  Lovable AI (Gemini)
+                </h3>
+                <Badge className="bg-green-500/20 text-green-500">Mais Econômico</Badge>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-2 bg-background/50 rounded">
+                  <span className="text-sm">Flash Lite (Econômico)</span>
+                  <div className="text-right">
+                    <span className="text-green-600 font-mono text-sm">~$0.0015</span>
+                    <span className="text-muted-foreground text-xs ml-1">/análise</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-background/50 rounded">
+                  <span className="text-sm">Flash (Detalhado)</span>
+                  <div className="text-right">
+                    <span className="text-green-600 font-mono text-sm">~$0.003</span>
+                    <span className="text-muted-foreground text-xs ml-1">/análise</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3 bg-green-500/10 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Custo estimado para 100 análises</div>
+                <div className="text-2xl font-bold text-green-600">$0.15 - $0.30</div>
+                <div className="text-xs text-muted-foreground">~R$ 0.90 - R$ 1.80</div>
+              </div>
+            </div>
+
+            {/* OpenAI Column */}
+            <div className="p-4 bg-orange-500/5 border border-orange-500/20 rounded-lg">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-orange-600 flex items-center gap-2">
+                  <Cpu className="w-4 h-4" />
+                  OpenAI
+                </h3>
+                <Badge className="bg-orange-500/20 text-orange-600">Mais Poderoso</Badge>
+              </div>
+              
+              <div className="space-y-3 max-h-[180px] overflow-y-auto">
+                {Object.entries(OPENAI_MODELS).slice(0, 6).map(([key, model]) => {
+                  const estCost = ((model.inputCost * 2) + (model.outputCost * 2)).toFixed(4);
+                  return (
+                    <div key={key} className="flex justify-between items-center p-2 bg-background/50 rounded">
+                      <span className="text-sm">{model.name}</span>
+                      <div className="text-right">
+                        <span className="text-orange-600 font-mono text-sm">${estCost}</span>
+                        <span className="text-muted-foreground text-xs ml-1">/análise</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 p-3 bg-orange-500/10 rounded-lg">
+                <div className="text-xs text-muted-foreground mb-1">Custo estimado para 100 análises (GPT-5-mini)</div>
+                <div className="text-2xl font-bold text-orange-600">$0.45</div>
+                <div className="text-xs text-muted-foreground">~R$ 2.70</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Comparison Summary */}
+          <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+            <h4 className="font-medium mb-3 flex items-center gap-2">
+              <Info className="w-4 h-4 text-primary" />
+              Resumo Comparativo
+            </h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 px-3">Cenário</th>
+                    <th className="text-center py-2 px-3">Lovable AI</th>
+                    <th className="text-center py-2 px-3">OpenAI (mini)</th>
+                    <th className="text-center py-2 px-3">Economia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border/50">
+                    <td className="py-2 px-3">1 análise</td>
+                    <td className="text-center py-2 px-3 text-green-600">$0.003</td>
+                    <td className="text-center py-2 px-3 text-orange-600">$0.0045</td>
+                    <td className="text-center py-2 px-3">
+                      <Badge className="bg-green-500/20 text-green-600">33%</Badge>
+                    </td>
+                  </tr>
+                  <tr className="border-b border-border/50">
+                    <td className="py-2 px-3">100 análises</td>
+                    <td className="text-center py-2 px-3 text-green-600">$0.30</td>
+                    <td className="text-center py-2 px-3 text-orange-600">$0.45</td>
+                    <td className="text-center py-2 px-3">
+                      <Badge className="bg-green-500/20 text-green-600">33%</Badge>
+                    </td>
+                  </tr>
+                  <tr className="border-b border-border/50">
+                    <td className="py-2 px-3">1.000 análises</td>
+                    <td className="text-center py-2 px-3 text-green-600">$3.00</td>
+                    <td className="text-center py-2 px-3 text-orange-600">$4.50</td>
+                    <td className="text-center py-2 px-3">
+                      <Badge className="bg-green-500/20 text-green-600">33%</Badge>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 px-3">10.000 análises</td>
+                    <td className="text-center py-2 px-3 text-green-600">$30.00</td>
+                    <td className="text-center py-2 px-3 text-orange-600">$45.00</td>
+                    <td className="text-center py-2 px-3">
+                      <Badge className="bg-green-500/20 text-green-600">$15 economizados</Badge>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              * Estimativas baseadas em ~2K tokens de input e ~2K tokens de output por análise. 
+              Comparação usa Gemini Flash (Lovable AI) vs GPT-5-mini (OpenAI).
+            </p>
+          </div>
+        </div>
+
+
         <div className="p-6 bg-card border border-border rounded-xl mb-6 animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <div className="flex items-center gap-2 mb-6">
             <Layers className="w-5 h-5 text-primary" />
