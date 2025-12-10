@@ -124,6 +124,24 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
         throw new Error("Sessão não encontrada");
       }
 
+      // Save GitHub token if available (for private repos)
+      if (session.provider_token) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const githubIdentity = user.identities?.find(i => i.provider === 'github');
+          const githubUsername = githubIdentity?.identity_data?.user_name || 
+                                 githubIdentity?.identity_data?.preferred_username;
+          
+          await supabase
+            .from('profiles')
+            .update({ 
+              github_access_token: session.provider_token,
+              github_username: githubUsername
+            })
+            .eq('id', user.id);
+        }
+      }
+
       const { data, error } = await supabase.functions.invoke('list-github-repos', {
         headers: {
           Authorization: `Bearer ${session.access_token}`
@@ -147,13 +165,9 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
   };
 
   const handleSelectRepo = (repo: GitHubRepo) => {
-    if (repo.private) {
-      toast.warning("Repositórios privados não são suportados ainda. Selecione um repositório público.");
-      return;
-    }
     onSelectRepo(repo.html_url);
     setOpen(false);
-    toast.success(`Repositório "${repo.name}" selecionado!`);
+    toast.success(`Repositório "${repo.name}" selecionado!${repo.private ? ' (Privado)' : ''}`);
   };
 
   const formatDate = (dateString: string) => {
@@ -284,9 +298,7 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
                     <button
                       key={repo.id}
                       onClick={() => handleSelectRepo(repo)}
-                      className={`w-full text-left p-4 border rounded-lg hover:border-primary hover:bg-muted/50 transition-colors ${
-                        repo.private ? 'opacity-60' : ''
-                      }`}
+                      className="w-full text-left p-4 border rounded-lg hover:border-primary hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1 min-w-0 flex-1">
@@ -335,7 +347,7 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
             )}
             
             <p className="text-xs text-muted-foreground text-center">
-              Apenas repositórios públicos podem ser analisados no momento.
+              Repositórios públicos e privados podem ser analisados. Seu token é armazenado com segurança.
             </p>
           </div>
         )}
