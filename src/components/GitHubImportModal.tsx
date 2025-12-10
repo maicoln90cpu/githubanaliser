@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Github, Search, Star, GitFork, Lock, Globe, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { Github, Search, Star, GitFork, Lock, Globe, Loader2, RefreshCw, AlertCircle, Key, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -37,14 +37,15 @@ interface GitHubImportModalProps {
 export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalProps) {
   const [open, setOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSavingToken, setIsSavingToken] = useState(false);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [filteredRepos, setFilteredRepos] = useState<GitHubRepo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Check if user has GitHub connected
+  // Check if user has GitHub token stored
   useEffect(() => {
     if (open) {
       checkGitHubConnection();
@@ -69,12 +70,14 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Check if user has GitHub identity
-      const githubIdentity = user.identities?.find(
-        identity => identity.provider === 'github'
-      );
+      // Check if user has GitHub token stored
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('github_access_token, github_username')
+        .eq('id', user.id)
+        .single();
 
-      if (githubIdentity) {
+      if (profile?.github_access_token) {
         setIsConnected(true);
         fetchRepos();
       } else {
@@ -85,32 +88,76 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
     }
   };
 
-  const connectGitHub = async () => {
-    setIsConnecting(true);
+  const saveToken = async () => {
+    if (!tokenInput.trim()) {
+      toast.error("Por favor, insira um token válido");
+      return;
+    }
+
+    setIsSavingToken(true);
+    setError(null);
+    
     try {
-      const { error } = await supabase.auth.linkIdentity({
-        provider: 'github',
-        options: {
-          redirectTo: `${window.location.origin}${window.location.pathname}?github_connected=true`,
-          scopes: 'repo read:user',
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      // Validate token by fetching user info
+      const userResponse = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${tokenInput.trim()}`,
+          'Accept': 'application/vnd.github.v3+json'
         }
       });
 
-      if (error) {
-        // If user already has GitHub linked, try signing in with it
-        if (error.message.includes('already linked')) {
-          toast.info("Sua conta GitHub já está conectada!");
-          setIsConnected(true);
-          fetchRepos();
-        } else {
-          throw error;
-        }
+      if (!userResponse.ok) {
+        throw new Error("Token inválido. Verifique se o token está correto.");
       }
+
+      const githubUser = await userResponse.json();
+
+      // Save token to profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          github_access_token: tokenInput.trim(),
+          github_username: githubUser.login
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      toast.success(`Conectado como ${githubUser.login}!`);
+      setIsConnected(true);
+      setTokenInput("");
+      fetchRepos();
     } catch (err: any) {
-      console.error("Error connecting GitHub:", err);
-      toast.error(err.message || "Erro ao conectar com GitHub");
+      console.error("Error saving token:", err);
+      setError(err.message || "Erro ao salvar token");
+      toast.error(err.message || "Erro ao salvar token");
     } finally {
-      setIsConnecting(false);
+      setIsSavingToken(false);
+    }
+  };
+
+  const disconnectGitHub = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('profiles')
+        .update({ 
+          github_access_token: null,
+          github_username: null
+        })
+        .eq('id', user.id);
+
+      setIsConnected(false);
+      setRepos([]);
+      setFilteredRepos([]);
+      toast.success("GitHub desconectado");
+    } catch (err) {
+      console.error("Error disconnecting:", err);
     }
   };
 
@@ -122,24 +169,6 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error("Sessão não encontrada");
-      }
-
-      // Save GitHub token if available (for private repos)
-      if (session.provider_token) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const githubIdentity = user.identities?.find(i => i.provider === 'github');
-          const githubUsername = githubIdentity?.identity_data?.user_name || 
-                                 githubIdentity?.identity_data?.preferred_username;
-          
-          await supabase
-            .from('profiles')
-            .update({ 
-              github_access_token: session.provider_token,
-              github_username: githubUsername
-            })
-            .eq('id', user.id);
-        }
       }
 
       const { data, error } = await supabase.functions.invoke('list-github-repos', {
@@ -211,33 +240,66 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
             Importar Repositório do GitHub
           </DialogTitle>
           <DialogDescription>
-            Conecte sua conta GitHub para importar repositórios diretamente.
+            Use um Personal Access Token para importar seus repositórios.
           </DialogDescription>
         </DialogHeader>
 
         {!isConnected ? (
-          <div className="flex flex-col items-center justify-center py-12 space-y-4">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-              <Github className="w-8 h-8 text-muted-foreground" />
+          <div className="space-y-6 py-4">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                <Key className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="font-semibold">Configure seu GitHub Token</h3>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Crie um Personal Access Token no GitHub com permissão <code className="bg-muted px-1 rounded">repo</code> para acessar seus repositórios.
+                </p>
+              </div>
             </div>
-            <div className="text-center space-y-2">
-              <h3 className="font-semibold">Conecte sua conta GitHub</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Conecte sua conta para ver e importar seus repositórios públicos e privados.
-              </p>
-            </div>
-            <Button 
-              onClick={connectGitHub} 
-              disabled={isConnecting}
-              className="gap-2"
-            >
-              {isConnecting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Github className="w-4 h-4" />
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Personal Access Token</label>
+                <Input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveToken()}
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
               )}
-              {isConnecting ? "Conectando..." : "Conectar com GitHub"}
-            </Button>
+
+              <Button 
+                onClick={saveToken} 
+                disabled={isSavingToken || !tokenInput.trim()}
+                className="w-full gap-2"
+              >
+                {isSavingToken ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Github className="w-4 h-4" />
+                )}
+                {isSavingToken ? "Validando..." : "Conectar"}
+              </Button>
+
+              <a 
+                href="https://github.com/settings/tokens/new?scopes=repo&description=GitAnalyzer"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Criar token no GitHub
+              </a>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -346,9 +408,19 @@ export function GitHubImportModal({ onSelectRepo, trigger }: GitHubImportModalPr
               </ScrollArea>
             )}
             
-            <p className="text-xs text-muted-foreground text-center">
-              Repositórios públicos e privados podem ser analisados. Seu token é armazenado com segurança.
-            </p>
+            <div className="flex items-center justify-between pt-2 border-t">
+              <p className="text-xs text-muted-foreground">
+                Repositórios públicos e privados disponíveis
+              </p>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={disconnectGitHub}
+                className="text-xs text-muted-foreground hover:text-destructive"
+              >
+                Desconectar
+              </Button>
+            </div>
           </div>
         )}
       </DialogContent>
