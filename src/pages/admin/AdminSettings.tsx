@@ -59,11 +59,18 @@ interface PlanDepthConfig {
   allowedDepths: string[];
 }
 
-// OpenAI models and costs (per 1K tokens)
+// OpenAI models and costs (per 1K tokens) - Standard tier pricing
 const OPENAI_MODELS = {
-  'gpt-5': { name: 'GPT-5', inputCost: 0.005, outputCost: 0.015 },
-  'gpt-5-mini': { name: 'GPT-5 Mini', inputCost: 0.00015, outputCost: 0.0006 },
+  'gpt-5': { name: 'GPT-5', inputCost: 0.00125, outputCost: 0.01 },
+  'gpt-5-mini': { name: 'GPT-5 Mini', inputCost: 0.00025, outputCost: 0.002 },
+  'gpt-5-nano': { name: 'GPT-5 Nano', inputCost: 0.00005, outputCost: 0.0004 },
   'gpt-4.1': { name: 'GPT-4.1', inputCost: 0.002, outputCost: 0.008 },
+  'gpt-4.1-mini': { name: 'GPT-4.1 Mini', inputCost: 0.0004, outputCost: 0.0016 },
+  'gpt-4.1-nano': { name: 'GPT-4.1 Nano', inputCost: 0.0001, outputCost: 0.0004 },
+  'o3': { name: 'O3', inputCost: 0.002, outputCost: 0.008 },
+  'o4-mini': { name: 'O4 Mini', inputCost: 0.0011, outputCost: 0.0044 },
+  'gpt-4o': { name: 'GPT-4o', inputCost: 0.0025, outputCost: 0.01 },
+  'gpt-4o-mini': { name: 'GPT-4o Mini', inputCost: 0.00015, outputCost: 0.0006 },
 };
 
 const AdminSettings = () => {

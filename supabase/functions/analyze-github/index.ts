@@ -139,22 +139,57 @@ const MODELS = {
   economic: "google/gemini-2.5-flash-lite"
 };
 
-// OpenAI models and costs (per token in USD)
+// OpenAI models and costs (per token in USD) - Standard tier pricing
 const OPENAI_MODELS = {
   'gpt-5': { 
     apiName: 'gpt-5-2025-08-07',
-    inputCostPerToken: 0.000005,  // $0.005/1K
-    outputCostPerToken: 0.000015  // $0.015/1K
+    inputCostPerToken: 0.00000125,  // $1.25/1M = $0.00125/1K
+    outputCostPerToken: 0.00001     // $10.00/1M = $0.01/1K
   },
   'gpt-5-mini': { 
     apiName: 'gpt-5-mini-2025-08-07',
-    inputCostPerToken: 0.00000015,  // $0.00015/1K
-    outputCostPerToken: 0.0000006   // $0.0006/1K
+    inputCostPerToken: 0.00000025,  // $0.25/1M = $0.00025/1K
+    outputCostPerToken: 0.000002    // $2.00/1M = $0.002/1K
+  },
+  'gpt-5-nano': { 
+    apiName: 'gpt-5-nano-2025-08-07',
+    inputCostPerToken: 0.00000005,  // $0.05/1M = $0.00005/1K
+    outputCostPerToken: 0.0000004   // $0.40/1M = $0.0004/1K
   },
   'gpt-4.1': { 
     apiName: 'gpt-4.1-2025-04-14',
-    inputCostPerToken: 0.000002,  // $0.002/1K
-    outputCostPerToken: 0.000008  // $0.008/1K
+    inputCostPerToken: 0.000002,    // $2.00/1M = $0.002/1K
+    outputCostPerToken: 0.000008    // $8.00/1M = $0.008/1K
+  },
+  'gpt-4.1-mini': { 
+    apiName: 'gpt-4.1-mini-2025-04-14',
+    inputCostPerToken: 0.0000004,   // $0.40/1M = $0.0004/1K
+    outputCostPerToken: 0.0000016   // $1.60/1M = $0.0016/1K
+  },
+  'gpt-4.1-nano': { 
+    apiName: 'gpt-4.1-nano-2025-04-14',
+    inputCostPerToken: 0.0000001,   // $0.10/1M = $0.0001/1K
+    outputCostPerToken: 0.0000004   // $0.40/1M = $0.0004/1K
+  },
+  'o3': { 
+    apiName: 'o3-2025-04-16',
+    inputCostPerToken: 0.000002,    // $2.00/1M = $0.002/1K
+    outputCostPerToken: 0.000008    // $8.00/1M = $0.008/1K
+  },
+  'o4-mini': { 
+    apiName: 'o4-mini-2025-04-16',
+    inputCostPerToken: 0.0000011,   // $1.10/1M = $0.0011/1K
+    outputCostPerToken: 0.0000044   // $4.40/1M = $0.0044/1K
+  },
+  'gpt-4o': { 
+    apiName: 'gpt-4o',
+    inputCostPerToken: 0.0000025,   // $2.50/1M = $0.0025/1K
+    outputCostPerToken: 0.00001     // $10.00/1M = $0.01/1K
+  },
+  'gpt-4o-mini': { 
+    apiName: 'gpt-4o-mini',
+    inputCostPerToken: 0.00000015,  // $0.15/1M = $0.00015/1K
+    outputCostPerToken: 0.0000006   // $0.60/1M = $0.0006/1K
   },
 };
 
