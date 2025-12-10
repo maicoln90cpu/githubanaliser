@@ -56,10 +56,13 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { useAuth } from "@/hooks/useAuth";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { useTokenHistory } from "@/hooks/useTokenHistory";
 import { Badge } from "@/components/ui/badge";
 import { SpendingAlert } from "@/components/SpendingAlert";
 import { EmptyState } from "@/components/EmptyState";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TokenUsageChart } from "@/components/TokenUsageChart";
+import { TokenLimitNotification } from "@/components/TokenLimitNotification";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -115,8 +118,12 @@ const Dashboard = () => {
     isLoading,
     refetch
   } = useDashboardData(user?.id);
+  const { data: tokenHistory, isLoading: tokenHistoryLoading } = useTokenHistory(user?.id);
   const navigate = useNavigate();
   const { isAdmin } = useAdmin();
+
+  // Token chart period state
+  const [chartPeriod, setChartPeriod] = useState<"week" | "month">("week");
 
   // Filter, search, and sort state
   const [searchQuery, setSearchQuery] = useState("");
@@ -612,9 +619,30 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Right Column - Recent Activities */}
+          {/* Right Column - Token History & Recent Activities */}
           <div className="space-y-6">
-            <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.15s" }}>
+            {/* Token Limit Notification */}
+            {plan && (
+              <TokenLimitNotification
+                tokensUsedPercent={plan.tokensUsedPercent}
+                tokensRemaining={plan.tokensRemaining}
+                maxTokensMonthly={plan.maxTokensMonthly}
+                planName={plan.planName}
+              />
+            )}
+
+            {/* Token Usage Chart */}
+            <div className="animate-slide-up" style={{ animationDelay: "0.15s" }}>
+              <TokenUsageChart
+                data={tokenHistory || []}
+                period={chartPeriod}
+                onPeriodChange={setChartPeriod}
+                isLoading={tokenHistoryLoading}
+              />
+            </div>
+
+            {/* Recent Activities */}
+            <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.2s" }}>
               <div className="flex items-center gap-2 mb-4">
                 <Activity className="w-5 h-5 text-primary" />
                 <h3 className="font-semibold">Atividades Recentes</h3>
@@ -657,7 +685,7 @@ const Dashboard = () => {
             </div>
 
             {/* Checklist Progress */}
-            <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.2s" }}>
+            <div className="p-6 bg-card border border-border rounded-xl animate-slide-up" style={{ animationDelay: "0.25s" }}>
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
                 <h3 className="font-semibold">Progresso Checklist</h3>
