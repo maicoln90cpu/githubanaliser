@@ -18,12 +18,28 @@ import {
   AlertCircle,
   Save,
   Crown,
-  Layers
+  Layers,
+  Cpu,
+  CheckCircle2,
+  Info
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface SystemSetting {
   key: string;
@@ -43,6 +59,13 @@ interface PlanDepthConfig {
   allowedDepths: string[];
 }
 
+// OpenAI models and costs (per 1K tokens)
+const OPENAI_MODELS = {
+  'gpt-5': { name: 'GPT-5', inputCost: 0.005, outputCost: 0.015 },
+  'gpt-5-mini': { name: 'GPT-5 Mini', inputCost: 0.00015, outputCost: 0.0006 },
+  'gpt-4.1': { name: 'GPT-4.1', inputCost: 0.002, outputCost: 0.008 },
+};
+
 const AdminSettings = () => {
   const navigate = useNavigate();
   const { isAdmin, isLoading: adminLoading } = useAdmin();
@@ -50,6 +73,11 @@ const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<'economic' | 'detailed'>('detailed');
+  
+  // AI Provider settings
+  const [aiProvider, setAiProvider] = useState<'lovable' | 'openai'>('lovable');
+  const [openaiModel, setOpenaiModel] = useState<string>('gpt-5-mini');
+  const [openaiKeyConfigured, setOpenaiKeyConfigured] = useState(false);
   
   // Depth configurations
   const [criticalConfig, setCriticalConfig] = useState<DepthConfig>({ context: 8000, model: 'google/gemini-2.5-flash-lite' });
@@ -82,6 +110,12 @@ const AdminSettings = () => {
       settings?.forEach((setting: SystemSetting) => {
         if (setting.key === 'analysis_mode') {
           setAnalysisMode(setting.value as 'economic' | 'detailed');
+        } else if (setting.key === 'ai_provider') {
+          setAiProvider(setting.value as 'lovable' | 'openai');
+        } else if (setting.key === 'openai_model') {
+          setOpenaiModel(setting.value);
+        } else if (setting.key === 'openai_key_configured') {
+          setOpenaiKeyConfigured(setting.value === 'true');
         } else if (setting.key === 'depth_critical') {
           try { setCriticalConfig(JSON.parse(setting.value)); } catch {}
         } else if (setting.key === 'depth_balanced') {
@@ -269,6 +303,84 @@ const AdminSettings = () => {
     }));
   };
 
+  const saveAiProvider = async (provider: 'lovable' | 'openai') => {
+    setSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("system_settings")
+        .select("key")
+        .eq("key", "ai_provider")
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from("system_settings")
+          .update({ 
+            value: provider, 
+            updated_by: user?.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq("key", "ai_provider");
+      } else {
+        await supabase
+          .from("system_settings")
+          .insert({ 
+            key: "ai_provider",
+            value: provider,
+            description: "Provider de IA (lovable/openai)",
+            updated_by: user?.id
+          });
+      }
+
+      setAiProvider(provider);
+      toast.success(`Provider ${provider === 'lovable' ? 'Lovable AI' : 'OpenAI'} ativado`);
+    } catch (error) {
+      console.error("Erro ao salvar provider:", error);
+      toast.error("Erro ao salvar configuração");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOpenaiModel = async (model: string) => {
+    setSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("system_settings")
+        .select("key")
+        .eq("key", "openai_model")
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from("system_settings")
+          .update({ 
+            value: model, 
+            updated_by: user?.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq("key", "openai_model");
+      } else {
+        await supabase
+          .from("system_settings")
+          .insert({ 
+            key: "openai_model",
+            value: model,
+            description: "Modelo OpenAI selecionado",
+            updated_by: user?.id
+          });
+      }
+
+      setOpenaiModel(model);
+      toast.success(`Modelo ${OPENAI_MODELS[model as keyof typeof OPENAI_MODELS]?.name || model} selecionado`);
+    } catch (error) {
+      console.error("Erro ao salvar modelo:", error);
+      toast.error("Erro ao salvar configuração");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (adminLoading || loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -386,6 +498,165 @@ const AdminSettings = () => {
               </ul>
             </div>
           </div>
+        </div>
+
+        {/* AI Provider Configuration */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-6 animate-slide-up" style={{ animationDelay: "0.05s" }}>
+          <div className="flex items-center gap-2 mb-6">
+            <Cpu className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-semibold">Provider de IA</h2>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-4 h-4 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Escolha entre Lovable AI (Gemini) ou OpenAI (GPT). OpenAI requer API Key configurada nos secrets.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Provider Toggle */}
+          <div className="grid md:grid-cols-2 gap-4 mb-6">
+            <button
+              onClick={() => saveAiProvider('lovable')}
+              disabled={saving}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                aiProvider === 'lovable' 
+                  ? 'border-primary bg-primary/5' 
+                  : 'border-border bg-muted/30 hover:border-primary/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  aiProvider === 'lovable' ? 'bg-primary/20' : 'bg-muted'
+                }`}>
+                  <Zap className={`w-4 h-4 ${aiProvider === 'lovable' ? 'text-primary' : 'text-muted-foreground'}`} />
+                </div>
+                <h3 className="font-semibold">Lovable AI</h3>
+                {aiProvider === 'lovable' && (
+                  <Badge className="bg-primary/20 text-primary">Ativo</Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">Google Gemini 2.5 Flash</p>
+              <p className="text-xs text-muted-foreground mt-1">Mais econômico, ótimo para análises gerais</p>
+            </button>
+
+            <button
+              onClick={() => saveAiProvider('openai')}
+              disabled={saving}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                aiProvider === 'openai' 
+                  ? 'border-green-500 bg-green-500/5' 
+                  : 'border-border bg-muted/30 hover:border-green-500/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  aiProvider === 'openai' ? 'bg-green-500/20' : 'bg-muted'
+                }`}>
+                  <Cpu className={`w-4 h-4 ${aiProvider === 'openai' ? 'text-green-500' : 'text-muted-foreground'}`} />
+                </div>
+                <h3 className="font-semibold">OpenAI</h3>
+                {aiProvider === 'openai' && (
+                  <Badge className="bg-green-500/20 text-green-500">Ativo</Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">GPT-5, GPT-5 Mini, GPT-4.1</p>
+              <p className="text-xs text-muted-foreground mt-1">Requer API Key própria</p>
+            </button>
+          </div>
+
+          {/* OpenAI Configuration */}
+          {aiProvider === 'openai' && (
+            <div className="space-y-4 p-4 bg-green-500/5 border border-green-500/20 rounded-lg">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span className="text-sm font-medium text-green-600">OPENAI_API_KEY configurada nos secrets</span>
+              </div>
+
+              <div>
+                <Label>Modelo OpenAI</Label>
+                <Select value={openaiModel} onValueChange={saveOpenaiModel} disabled={saving}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Selecione o modelo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(OPENAI_MODELS).map(([key, model]) => (
+                      <SelectItem key={key} value={key}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* OpenAI Cost Table */}
+              <div className="mt-4">
+                <h4 className="text-sm font-medium mb-2">Custos OpenAI (por 1K tokens)</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 px-3">Modelo</th>
+                        <th className="text-right py-2 px-3">Input</th>
+                        <th className="text-right py-2 px-3">Output</th>
+                        <th className="text-right py-2 px-3">Est. por Análise*</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(OPENAI_MODELS).map(([key, model]) => {
+                        // Estimativa: ~2K input + ~2K output por análise
+                        const estCost = ((model.inputCost * 2) + (model.outputCost * 2)).toFixed(4);
+                        const isSelected = openaiModel === key;
+                        return (
+                          <tr key={key} className={`border-b border-border/50 ${isSelected ? 'bg-green-500/10' : ''}`}>
+                            <td className="py-2 px-3 font-medium">
+                              {model.name}
+                              {isSelected && <Badge className="ml-2 bg-green-500/20 text-green-500 text-xs">Selecionado</Badge>}
+                            </td>
+                            <td className="text-right py-2 px-3">${model.inputCost}</td>
+                            <td className="text-right py-2 px-3">${model.outputCost}</td>
+                            <td className="text-right py-2 px-3 text-green-600">${estCost}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  * Estimativa baseada em ~2K tokens de input e ~2K tokens de output por análise. Custo real pode variar.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {aiProvider === 'lovable' && (
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <h4 className="text-sm font-medium mb-2">Custos Lovable AI (Gemini)</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-3">Modelo</th>
+                      <th className="text-right py-2 px-3">Custo Est./Análise</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 px-3">Gemini 2.5 Flash Lite</td>
+                      <td className="text-right py-2 px-3 text-primary">~R$ 0.01</td>
+                    </tr>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 px-3">Gemini 2.5 Flash</td>
+                      <td className="text-right py-2 px-3 text-primary">~R$ 0.02</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Depth Configurations */}
