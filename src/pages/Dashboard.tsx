@@ -51,6 +51,7 @@ import { useUserPlan } from "@/hooks/useUserPlan";
 import { useAuth } from "@/hooks/useAuth";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/badge";
+import { SpendingAlert } from "@/components/SpendingAlert";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -449,6 +450,9 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
+
+            {/* Spending Alert */}
+            <SpendingAlert className="animate-slide-up" />
 
             {/* Stats Grid */}
             <div className="grid md:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: "0.05s" }}>
