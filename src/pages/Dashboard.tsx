@@ -1,7 +1,28 @@
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Github, 
   LogOut, 
@@ -16,7 +37,12 @@ import {
   ArrowUpRight,
   Sparkles,
   Activity,
-  TrendingUp
+  TrendingUp,
+  Search,
+  Star,
+  Trash2,
+  ArrowUpDown,
+  X
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -24,6 +50,9 @@ import { useUserPlan } from "@/hooks/useUserPlan";
 import { useAuth } from "@/hooks/useAuth";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/badge";
+
+type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'status';
+type StatusFilter = 'all' | 'completed' | 'in-progress' | 'error' | 'pending';
 
 const Dashboard = () => {
   const { user, isLoading: authLoading } = useAuth();
@@ -33,10 +62,21 @@ const Dashboard = () => {
     recentActivities, 
     checklistStats, 
     totalTokens, 
-    isLoading 
+    isLoading,
+    refetch
   } = useDashboardData(user?.id);
   const navigate = useNavigate();
   const { isAdmin } = useAdmin();
+
+  // Filter, search, and sort state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortOption, setSortOption] = useState<SortOption>("date-desc");
+  
+  // Selection state for batch actions
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Redirect if not authenticated
   if (!authLoading && !user) {
@@ -48,6 +88,65 @@ const Dashboard = () => {
     await supabase.auth.signOut();
     toast.success("Logout realizado com sucesso");
     navigate("/");
+  };
+
+  const togglePinProject = async (projectId: string, currentPinned: boolean) => {
+    const { error } = await supabase
+      .from('projects')
+      .update({ is_pinned: !currentPinned })
+      .eq('id', projectId);
+
+    if (error) {
+      toast.error("Erro ao atualizar favorito");
+    } else {
+      toast.success(currentPinned ? "Removido dos favoritos" : "Adicionado aos favoritos");
+      refetch();
+    }
+  };
+
+  const toggleSelectProject = (projectId: string) => {
+    setSelectedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    const visibleIds = filteredAndSortedProjects.map(p => p.id);
+    setSelectedProjects(new Set(visibleIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedProjects(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedProjects.size === 0) return;
+    
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .in('id', Array.from(selectedProjects));
+
+      if (error) throw error;
+
+      toast.success(`${selectedProjects.size} projeto(s) excluído(s)`);
+      setSelectedProjects(new Set());
+      setShowDeleteDialog(false);
+      refetch();
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("Erro ao excluir projetos");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const getStatusBadge = (status: string | null) => {
@@ -83,10 +182,81 @@ const Dashboard = () => {
     return then.toLocaleDateString('pt-BR');
   };
 
+  // Filter and sort projects
+  const filteredAndSortedProjects = useMemo(() => {
+    let filtered = [...projects];
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        p.github_url.toLowerCase().includes(query)
+      );
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(p => {
+        const status = p.analysis_status;
+        switch (statusFilter) {
+          case 'completed':
+            return status === 'completed';
+          case 'error':
+            return status === 'error';
+          case 'pending':
+            return status === 'pending';
+          case 'in-progress':
+            return status && !['completed', 'error', 'pending'].includes(status);
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Sort - pinned first, then by sort option
+    filtered.sort((a, b) => {
+      // Pinned projects first
+      const aPinned = (a as any).is_pinned || false;
+      const bPinned = (b as any).is_pinned || false;
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+
+      // Then sort by selected option
+      switch (sortOption) {
+        case 'date-desc':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'date-asc':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'status':
+          const statusOrder: Record<string, number> = { 'completed': 0, 'error': 1, 'pending': 2 };
+          const aOrder = statusOrder[a.analysis_status || ''] ?? 3;
+          const bOrder = statusOrder[b.analysis_status || ''] ?? 3;
+          return aOrder - bOrder;
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [projects, searchQuery, statusFilter, sortOption]);
+
   const stats = {
     total: projects.length,
     completed: projects.filter(p => p.analysis_status === "completed").length,
   };
+
+  const statusCounts = useMemo(() => ({
+    all: projects.length,
+    completed: projects.filter(p => p.analysis_status === "completed").length,
+    inProgress: projects.filter(p => p.analysis_status && !['completed', 'error', 'pending'].includes(p.analysis_status)).length,
+    error: projects.filter(p => p.analysis_status === "error").length,
+    pending: projects.filter(p => p.analysis_status === "pending").length,
+  }), [projects]);
 
   const dailyUsagePercent = plan ? Math.min((plan.dailyUsage / plan.dailyLimit) * 100, 100) : 0;
   const monthlyUsagePercent = plan ? Math.min((plan.monthlyUsage / plan.monthlyLimit) * 100, 100) : 0;
@@ -357,10 +527,104 @@ const Dashboard = () => {
 
         {/* Projects List */}
         <div className="animate-slide-up" style={{ animationDelay: "0.25s" }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Meus Projetos</h2>
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Meus Projetos</h2>
+              {projects.length > 0 && (
+                <span className="text-sm text-muted-foreground">{filteredAndSortedProjects.length} de {projects.length} projeto(s)</span>
+              )}
+            </div>
+
+            {/* Search, Filter, and Sort Controls */}
             {projects.length > 0 && (
-              <span className="text-sm text-muted-foreground">{projects.length} projeto(s)</span>
+              <div className="space-y-4">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou URL..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-9"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Tabs and Sort */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                    <TabsList className="bg-muted/50">
+                      <TabsTrigger value="all" className="gap-1.5">
+                        Todos
+                        <Badge variant="secondary" className="h-5 px-1.5 text-xs">{statusCounts.all}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="completed" className="gap-1.5">
+                        Concluídos
+                        <Badge variant="secondary" className="h-5 px-1.5 text-xs">{statusCounts.completed}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="in-progress" className="gap-1.5">
+                        Em Andamento
+                        <Badge variant="secondary" className="h-5 px-1.5 text-xs">{statusCounts.inProgress}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="error" className="gap-1.5">
+                        Erro
+                        <Badge variant="secondary" className="h-5 px-1.5 text-xs">{statusCounts.error}</Badge>
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+
+                  <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
+                    <SelectTrigger className="w-[180px]">
+                      <ArrowUpDown className="w-4 h-4 mr-2" />
+                      <SelectValue placeholder="Ordenar por" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date-desc">Mais recentes</SelectItem>
+                      <SelectItem value="date-asc">Mais antigos</SelectItem>
+                      <SelectItem value="name-asc">Nome (A-Z)</SelectItem>
+                      <SelectItem value="name-desc">Nome (Z-A)</SelectItem>
+                      <SelectItem value="status">Por status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Batch Actions Bar */}
+                {selectedProjects.size > 0 && (
+                  <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <span className="text-sm font-medium">
+                      {selectedProjects.size} selecionado(s)
+                    </span>
+                    <div className="flex-1" />
+                    <Button variant="ghost" size="sm" onClick={clearSelection}>
+                      Limpar seleção
+                    </Button>
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Excluir
+                    </Button>
+                  </div>
+                )}
+
+                {/* Select All */}
+                {filteredAndSortedProjects.length > 0 && selectedProjects.size === 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={selectAllVisible} className="text-xs">
+                      Selecionar todos ({filteredAndSortedProjects.length})
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           
@@ -380,55 +644,140 @@ const Dashboard = () => {
                 Começar Agora
               </Button>
             </div>
+          ) : filteredAndSortedProjects.length === 0 ? (
+            <div className="text-center py-12 bg-card border border-border rounded-xl">
+              <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="font-medium mb-2">Nenhum projeto encontrado</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Tente ajustar os filtros ou a busca
+              </p>
+              <Button variant="outline" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
+                Limpar filtros
+              </Button>
+            </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  className="p-4 bg-card border border-border rounded-xl hover:shadow-md hover:border-primary/20 transition-all cursor-pointer group"
-                  onClick={() => project.analysis_status === "completed" && navigate(`/projeto/${project.id}`)}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate group-hover:text-primary transition-colors">
-                        {project.name}
-                      </h3>
-                      <p className="text-xs text-muted-foreground truncate mt-1">
-                        {project.github_url.replace("https://github.com/", "")}
-                      </p>
+              {filteredAndSortedProjects.map((project) => {
+                const isPinned = (project as any).is_pinned || false;
+                const isSelected = selectedProjects.has(project.id);
+                
+                return (
+                  <div
+                    key={project.id}
+                    className={`p-4 bg-card border rounded-xl hover:shadow-md transition-all cursor-pointer group relative ${
+                      isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/20'
+                    } ${isPinned ? 'ring-1 ring-yellow-500/30' : ''}`}
+                  >
+                    {/* Checkbox and Pin */}
+                    <div className="absolute top-3 left-3 flex items-center gap-2">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelectProject(project.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="data-[state=checked]:bg-primary"
+                      />
                     </div>
-                    {project.analysis_status === "completed" && (
-                      <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    {getStatusBadge(project.analysis_status)}
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(project.created_at).toLocaleDateString("pt-BR")}
-                    </span>
-                  </div>
-                  
-                  {project.analysis_status && !["completed", "error", "pending"].includes(project.analysis_status) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-3"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/analisando?projectId=${project.id}`);
-                      }}
+
+                    <div 
+                      className="pl-8"
+                      onClick={() => project.analysis_status === "completed" && navigate(`/projeto/${project.id}`)}
                     >
-                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                      Ver progresso
-                    </Button>
-                  )}
-                </div>
-              ))}
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium truncate group-hover:text-primary transition-colors">
+                              {project.name}
+                            </h3>
+                            {isPinned && (
+                              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500 flex-shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate mt-1">
+                            {project.github_url.replace("https://github.com/", "")}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePinProject(project.id, isPinned);
+                            }}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              isPinned 
+                                ? 'text-yellow-500 hover:bg-yellow-500/10' 
+                                : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            <Star className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />
+                          </button>
+                          {project.analysis_status === "completed" && (
+                            <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        {getStatusBadge(project.analysis_status)}
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(project.created_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                      
+                      {project.analysis_status && !["completed", "error", "pending"].includes(project.analysis_status) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full mt-3"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/analisando?projectId=${project.id}`);
+                          }}
+                        >
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                          Ver progresso
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir projetos selecionados?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a excluir {selectedProjects.size} projeto(s). 
+              Esta ação não pode ser desfeita e todas as análises associadas serão perdidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBatchDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir {selectedProjects.size} projeto(s)
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
