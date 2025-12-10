@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { supabase } from "@/integrations/supabase/client";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { canUserAnalyze, suggestDepthBasedOnLimits } from "@/components/SpendingAlert";
 import {
   Dialog,
@@ -339,49 +340,52 @@ const Home = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background transition-colors duration-300">
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 transition-all duration-300">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 hover-lift cursor-pointer">
             <Github className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-xl">GitAnalyzer</span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
-            <button onClick={() => scrollToSection('features')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={() => scrollToSection('features')} className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200">
               Features
             </button>
-            <button onClick={() => scrollToSection('how-it-works')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={() => scrollToSection('how-it-works')} className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200">
               Como Funciona
             </button>
-            <button onClick={() => scrollToSection('pricing')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={() => scrollToSection('pricing')} className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200">
               Preços
             </button>
-            <button onClick={() => scrollToSection('faq')} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={() => scrollToSection('faq')} className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200">
               FAQ
             </button>
           </nav>
-          {!isLoading && (
-            user ? (
-              <Button 
-                variant="default" 
-                onClick={() => navigate("/dashboard")}
-                className="gap-2"
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                Dashboard
-              </Button>
-            ) : (
-              <Button 
-                variant="ghost" 
-                onClick={() => navigate("/auth")}
-                className="gap-2"
-              >
-                <LogIn className="w-4 h-4" />
-                Entrar
-              </Button>
-            )
-          )}
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {!isLoading && (
+              user ? (
+                <Button 
+                  variant="default" 
+                  onClick={() => navigate("/dashboard")}
+                  className="gap-2 transition-all duration-200 hover:scale-105"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
+                </Button>
+              ) : (
+                <Button 
+                  variant="ghost" 
+                  onClick={() => navigate("/auth")}
+                  className="gap-2 transition-all duration-200"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Entrar
+                </Button>
+              )
+            )}
+          </div>
         </div>
       </header>
 

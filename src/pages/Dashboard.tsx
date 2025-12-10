@@ -24,6 +24,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { 
   Github, 
   LogOut, 
@@ -43,7 +48,8 @@ import {
   Star,
   Trash2,
   ArrowUpDown,
-  X
+  X,
+  HelpCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -52,6 +58,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/badge";
 import { SpendingAlert } from "@/components/SpendingAlert";
+import { EmptyState } from "@/components/EmptyState";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -353,26 +361,41 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 transition-all duration-300">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
+          <div className="flex items-center gap-2 cursor-pointer hover-lift" onClick={() => navigate("/")}>
             <Github className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-xl">GitAnalyzer</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground hidden sm:block">
               {user.email}
             </span>
+            <ThemeToggle />
             {isAdmin && (
-              <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
-                <Shield className="w-4 h-4 mr-2" />
-                Admin
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+                    <Shield className="w-4 h-4 mr-2" />
+                    Admin
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Acessar painel administrativo</p>
+                </TooltipContent>
+              </Tooltip>
             )}
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={handleLogout}>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sair
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Encerrar sessão</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </header>
@@ -465,53 +488,81 @@ const Dashboard = () => {
                 </>
               ) : (
                 <>
-                  <div className="p-4 bg-card border border-border rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                        <FolderGit2 className="w-5 h-5 text-primary" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="p-4 bg-card border border-border rounded-xl hover-lift cursor-help">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                            <FolderGit2 className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">{stats.total}</p>
+                            <p className="text-xs text-muted-foreground">Projetos</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold">{stats.total}</p>
-                        <p className="text-xs text-muted-foreground">Projetos</p>
-                      </div>
-                    </div>
-                  </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Total de repositórios analisados</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-                  <div className="p-4 bg-card border border-border rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-                        <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="p-4 bg-card border border-border rounded-xl hover-lift cursor-help">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+                            <CheckCircle2 className="w-5 h-5 text-green-500" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">{stats.completed}</p>
+                            <p className="text-xs text-muted-foreground">Concluídos</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold">{stats.completed}</p>
-                        <p className="text-xs text-muted-foreground">Concluídos</p>
-                      </div>
-                    </div>
-                  </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Análises finalizadas com sucesso</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-                  <div className="p-4 bg-card border border-border rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                        <Zap className="w-5 h-5 text-purple-500" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="p-4 bg-card border border-border rounded-xl hover-lift cursor-help">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                            <Zap className="w-5 h-5 text-purple-500" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">{(totalTokens / 1000).toFixed(1)}k</p>
+                            <p className="text-xs text-muted-foreground">Tokens</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold">{(totalTokens / 1000).toFixed(1)}k</p>
-                        <p className="text-xs text-muted-foreground">Tokens</p>
-                      </div>
-                    </div>
-                  </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Tokens de IA consumidos em análises</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-                  <div className="p-4 bg-card border border-border rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                        <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="p-4 bg-card border border-border rounded-xl hover-lift cursor-help">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                            <TrendingUp className="w-5 h-5 text-blue-500" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">{checklistPercent.toFixed(0)}%</p>
+                            <p className="text-xs text-muted-foreground">Checklist</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-2xl font-bold">{checklistPercent.toFixed(0)}%</p>
-                        <p className="text-xs text-muted-foreground">Checklist</p>
-                      </div>
-                    </div>
-                  </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Progresso nos itens de ação das análises</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </>
               )}
             </div>
@@ -730,28 +781,26 @@ const Dashboard = () => {
               ))}
             </div>
           ) : projects.length === 0 ? (
-            <div className="text-center py-12 bg-card border border-border rounded-xl">
-              <FolderGit2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-medium mb-2">Nenhum projeto ainda</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Comece analisando seu primeiro repositório GitHub
-              </p>
-              <Button variant="hero" onClick={() => navigate("/")}>
-                <Sparkles className="w-4 h-4 mr-2" />
-                Começar Agora
-              </Button>
-            </div>
+            <EmptyState
+              icon={FolderGit2}
+              title="Nenhum projeto ainda"
+              description="Comece analisando seu primeiro repositório GitHub para obter insights valiosos sobre seu código"
+              action={{
+                label: "Começar Agora",
+                onClick: () => navigate("/")
+              }}
+            />
           ) : filteredAndSortedProjects.length === 0 ? (
-            <div className="text-center py-12 bg-card border border-border rounded-xl">
-              <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-medium mb-2">Nenhum projeto encontrado</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Tente ajustar os filtros ou a busca
-              </p>
-              <Button variant="outline" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
-                Limpar filtros
-              </Button>
-            </div>
+            <EmptyState
+              icon={Search}
+              title="Nenhum projeto encontrado"
+              description="Tente ajustar os filtros ou a busca para encontrar seus projetos"
+              variant="search"
+              action={{
+                label: "Limpar filtros",
+                onClick: () => { setSearchQuery(""); setStatusFilter("all"); }
+              }}
+            />
           ) : (
             <>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -762,7 +811,7 @@ const Dashboard = () => {
                   return (
                     <div
                       key={project.id}
-                      className={`p-4 bg-card border rounded-xl hover:shadow-md transition-all cursor-pointer group relative ${
+                      className={`p-4 bg-card border rounded-xl hover:shadow-lg transition-all duration-300 cursor-pointer group relative ${
                         isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/20'
                       } ${isPinned ? 'ring-1 ring-yellow-500/30' : ''}`}
                     >
