@@ -163,7 +163,7 @@ const Home = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [showAnalysisOptions, setShowAnalysisOptions] = useState(false);
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>(analysisOptions.map(a => a.id));
-  const [selectedDepth, setSelectedDepth] = useState<AnalysisDepth>('complete');
+  const [selectedDepth, setSelectedDepth] = useState<AnalysisDepth>('critical');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [depthSuggestion, setDepthSuggestion] = useState<{ depth: AnalysisDepth; reason: string } | null>(null);
   const [plans, setPlans] = useState<DynamicPlan[]>([]);
@@ -215,12 +215,19 @@ const Home = () => {
     loadPlans();
   }, []);
 
-  // Filter out disabled analyses when plan loads
+  // Filter out disabled analyses and adjust depth when plan loads
   useEffect(() => {
     if (!plan || plan.isAdmin) return;
     
+    // Filter analyses by allowed types
     if (plan.allowedAnalysisTypes) {
       setSelectedAnalyses(prev => prev.filter(a => plan.allowedAnalysisTypes!.includes(a)));
+    }
+    
+    // Adjust depth if current selection is not allowed
+    if (plan.allowedDepths && !plan.allowedDepths.includes(selectedDepth)) {
+      const allowedDepth = plan.allowedDepths[0] as AnalysisDepth || 'critical';
+      setSelectedDepth(allowedDepth);
     }
   }, [plan]);
 
