@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -51,6 +52,46 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/badge";
 
+const ITEMS_PER_PAGE = 12;
+
+// Skeleton Components
+const ProjectCardSkeleton = () => (
+  <div className="p-4 bg-card border border-border rounded-xl">
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-5 w-3/4" />
+        <Skeleton className="h-3 w-1/2" />
+      </div>
+    </div>
+    <div className="flex items-center justify-between">
+      <Skeleton className="h-6 w-20 rounded-full" />
+      <Skeleton className="h-4 w-16" />
+    </div>
+  </div>
+);
+
+const StatsCardSkeleton = () => (
+  <div className="p-4 bg-card border border-border rounded-xl">
+    <div className="flex items-center gap-3">
+      <Skeleton className="w-10 h-10 rounded-lg" />
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-12" />
+        <Skeleton className="h-3 w-16" />
+      </div>
+    </div>
+  </div>
+);
+
+const ActivitySkeleton = () => (
+  <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
+    <Skeleton className="w-8 h-8 rounded-lg flex-shrink-0" />
+    <div className="flex-1 space-y-2">
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-3 w-1/4" />
+    </div>
+  </div>
+);
+
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'status';
 type StatusFilter = 'all' | 'completed' | 'in-progress' | 'error' | 'pending';
 
@@ -72,6 +113,10 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("date-desc");
+  
+  // Pagination state
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   
   // Selection state for batch actions
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
@@ -245,6 +290,35 @@ const Dashboard = () => {
     return filtered;
   }, [projects, searchQuery, statusFilter, sortOption]);
 
+  // Paginated projects for display
+  const paginatedProjects = useMemo(() => {
+    return filteredAndSortedProjects.slice(0, visibleCount);
+  }, [filteredAndSortedProjects, visibleCount]);
+
+  const hasMore = visibleCount < filteredAndSortedProjects.length;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [searchQuery, statusFilter, sortOption]);
+
+  // Infinite scroll with Intersection Observer
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          setVisibleCount(prev => prev + ITEMS_PER_PAGE);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore]);
+
   const stats = {
     total: projects.length,
     completed: projects.filter(p => p.analysis_status === "completed").length,
@@ -378,53 +452,64 @@ const Dashboard = () => {
 
             {/* Stats Grid */}
             <div className="grid md:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: "0.05s" }}>
-              <div className="p-4 bg-card border border-border rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <FolderGit2 className="w-5 h-5 text-primary" />
+              {isLoading ? (
+                <>
+                  <StatsCardSkeleton />
+                  <StatsCardSkeleton />
+                  <StatsCardSkeleton />
+                  <StatsCardSkeleton />
+                </>
+              ) : (
+                <>
+                  <div className="p-4 bg-card border border-border rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <FolderGit2 className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{stats.total}</p>
+                        <p className="text-xs text-muted-foreground">Projetos</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold">{stats.total}</p>
-                    <p className="text-xs text-muted-foreground">Projetos</p>
-                  </div>
-                </div>
-              </div>
 
-              <div className="p-4 bg-card border border-border rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  <div className="p-4 bg-card border border-border rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+                        <CheckCircle2 className="w-5 h-5 text-green-500" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{stats.completed}</p>
+                        <p className="text-xs text-muted-foreground">Concluídos</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold">{stats.completed}</p>
-                    <p className="text-xs text-muted-foreground">Concluídos</p>
-                  </div>
-                </div>
-              </div>
 
-              <div className="p-4 bg-card border border-border rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-purple-500" />
+                  <div className="p-4 bg-card border border-border rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                        <Zap className="w-5 h-5 text-purple-500" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{(totalTokens / 1000).toFixed(1)}k</p>
+                        <p className="text-xs text-muted-foreground">Tokens</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold">{(totalTokens / 1000).toFixed(1)}k</p>
-                    <p className="text-xs text-muted-foreground">Tokens</p>
-                  </div>
-                </div>
-              </div>
 
-              <div className="p-4 bg-card border border-border rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                  <div className="p-4 bg-card border border-border rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                        <TrendingUp className="w-5 h-5 text-blue-500" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">{checklistPercent.toFixed(0)}%</p>
+                        <p className="text-xs text-muted-foreground">Checklist</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold">{checklistPercent.toFixed(0)}%</p>
-                    <p className="text-xs text-muted-foreground">Checklist</p>
-                  </div>
-                </div>
-              </div>
+                </>
+              )}
             </div>
 
             {/* Quick Action */}
@@ -452,7 +537,13 @@ const Dashboard = () => {
                 <h3 className="font-semibold">Atividades Recentes</h3>
               </div>
               
-              {recentActivities.length === 0 ? (
+              {isLoading ? (
+                <div className="space-y-3">
+                  <ActivitySkeleton />
+                  <ActivitySkeleton />
+                  <ActivitySkeleton />
+                </div>
+              ) : recentActivities.length === 0 ? (
                 <div className="text-center py-8">
                   <Clock className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Nenhuma atividade recente</p>
@@ -629,8 +720,10 @@ const Dashboard = () => {
           </div>
           
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <ProjectCardSkeleton key={i} />
+              ))}
             </div>
           ) : projects.length === 0 ? (
             <div className="text-center py-12 bg-card border border-border rounded-xl">
@@ -656,92 +749,116 @@ const Dashboard = () => {
               </Button>
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredAndSortedProjects.map((project) => {
-                const isPinned = (project as any).is_pinned || false;
-                const isSelected = selectedProjects.has(project.id);
-                
-                return (
-                  <div
-                    key={project.id}
-                    className={`p-4 bg-card border rounded-xl hover:shadow-md transition-all cursor-pointer group relative ${
-                      isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/20'
-                    } ${isPinned ? 'ring-1 ring-yellow-500/30' : ''}`}
-                  >
-                    {/* Checkbox and Pin */}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => toggleSelectProject(project.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="data-[state=checked]:bg-primary"
-                      />
-                    </div>
-
-                    <div 
-                      className="pl-8"
-                      onClick={() => project.analysis_status === "completed" && navigate(`/projeto/${project.id}`)}
+            <>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedProjects.map((project) => {
+                  const isPinned = (project as any).is_pinned || false;
+                  const isSelected = selectedProjects.has(project.id);
+                  
+                  return (
+                    <div
+                      key={project.id}
+                      className={`p-4 bg-card border rounded-xl hover:shadow-md transition-all cursor-pointer group relative ${
+                        isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/20'
+                      } ${isPinned ? 'ring-1 ring-yellow-500/30' : ''}`}
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium truncate group-hover:text-primary transition-colors">
-                              {project.name}
-                            </h3>
-                            {isPinned && (
-                              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500 flex-shrink-0" />
+                      {/* Checkbox and Pin */}
+                      <div className="absolute top-3 left-3 flex items-center gap-2">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleSelectProject(project.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+
+                      <div 
+                        className="pl-8"
+                        onClick={() => project.analysis_status === "completed" && navigate(`/projeto/${project.id}`)}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-medium truncate group-hover:text-primary transition-colors">
+                                {project.name}
+                              </h3>
+                              {isPinned && (
+                                <Star className="w-4 h-4 text-yellow-500 fill-yellow-500 flex-shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate mt-1">
+                              {project.github_url.replace("https://github.com/", "")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePinProject(project.id, isPinned);
+                              }}
+                              className={`p-1.5 rounded-md transition-colors ${
+                                isPinned 
+                                  ? 'text-yellow-500 hover:bg-yellow-500/10' 
+                                  : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted opacity-0 group-hover:opacity-100'
+                              }`}
+                            >
+                              <Star className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />
+                            </button>
+                            {project.analysis_status === "completed" && (
+                              <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate mt-1">
-                            {project.github_url.replace("https://github.com/", "")}
-                          </p>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <button
+                        
+                        <div className="flex items-center justify-between">
+                          {getStatusBadge(project.analysis_status)}
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(project.created_at).toLocaleDateString("pt-BR")}
+                          </span>
+                        </div>
+                        
+                        {project.analysis_status && !["completed", "error", "pending"].includes(project.analysis_status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-3"
                             onClick={(e) => {
                               e.stopPropagation();
-                              togglePinProject(project.id, isPinned);
+                              navigate(`/analisando?projectId=${project.id}`);
                             }}
-                            className={`p-1.5 rounded-md transition-colors ${
-                              isPinned 
-                                ? 'text-yellow-500 hover:bg-yellow-500/10' 
-                                : 'text-muted-foreground hover:text-yellow-500 hover:bg-muted opacity-0 group-hover:opacity-100'
-                            }`}
                           >
-                            <Star className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />
-                          </button>
-                          {project.analysis_status === "completed" && (
-                            <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
-                          )}
-                        </div>
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            Ver progresso
+                          </Button>
+                        )}
                       </div>
-                      
-                      <div className="flex items-center justify-between">
-                        {getStatusBadge(project.analysis_status)}
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(project.created_at).toLocaleDateString("pt-BR")}
-                        </span>
-                      </div>
-                      
-                      {project.analysis_status && !["completed", "error", "pending"].includes(project.analysis_status) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full mt-3"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/analisando?projectId=${project.id}`);
-                          }}
-                        >
-                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          Ver progresso
-                        </Button>
-                      )}
                     </div>
+                  );
+                })}
+              </div>
+
+              {/* Load More Indicator */}
+              {hasMore && (
+                <div 
+                  ref={loadMoreRef}
+                  className="flex items-center justify-center py-8"
+                >
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm">Carregando mais projetos...</span>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              )}
+
+              {/* Show count */}
+              {!hasMore && filteredAndSortedProjects.length > ITEMS_PER_PAGE && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Mostrando todos os {filteredAndSortedProjects.length} projetos
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
