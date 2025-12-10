@@ -402,6 +402,26 @@ const ProjectHub = () => {
               </span>
             )}
           </div>
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-3 mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => navigate(`/projeto/${id}/overview`)}
+              className="gap-2"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Visão Geral
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => navigate(`/projeto/${id}/chat`)}
+              className="gap-2"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Ask AI
+            </Button>
+          </div>
         </div>
 
         {/* Analysis Grid */}

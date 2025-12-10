@@ -29,6 +29,7 @@ import {
   Lightbulb,
   BookOpen,
   Terminal,
+  Activity,
   Save,
   Eye,
   RotateCcw,
@@ -61,6 +62,7 @@ const ANALYSIS_ICONS: Record<string, React.ReactNode> = {
   features: <Lightbulb className="w-5 h-5" />,
   documentacao: <BookOpen className="w-5 h-5" />,
   prompts: <Terminal className="w-5 h-5" />,
+  quality: <Activity className="w-5 h-5" />,
 };
 
 const ANALYSIS_COLORS: Record<string, string> = {
@@ -73,6 +75,7 @@ const ANALYSIS_COLORS: Record<string, string> = {
   features: "text-yellow-500 bg-yellow-500/10",
   documentacao: "text-cyan-500 bg-cyan-500/10",
   prompts: "text-violet-500 bg-violet-500/10",
+  quality: "text-emerald-500 bg-emerald-500/10",
 };
 
 const AdminPrompts = () => {
