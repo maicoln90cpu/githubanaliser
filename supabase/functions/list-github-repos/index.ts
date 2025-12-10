@@ -82,11 +82,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    // The provider_token should be in the session
-    const providerToken = session.provider_token;
+    // Try to get provider_token from session first, then fall back to stored token
+    let providerToken = session.provider_token;
     
     if (!providerToken) {
-      console.log('No provider token found in session');
+      console.log('No provider token in session, checking stored token...');
+      
+      // Try to get stored token from profiles
+      const supabaseAdmin = createClient(
+        supabaseUrl,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+      
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('github_access_token')
+        .eq('id', user.id)
+        .single();
+      
+      providerToken = profile?.github_access_token;
+    }
+    
+    if (!providerToken) {
+      console.log('No provider token found');
       return new Response(
         JSON.stringify({ 
           error: 'Token do GitHub não disponível. Por favor, reconecte sua conta GitHub.',

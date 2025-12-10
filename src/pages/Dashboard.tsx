@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import {
   BarChart3, 
   Clock, 
   Loader2, 
-  Grid3X3, 
   Shield,
   Crown,
   Zap,
@@ -21,156 +19,30 @@ import {
   TrendingUp
 } from "lucide-react";
 import { toast } from "sonner";
-import { User, Session } from "@supabase/supabase-js";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useUserPlan } from "@/hooks/useUserPlan";
 import { useAuth } from "@/hooks/useAuth";
+import { useDashboardData } from "@/hooks/useDashboardData";
 import { Badge } from "@/components/ui/badge";
-
-interface Project {
-  id: string;
-  name: string;
-  github_url: string;
-  created_at: string;
-  analysis_status: string | null;
-}
-
-interface RecentActivity {
-  id: string;
-  type: 'project' | 'analysis' | 'checklist';
-  description: string;
-  timestamp: string;
-  projectName?: string;
-}
 
 const Dashboard = () => {
   const { user, isLoading: authLoading } = useAuth();
   const { plan, isLoading: planLoading } = useUserPlan();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-  const [checklistStats, setChecklistStats] = useState({ completed: 0, total: 0 });
-  const [totalTokens, setTotalTokens] = useState(0);
+  const { 
+    projects, 
+    recentActivities, 
+    checklistStats, 
+    totalTokens, 
+    isLoading 
+  } = useDashboardData(user?.id);
   const navigate = useNavigate();
   const { isAdmin } = useAdmin();
 
-  useEffect(() => {
-    // Wait for auth to be determined
-    if (authLoading) return;
-    
-    if (!user) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-    
-    fetchProjects();
-    fetchRecentActivities();
-    fetchChecklistStats();
-    fetchTokenUsage();
-  }, [user, authLoading, navigate]);
-
-  const fetchProjects = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setProjects(data || []);
-    } catch (error) {
-      console.error("Erro ao buscar projetos:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchRecentActivities = async () => {
-    if (!user) return;
-    
-    try {
-      // Buscar projetos recentes
-      const { data: projectsData } = await supabase
-        .from("projects")
-        .select("id, name, created_at, analysis_status")
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      // Buscar checklist items recentes
-      const { data: checklistData } = await supabase
-        .from("user_checklist_items")
-        .select("id, completed_at, analysis_id")
-        .eq("is_completed", true)
-        .order("completed_at", { ascending: false })
-        .limit(5);
-
-      const activities: RecentActivity[] = [];
-
-      projectsData?.forEach(p => {
-        if (p.analysis_status === 'completed') {
-          activities.push({
-            id: `project-${p.id}`,
-            type: 'project',
-            description: `Análise concluída: ${p.name}`,
-            timestamp: p.created_at,
-            projectName: p.name,
-          });
-        }
-      });
-
-      checklistData?.forEach(c => {
-        if (c.completed_at) {
-          activities.push({
-            id: `checklist-${c.id}`,
-            type: 'checklist',
-            description: 'Item de checklist concluído',
-            timestamp: c.completed_at,
-          });
-        }
-      });
-
-      // Ordenar por timestamp
-      activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      setRecentActivities(activities.slice(0, 5));
-    } catch (error) {
-      console.error("Erro ao buscar atividades:", error);
-    }
-  };
-
-  const fetchChecklistStats = async () => {
-    if (!user) return;
-    
-    try {
-      const { count: total } = await supabase
-        .from("user_checklist_items")
-        .select("*", { count: "exact", head: true });
-
-      const { count: completed } = await supabase
-        .from("user_checklist_items")
-        .select("*", { count: "exact", head: true })
-        .eq("is_completed", true);
-
-      setChecklistStats({ completed: completed || 0, total: total || 0 });
-    } catch (error) {
-      console.error("Erro ao buscar estatísticas de checklist:", error);
-    }
-  };
-
-  const fetchTokenUsage = async () => {
-    if (!user) return;
-    
-    try {
-      const { data } = await supabase
-        .from("analysis_usage")
-        .select("tokens_estimated");
-
-      const total = data?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
-      setTotalTokens(total);
-    } catch (error) {
-      console.error("Erro ao buscar uso de tokens:", error);
-    }
-  };
+  // Redirect if not authenticated
+  if (!authLoading && !user) {
+    navigate("/auth", { replace: true });
+    return null;
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

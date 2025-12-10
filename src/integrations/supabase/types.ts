@@ -185,6 +185,8 @@ export type Database = {
           created_at: string | null
           email: string | null
           full_name: string | null
+          github_access_token: string | null
+          github_username: string | null
           id: string
           updated_at: string | null
         }
@@ -192,6 +194,8 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
+          github_access_token?: string | null
+          github_username?: string | null
           id: string
           updated_at?: string | null
         }
@@ -199,6 +203,8 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           full_name?: string | null
+          github_access_token?: string | null
+          github_username?: string | null
           id?: string
           updated_at?: string | null
         }
@@ -363,6 +369,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_dashboard_data: { Args: { p_user_id: string }; Returns: Json }
       get_user_daily_usage: { Args: { p_user_id: string }; Returns: number }
       get_user_monthly_usage: { Args: { p_user_id: string }; Returns: number }
       get_user_plan: {
