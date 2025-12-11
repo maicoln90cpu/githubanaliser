@@ -11,10 +11,6 @@ import {
   Home, 
   Loader2, 
   ClipboardList,
-  Bug,
-  Sparkles,
-  Shield,
-  Layers,
   AlertTriangle,
   Wrench,
   TrendingUp,
@@ -27,7 +23,8 @@ import {
   X,
   CheckCircle,
   Circle,
-  ListFilter
+  ListFilter,
+  FileText
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -40,13 +37,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,13 +79,6 @@ interface ImplementationItem {
   sort_order: number;
 }
 
-const FOCUS_OPTIONS = [
-  { value: 'bugs', label: 'Correções e Bugs', icon: Bug, color: 'text-red-500' },
-  { value: 'features', label: 'Novas Funcionalidades', icon: Sparkles, color: 'text-yellow-500' },
-  { value: 'security', label: 'Segurança', icon: Shield, color: 'text-blue-500' },
-  { value: 'complete', label: 'Plano Completo', icon: Layers, color: 'text-purple-500' },
-];
-
 const ANALYSIS_TYPE_LABELS: Record<string, string> = {
   prd: 'PRD',
   divulgacao: 'Marketing & Lançamento',
@@ -131,7 +114,6 @@ const ImplementationPlanPage = () => {
   // Generate dialog state
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>([]);
-  const [focusType, setFocusType] = useState<string>('complete');
   
   // Delete dialog state
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; planId: string | null }>({ open: false, planId: null });
@@ -268,7 +250,6 @@ const ImplementationPlanPage = () => {
         body: {
           projectId: id,
           analysisTypes: selectedAnalyses,
-          focusType,
         }
       });
 
@@ -432,7 +413,6 @@ const ImplementationPlanPage = () => {
               <div className="space-y-2">
                 {plans.map(plan => {
                   const isActive = activePlanId === plan.id;
-                  const FocusIcon = FOCUS_OPTIONS.find(f => f.value === plan.focus_type)?.icon || Layers;
                   
                   return (
                     <Card 
@@ -445,7 +425,7 @@ const ImplementationPlanPage = () => {
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3">
-                            <FocusIcon className="w-5 h-5 text-muted-foreground mt-0.5" />
+                            <FileText className="w-5 h-5 text-muted-foreground mt-0.5" />
                             <div>
                               <p className="font-medium text-sm line-clamp-2">{plan.title}</p>
                               <p className="text-xs text-muted-foreground mt-1">
@@ -722,28 +702,6 @@ const ImplementationPlanPage = () => {
           </DialogHeader>
 
           <div className="space-y-6 py-4">
-            {/* Focus Type */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Foco do Plano</label>
-              <Select value={focusType} onValueChange={setFocusType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FOCUS_OPTIONS.map(option => {
-                    const Icon = option.icon;
-                    return (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Icon className={`w-4 h-4 ${option.color}`} />
-                          {option.label}
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
 
             {/* Analysis Selection */}
             <div className="space-y-2">

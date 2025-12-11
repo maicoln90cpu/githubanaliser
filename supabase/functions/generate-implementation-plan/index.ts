@@ -9,7 +9,6 @@ const corsHeaders = {
 interface RequestBody {
   projectId: string;
   analysisTypes: string[];
-  focusType: 'bugs' | 'features' | 'security' | 'complete';
   title?: string;
 }
 
@@ -19,13 +18,6 @@ interface ExtractedItem {
   description: string;
   source_analysis: string;
 }
-
-const FOCUS_TYPE_LABELS: Record<string, string> = {
-  bugs: 'Correções e Bugs',
-  features: 'Novas Funcionalidades',
-  security: 'Segurança',
-  complete: 'Plano Completo',
-};
 
 const ANALYSIS_TYPE_LABELS: Record<string, string> = {
   prd: 'PRD',
@@ -72,9 +64,9 @@ serve(async (req) => {
       });
     }
 
-    const { projectId, analysisTypes, focusType, title }: RequestBody = await req.json();
+    const { projectId, analysisTypes, title }: RequestBody = await req.json();
 
-    console.log(`[generate-implementation-plan] Starting for project ${projectId}, focus: ${focusType}, types: ${analysisTypes.join(', ')}`);
+    console.log(`[generate-implementation-plan] Starting for project ${projectId}, types: ${analysisTypes.join(', ')}`);
 
     // Validate inputs
     if (!projectId || !analysisTypes || analysisTypes.length === 0) {
@@ -154,51 +146,20 @@ serve(async (req) => {
       .map(a => `### ${ANALYSIS_TYPE_LABELS[a.type] || a.type}\n${a.content.slice(0, 15000)}`)
       .join('\n\n---\n\n');
 
-    // Build focus-specific instructions
-    let focusInstructions = '';
-    switch (focusType) {
-      case 'bugs':
-        focusInstructions = `
-Foque EXCLUSIVAMENTE em:
-- Correções de bugs identificados
-- Problemas de código que precisam ser resolvidos
-- Erros de lógica ou implementação
-- Issues de performance que afetam funcionamento`;
-        break;
-      case 'features':
-        focusInstructions = `
-Foque EXCLUSIVAMENTE em:
-- Novas funcionalidades sugeridas
-- Melhorias de features existentes
-- Expansões de capacidades do sistema`;
-        break;
-      case 'security':
-        focusInstructions = `
-Foque EXCLUSIVAMENTE em:
-- Vulnerabilidades de segurança
-- Melhorias de autenticação/autorização
-- Proteção de dados sensíveis
-- Boas práticas de segurança`;
-        break;
-      case 'complete':
-      default:
-        focusInstructions = `
-Inclua TODOS os tipos de itens acionáveis:
-- Correções críticas e bugs
-- Novas implementações necessárias
-- Melhorias e otimizações sugeridas`;
-    }
-
-    const systemPrompt = `Você é um especialista em análise de projetos de software. Sua tarefa é extrair itens ACIONÁVEIS das análises fornecidas e criar um checklist estruturado de implementação.
+    const systemPrompt = `Você é um especialista em análise de projetos de software. Sua tarefa é extrair TODOS os itens ACIONÁVEIS das análises fornecidas e criar um checklist estruturado de implementação.
 
 REGRAS CRÍTICAS:
 1. Extraia APENAS itens que requerem AÇÃO CONCRETA (implementar, corrigir, adicionar, configurar, etc.)
 2. NÃO inclua itens que são apenas métricas, estatísticas ou informações descritivas
 3. Cada item deve ser uma tarefa clara e específica
-4. Categorize cada item como: "critical" (urgente/bloqueador), "implementation" (nova funcionalidade), ou "improvement" (otimização/melhoria)
-5. Mantenha títulos concisos (máx 100 caracteres) e descrições detalhadas quando necessário
+4. Mantenha títulos concisos (máx 100 caracteres) e descrições detalhadas quando necessário
 
-${focusInstructions}`;
+CATEGORIZAÇÃO AUTOMÁTICA:
+- "critical": Itens urgentes, bugs graves, vulnerabilidades de segurança, problemas que bloqueiam funcionalidades
+- "implementation": Novas funcionalidades, features a implementar, integrações necessárias
+- "improvement": Otimizações, melhorias de código, refatorações, melhorias de UX/performance
+
+Analise TODO o conteúdo e extraia TODOS os itens acionáveis, categorizando-os automaticamente.`;
 
     const userPrompt = `Analise o seguinte conteúdo e extraia TODOS os itens acionáveis para criar um plano de implementação:
 
@@ -310,8 +271,9 @@ Retorne usando a função extract_implementation_items com os itens encontrados.
     // Calculate tokens used (estimate)
     const tokensUsed = aiData.usage?.total_tokens || Math.ceil(analysesContext.length / 4);
 
-    // Create implementation plan
-    const planTitle = title || `${FOCUS_TYPE_LABELS[focusType]} - ${project.name}`;
+    // Create implementation plan with auto-generated title
+    const analysisLabels = analysisTypes.slice(0, 3).map(t => ANALYSIS_TYPE_LABELS[t] || t).join(', ');
+    const planTitle = title || `Plano de Implementação - ${analysisLabels}${analysisTypes.length > 3 ? ` (+${analysisTypes.length - 3})` : ''}`;
     
     const { data: plan, error: planError } = await supabase
       .from('implementation_plans')
@@ -319,7 +281,7 @@ Retorne usando a função extract_implementation_items com os itens encontrados.
         user_id: user.id,
         project_id: projectId,
         title: planTitle,
-        focus_type: focusType,
+        focus_type: 'complete', // Always complete now
         analysis_types: analysisTypes,
         tokens_used: tokensUsed,
       })
@@ -379,7 +341,6 @@ Retorne usando a função extract_implementation_items com os itens encontrados.
       plan: {
         id: plan.id,
         title: plan.title,
-        focus_type: plan.focus_type,
         tokens_used: tokensUsed,
         items_count: itemsToInsert.length,
       },
