@@ -21,7 +21,8 @@ import {
   Layers,
   Cpu,
   CheckCircle2,
-  Info
+  Info,
+  ShieldAlert
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -94,6 +95,9 @@ const AdminSettings = () => {
   // Plan depth access
   const [planDepths, setPlanDepths] = useState<PlanDepthConfig[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
+  
+  // Security settings
+  const [signupLimitPerIp, setSignupLimitPerIp] = useState<number>(3);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -129,6 +133,8 @@ const AdminSettings = () => {
           try { setBalancedConfig(JSON.parse(setting.value)); } catch {}
         } else if (setting.key === 'depth_complete') {
           try { setCompleteConfig(JSON.parse(setting.value)); } catch {}
+        } else if (setting.key === 'signup_limit_per_ip') {
+          setSignupLimitPerIp(parseInt(setting.value) || 3);
         }
       });
 
@@ -1016,6 +1022,110 @@ const AdminSettings = () => {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* Security Settings */}
+        <div className="p-6 bg-card border border-border rounded-xl mb-6 animate-slide-up" style={{ animationDelay: "0.2s" }}>
+          <div className="flex items-center gap-2 mb-6">
+            <ShieldAlert className="w-5 h-5 text-orange-500" />
+            <h2 className="text-xl font-semibold">Proteção Anti-Abuse</h2>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="w-4 h-4 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p>Configure limites para prevenir que usuários criem múltiplas contas gratuitas do mesmo IP.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-orange-500/5 border border-orange-500/20 rounded-lg">
+              <div className="flex-1">
+                <Label htmlFor="signup-limit" className="text-base font-medium">
+                  Limite de cadastros por IP (24h)
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Número máximo de contas que podem ser criadas do mesmo IP em 24 horas
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="signup-limit"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={signupLimitPerIp}
+                  onChange={(e) => setSignupLimitPerIp(parseInt(e.target.value) || 3)}
+                  className="w-20 text-center"
+                />
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      const { data: existing } = await supabase
+                        .from("system_settings")
+                        .select("key")
+                        .eq("key", "signup_limit_per_ip")
+                        .maybeSingle();
+
+                      if (existing) {
+                        await supabase
+                          .from("system_settings")
+                          .update({ 
+                            value: signupLimitPerIp.toString(), 
+                            updated_by: user?.id,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq("key", "signup_limit_per_ip");
+                      } else {
+                        await supabase
+                          .from("system_settings")
+                          .insert({ 
+                            key: "signup_limit_per_ip",
+                            value: signupLimitPerIp.toString(),
+                            description: "Limite de cadastros por IP em 24 horas",
+                            updated_by: user?.id
+                          });
+                      }
+
+                      toast.success(`Limite atualizado para ${signupLimitPerIp} cadastros/IP/24h`);
+                    } catch (error) {
+                      console.error("Erro ao salvar:", error);
+                      toast.error("Erro ao salvar configuração");
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="p-3 bg-muted/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-orange-500">{signupLimitPerIp}</p>
+                <p className="text-xs text-muted-foreground">Limite atual</p>
+              </div>
+              <div className="p-3 bg-muted/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-muted-foreground">24h</p>
+                <p className="text-xs text-muted-foreground">Janela de tempo</p>
+              </div>
+              <div className="p-3 bg-muted/30 rounded-lg text-center">
+                <p className="text-2xl font-bold text-green-500">✓</p>
+                <p className="text-xs text-muted-foreground">Proteção ativa</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              💡 Recomendação: 3-5 cadastros por IP é um bom equilíbrio entre segurança e usabilidade (ex: redes corporativas).
+            </p>
           </div>
         </div>
       </main>
