@@ -30,7 +30,8 @@ import {
   Terminal,
   Activity,
   LayoutDashboard,
-  MessageSquare
+  MessageSquare,
+  ClipboardList
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -404,7 +405,7 @@ const ProjectHub = () => {
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-3 mt-4">
+          <div className="flex items-center gap-3 mt-4 flex-wrap">
             <Button 
               variant="outline" 
               onClick={() => navigate(`/projeto/${id}/overview`)}
@@ -420,6 +421,14 @@ const ProjectHub = () => {
             >
               <MessageSquare className="w-4 h-4" />
               Ask AI
+            </Button>
+            <Button 
+              variant="default" 
+              onClick={() => navigate(`/projeto/${id}/implementacao`)}
+              className="gap-2"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Plano de Implementação
             </Button>
           </div>
         </div>

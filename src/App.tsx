@@ -20,6 +20,7 @@ import AnalysisPrompts from "./pages/AnalysisPrompts";
 import AnalysisQuality from "./pages/AnalysisQuality";
 import ProjectOverview from "./pages/ProjectOverview";
 import ProjectChat from "./pages/ProjectChat";
+import ImplementationPlan from "./pages/ImplementationPlan";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
 import AnalysisComparison from "./pages/AnalysisComparison";
@@ -61,6 +62,7 @@ const App = () => (
           <Route path="/qualidade-codigo/:id" element={<AnalysisQuality />} />
           <Route path="/projeto/:id/overview" element={<ProjectOverview />} />
           <Route path="/projeto/:id/chat" element={<ProjectChat />} />
+          <Route path="/projeto/:id/implementacao" element={<ImplementationPlan />} />
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
           <Route path="/comparar/:id" element={<AnalysisComparison />} />
