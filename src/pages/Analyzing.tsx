@@ -72,6 +72,9 @@ const Analyzing = () => {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const hasCompletedRef = useRef(false);
   const analysisStartedRef = useRef(false); // Lock para evitar análises duplicadas
+  const pollFailCountRef = useRef(0); // Track consecutive poll failures
+  const lastProgressRef = useRef(0); // Track last progress for stale detection
+  const staleStartTimeRef = useRef<number | null>(null); // Track when progress became stale
   
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
@@ -186,7 +189,9 @@ const Analyzing = () => {
     }
   };
 
-  const pollStatus = async (id: string) => {
+  const pollStatus = async (id: string, isForced = false) => {
+    console.log(`[Polling] Iniciando poll para projeto ${id}${isForced ? ' (forçado)' : ''}`);
+    
     try {
       const { data: project, error } = await supabase
         .from("projects")
@@ -195,15 +200,44 @@ const Analyzing = () => {
         .single();
 
       if (error) {
-        console.error("Erro ao buscar status:", error);
+        pollFailCountRef.current++;
+        console.error(`[Polling] Erro ao buscar status (tentativa ${pollFailCountRef.current}):`, error);
+        
+        // After 5 consecutive failures, show warning but keep trying
+        if (pollFailCountRef.current >= 5) {
+          console.warn("[Polling] Múltiplas falhas consecutivas. Continuando tentativas...");
+        }
         return;
       }
 
+      // Reset fail counter on success
+      pollFailCountRef.current = 0;
+      
       const status = project.analysis_status as AnalysisStatus;
+      console.log(`[Polling] Status atual: ${status}`);
+      
       updateStepsFromStatus(status);
+
+      // Detect stale progress (stuck at same level for too long)
+      const currentProgress = statusToStepIndex[status] || 0;
+      if (currentProgress === lastProgressRef.current && currentProgress > 0) {
+        if (!staleStartTimeRef.current) {
+          staleStartTimeRef.current = Date.now();
+        } else {
+          const staleTime = Date.now() - staleStartTimeRef.current;
+          // If stuck for more than 45 seconds, log warning
+          if (staleTime > 45000 && !isForced) {
+            console.warn(`[Polling] Progresso parado em ${currentProgress} por ${Math.round(staleTime/1000)}s`);
+          }
+        }
+      } else {
+        lastProgressRef.current = currentProgress;
+        staleStartTimeRef.current = null;
+      }
 
       if (status === "completed" && !hasCompletedRef.current) {
         hasCompletedRef.current = true;
+        console.log("[Polling] ✓ Análise concluída! Navegando para projeto...");
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
@@ -213,6 +247,7 @@ const Analyzing = () => {
           navigate(`/projeto/${id}`);
         }, 500);
       } else if (status === "error") {
+        console.error("[Polling] ✗ Erro na análise:", project.error_message);
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
         }
@@ -220,9 +255,27 @@ const Analyzing = () => {
         toast.error("Erro ao analisar o projeto");
       }
     } catch (error) {
-      console.error("Erro no polling:", error);
+      pollFailCountRef.current++;
+      console.error(`[Polling] Exceção no polling (tentativa ${pollFailCountRef.current}):`, error);
     }
   };
+
+  // Forced check after 30 seconds of apparent stalling
+  useEffect(() => {
+    if (!projectId) return;
+    
+    const staleCheckInterval = setInterval(() => {
+      if (staleStartTimeRef.current) {
+        const staleTime = Date.now() - staleStartTimeRef.current;
+        if (staleTime > 30000 && !hasCompletedRef.current) {
+          console.log("[Polling] Verificação forçada após 30s de progresso parado...");
+          pollStatus(projectId, true);
+        }
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(staleCheckInterval);
+  }, [projectId]);
 
   useEffect(() => {
     if (authLoading) return;

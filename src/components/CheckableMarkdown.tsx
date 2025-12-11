@@ -29,11 +29,31 @@ const isActionableItem = (text: string): boolean => {
     'definir', 'estabelecer', 'desenvolver', 'integrar', 'migrar',
     'documentar', 'remover', 'refatorar', 'melhorar', 'validar',
     'implement', 'create', 'add', 'configure', 'update',
-    'review', 'verify', 'test', 'fix', 'optimize'
+    'review', 'verify', 'test', 'fix', 'optimize',
+    // Additional keywords for broader coverage
+    'setup', 'deploy', 'publish', 'build', 'run', 'preview', 'install',
+    'analisar', 'executar', 'preparar', 'monitorar', 'automatizar',
+    'habilitar', 'desabilitar', 'ativar', 'desativar', 'incluir',
+    'excluir', 'exportar', 'importar', 'sincronizar', 'publicar',
+    'lançar', 'versionar', 'manter', 'suportar', 'garantir',
+    'enable', 'disable', 'activate', 'deactivate', 'include',
+    'exclude', 'export', 'import', 'sync', 'launch', 'version',
+    'maintain', 'support', 'ensure', 'monitor', 'automate'
   ];
   
   const lowerText = text.toLowerCase();
   return actionKeywords.some(keyword => lowerText.includes(keyword));
+};
+
+// Check if text should be checkable in table context (more permissive)
+const isTableItemCheckable = (text: string): boolean => {
+  // All table items with meaningful content are checkable
+  const cleanText = text.trim();
+  // Exclude headers, empty cells, and purely numeric/date values
+  if (!cleanText || cleanText.length < 3) return false;
+  if (/^[\d\s\-\/\.\,\:]+$/.test(cleanText)) return false; // Pure numbers/dates
+  if (/^(#|---|\*\*\*)/.test(cleanText)) return false; // Markdown separators
+  return true;
 };
 
 // Extract section content from markdown
@@ -108,16 +128,19 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
   const actionableItems = useMemo(() => {
     const items: { hash: string; text: string }[] = [];
     let itemIndex = 0;
+    const seenTexts = new Set<string>();
 
     // Match list items and table cells that look actionable
-    const listItemRegex = /^[\\s]*[-*•]\s+(.+)$/gm;
-    const tableRowRegex = /\|([^|]+)\|/g;
+    const listItemRegex = /^[\s]*[-*•]\s+(.+)$/gm;
 
     // Extract from list items
     let match;
     while ((match = listItemRegex.exec(processedContent)) !== null) {
       const text = match[1].trim();
-      if (isActionableItem(text) && text.length > 10) {
+      const lowerText = text.toLowerCase().trim();
+      // Removed text.length > 10 requirement - now accepts shorter items
+      if (isActionableItem(text) && text.length >= 3 && !seenTexts.has(lowerText)) {
+        seenTexts.add(lowerText);
         items.push({
           hash: generateItemHash(text, itemIndex++),
           text,
@@ -125,20 +148,41 @@ export const CheckableMarkdown: React.FC<CheckableMarkdownProps> = ({
       }
     }
 
-    // Extract from table cells (first column usually contains the action)
+    // Extract from table cells - ALL cells in first column are now checkable
     const lines = processedContent.split('\n');
+    let isInTable = false;
+    let headerPassed = false;
+    
     for (const line of lines) {
-      if (line.includes('|') && !line.includes('---')) {
+      if (line.includes('|')) {
+        isInTable = true;
+        // Skip separator row (---)
+        if (line.includes('---')) {
+          headerPassed = true;
+          continue;
+        }
+        // Skip header row (first row before ---)
+        if (isInTable && !headerPassed) {
+          continue;
+        }
+        
         const cells = line.split('|').filter(cell => cell.trim());
         if (cells.length > 0) {
           const firstCell = cells[0].trim();
-          if (isActionableItem(firstCell) && firstCell.length > 10) {
+          const lowerText = firstCell.toLowerCase().trim();
+          // Use more permissive isTableItemCheckable for table cells
+          if (isTableItemCheckable(firstCell) && !seenTexts.has(lowerText)) {
+            seenTexts.add(lowerText);
             items.push({
               hash: generateItemHash(firstCell, itemIndex++),
               text: firstCell,
             });
           }
         }
+      } else {
+        // Reset table state when leaving table
+        isInTable = false;
+        headerPassed = false;
       }
     }
 
