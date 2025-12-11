@@ -22,8 +22,14 @@ import {
   Trash2,
   ChevronRight,
   Grid3X3,
-  Zap
+  Zap,
+  Search,
+  X,
+  CheckCircle,
+  Circle,
+  ListFilter
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -129,6 +135,10 @@ const ImplementationPlanPage = () => {
   
   // Delete dialog state
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; planId: string | null }>({ open: false, planId: null });
+
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed'>('all');
 
   useEffect(() => {
     if (authLoading) return;
@@ -320,11 +330,32 @@ const ImplementationPlanPage = () => {
     return Math.round((completed / filtered.length) * 100);
   };
 
-  const groupedItems = selectedPlanItems.reduce((acc, item) => {
+  // Filter items based on search and status
+  const filteredItems = selectedPlanItems.filter(item => {
+    // Status filter
+    if (statusFilter === 'pending' && item.is_completed) return false;
+    if (statusFilter === 'completed' && !item.is_completed) return false;
+    
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const matchesTitle = item.title.toLowerCase().includes(query);
+      const matchesDescription = item.description?.toLowerCase().includes(query) || false;
+      const matchesSource = (ANALYSIS_TYPE_LABELS[item.source_analysis || ''] || item.source_analysis || '').toLowerCase().includes(query);
+      if (!matchesTitle && !matchesDescription && !matchesSource) return false;
+    }
+    
+    return true;
+  });
+
+  const groupedItems = filteredItems.reduce((acc, item) => {
     if (!acc[item.category]) acc[item.category] = [];
     acc[item.category].push(item);
     return acc;
   }, {} as Record<string, ImplementationItem[]>);
+
+  const pendingCount = selectedPlanItems.filter(i => !i.is_completed).length;
+  const completedCount = selectedPlanItems.filter(i => i.is_completed).length;
 
   if (loading) {
     return (
@@ -499,6 +530,117 @@ const ImplementationPlanPage = () => {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Filters */}
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      {/* Search */}
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar itens..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-9 pr-9"
+                        />
+                        {searchQuery && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                            onClick={() => setSearchQuery('')}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {/* Status Filter */}
+                      <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
+                        <Button
+                          variant={statusFilter === 'all' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setStatusFilter('all')}
+                          className="gap-1.5"
+                        >
+                          <ListFilter className="w-3.5 h-3.5" />
+                          Todos
+                          <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                            {selectedPlanItems.length}
+                          </Badge>
+                        </Button>
+                        <Button
+                          variant={statusFilter === 'pending' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setStatusFilter('pending')}
+                          className="gap-1.5"
+                        >
+                          <Circle className="w-3.5 h-3.5" />
+                          Pendentes
+                          <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                            {pendingCount}
+                          </Badge>
+                        </Button>
+                        <Button
+                          variant={statusFilter === 'completed' ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setStatusFilter('completed')}
+                          className="gap-1.5"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Concluídos
+                          <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                            {completedCount}
+                          </Badge>
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {/* Active filters indicator */}
+                    {(searchQuery || statusFilter !== 'all') && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+                        <span className="text-xs text-muted-foreground">
+                          Mostrando {filteredItems.length} de {selectedPlanItems.length} itens
+                        </span>
+                        {(searchQuery || statusFilter !== 'all') && (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => {
+                              setSearchQuery('');
+                              setStatusFilter('all');
+                            }}
+                          >
+                            Limpar filtros
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* No results message */}
+                {filteredItems.length === 0 && selectedPlanItems.length > 0 && (
+                  <Card className="border-dashed">
+                    <CardContent className="py-8 text-center">
+                      <Search className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                      <p className="text-muted-foreground">
+                        Nenhum item encontrado com os filtros atuais
+                      </p>
+                      <Button
+                        variant="link"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setStatusFilter('all');
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Items by Category */}
                 {['critical', 'implementation', 'improvement'].map(category => {
