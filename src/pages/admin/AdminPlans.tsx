@@ -245,19 +245,44 @@ const AdminPlans = () => {
     }
   };
 
-  const syncWithStripe = async (plan: Plan) => {
-    setSyncingStripe(plan.id);
+  const syncWithStripe = async (plan?: Plan) => {
+    setSyncingStripe(plan?.id || 'all');
     try {
-      // For now, just show what would be synced
-      toast.info(`Sincronizando ${plan.name} com Stripe...`);
+      toast.info(plan ? `Sincronizando ${plan.name} com Stripe...` : 'Sincronizando todos os planos com Stripe...');
       
-      // This would call an edge function to create/update Stripe product
-      // For existing products, we'd need to create a new price (Stripe doesn't allow price updates)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast.success(`${plan.name} sincronizado! Product: ${plan.stripe_product_id || 'Novo'}`);
-    } catch (error) {
-      toast.error("Erro ao sincronizar com Stripe");
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) {
+        throw new Error("Não autenticado");
+      }
+
+      const { data, error } = await supabase.functions.invoke('sync-stripe-plans', {
+        headers: {
+          Authorization: `Bearer ${session.session.access_token}`,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.results) {
+        const synced = data.results.filter((r: any) => r.status === 'synced').length;
+        const skipped = data.results.filter((r: any) => r.status === 'skipped').length;
+        const errors = data.results.filter((r: any) => r.status === 'error').length;
+        
+        if (errors > 0) {
+          toast.warning(`Sincronização parcial: ${synced} OK, ${skipped} pulados, ${errors} erros`);
+        } else {
+          toast.success(`Sincronizado com Stripe: ${synced} planos, ${skipped} pulados`);
+        }
+        
+        // Reload plans to get updated Stripe IDs
+        loadData();
+      } else {
+        toast.success("Sincronização concluída!");
+        loadData();
+      }
+    } catch (error: any) {
+      console.error("Erro ao sincronizar:", error);
+      toast.error(`Erro ao sincronizar: ${error.message || 'Erro desconhecido'}`);
     } finally {
       setSyncingStripe(null);
     }
@@ -345,12 +370,28 @@ const AdminPlans = () => {
           {/* TAB 1: Gestão de Planos */}
           <TabsContent value="gestao" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="w-5 h-5" />
-                  Planos Configurados
-                </CardTitle>
-                <CardDescription>Gerencie todos os planos, features e integração com Stripe</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5" />
+                    Planos Configurados
+                  </CardTitle>
+                  <CardDescription>Gerencie todos os planos, features e integração com Stripe</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncWithStripe()}
+                  disabled={syncingStripe === 'all'}
+                  className="flex items-center gap-2"
+                >
+                  {syncingStripe === 'all' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  Sincronizar Stripe
+                </Button>
               </CardHeader>
               <CardContent>
                 <Table>

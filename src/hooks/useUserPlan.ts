@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
@@ -8,9 +8,10 @@ interface PlanConfig {
   allow_economic_mode?: boolean;
   can_export_pdf?: boolean;
   max_tokens_monthly?: number;
+  limitations?: string[];
 }
 
-interface UserPlan {
+export interface UserPlan {
   planId: string | null;
   planName: string;
   planSlug: string;
@@ -33,7 +34,18 @@ interface UserPlan {
   allowedAnalysisTypes: string[];
   allowEconomicMode: boolean;
   canExportPDF: boolean;
+  limitations: string[];
 }
+
+// All valid analysis types
+export const ALL_ANALYSIS_TYPES = [
+  'prd', 'divulgacao', 'captacao', 'seguranca', 
+  'ui_theme', 'ferramentas', 'features', 'documentacao', 
+  'prompts', 'quality'
+] as const;
+
+// All valid depth levels
+export const ALL_DEPTH_LEVELS = ['critical', 'balanced', 'complete'] as const;
 
 // Token estimates per analysis based on depth (for 8 analysis types)
 export const TOKEN_ESTIMATES = {
@@ -68,6 +80,18 @@ export function suggestDepthByTokens(
   return 'critical'; // Minimum
 }
 
+// Validate allowed depths against valid options
+function validateAllowedDepths(depths: string[] | undefined): string[] {
+  if (!depths || !Array.isArray(depths)) return ['critical'];
+  return depths.filter(d => ALL_DEPTH_LEVELS.includes(d as any));
+}
+
+// Validate allowed analysis types against valid options
+function validateAllowedAnalysisTypes(types: string[] | undefined): string[] {
+  if (!types || !Array.isArray(types)) return ['prd', 'divulgacao', 'captacao'];
+  return types.filter(t => ALL_ANALYSIS_TYPES.includes(t as any));
+}
+
 // Default values for free plan
 const FREE_PLAN_DEFAULTS: PlanConfig = {
   allowed_depths: ['critical'],
@@ -75,15 +99,17 @@ const FREE_PLAN_DEFAULTS: PlanConfig = {
   allow_economic_mode: false,
   can_export_pdf: false,
   max_tokens_monthly: 50000, // 50K tokens for free tier
+  limitations: ['Apenas análises básicas', 'Profundidade crítica apenas'],
 };
 
 // Default values for paid plans (if not configured)
 const PAID_PLAN_DEFAULTS: PlanConfig = {
   allowed_depths: ['critical', 'balanced', 'complete'],
-  allowed_analysis_types: ['prd', 'divulgacao', 'captacao', 'seguranca', 'ui_theme', 'ferramentas', 'features', 'documentacao', 'prompts', 'quality'],
+  allowed_analysis_types: ALL_ANALYSIS_TYPES as unknown as string[],
   allow_economic_mode: true,
   can_export_pdf: true,
   max_tokens_monthly: null, // Unlimited for paid plans by default
+  limitations: [],
 };
 
 export const useUserPlan = () => {
@@ -147,9 +173,10 @@ export const useUserPlan = () => {
             limitMessage: null,
             isAdmin: true,
             allowedDepths: ['critical', 'balanced', 'complete'],
-            allowedAnalysisTypes: ['prd', 'divulgacao', 'captacao', 'seguranca', 'ui_theme', 'ferramentas', 'features', 'documentacao', 'prompts', 'quality'],
+            allowedAnalysisTypes: ALL_ANALYSIS_TYPES as unknown as string[],
             allowEconomicMode: true,
             canExportPDF: true,
+            limitations: [],
           });
           setIsLoading(false);
           return;
@@ -208,10 +235,11 @@ export const useUserPlan = () => {
           canAnalyze,
           limitMessage,
           isAdmin: false,
-          allowedDepths: planConfig.allowed_depths || defaults.allowed_depths || ['critical'],
-          allowedAnalysisTypes: planConfig.allowed_analysis_types || defaults.allowed_analysis_types || ['prd', 'divulgacao', 'captacao'],
+          allowedDepths: validateAllowedDepths(planConfig.allowed_depths || defaults.allowed_depths),
+          allowedAnalysisTypes: validateAllowedAnalysisTypes(planConfig.allowed_analysis_types || defaults.allowed_analysis_types),
           allowEconomicMode: planConfig.allow_economic_mode ?? defaults.allow_economic_mode ?? false,
           canExportPDF: planConfig.can_export_pdf ?? defaults.can_export_pdf ?? false,
+          limitations: planConfig.limitations || defaults.limitations || [],
         });
       } catch (error) {
         console.error("Erro ao carregar plano:", error);
@@ -231,10 +259,11 @@ export const useUserPlan = () => {
           canAnalyze: true,
           limitMessage: null,
           isAdmin: false,
-          allowedDepths: FREE_PLAN_DEFAULTS.allowed_depths || ['critical'],
-          allowedAnalysisTypes: FREE_PLAN_DEFAULTS.allowed_analysis_types || ['prd', 'divulgacao', 'captacao'],
+          allowedDepths: validateAllowedDepths(FREE_PLAN_DEFAULTS.allowed_depths),
+          allowedAnalysisTypes: validateAllowedAnalysisTypes(FREE_PLAN_DEFAULTS.allowed_analysis_types),
           allowEconomicMode: false,
           canExportPDF: false,
+          limitations: FREE_PLAN_DEFAULTS.limitations || [],
         });
       } finally {
         setIsLoading(false);
