@@ -149,6 +149,8 @@ export type Database = {
           name: string
           price_monthly: number | null
           slug: string
+          stripe_price_id: string | null
+          stripe_product_id: string | null
         }
         Insert: {
           config?: Json | null
@@ -163,6 +165,8 @@ export type Database = {
           name: string
           price_monthly?: number | null
           slug: string
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
         }
         Update: {
           config?: Json | null
@@ -177,6 +181,8 @@ export type Database = {
           name?: string
           price_monthly?: number | null
           slug?: string
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
         }
         Relationships: []
       }
@@ -337,6 +343,8 @@ export type Database = {
           plan_id: string | null
           started_at: string | null
           status: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
           user_id: string
         }
         Insert: {
@@ -346,6 +354,8 @@ export type Database = {
           plan_id?: string | null
           started_at?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           user_id: string
         }
         Update: {
@@ -355,6 +365,8 @@ export type Database = {
           plan_id?: string | null
           started_at?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           user_id?: string
         }
         Relationships: [
