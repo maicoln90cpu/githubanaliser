@@ -185,6 +185,97 @@ export type Database = {
           },
         ]
       }
+      implementation_items: {
+        Row: {
+          category: string
+          completed_at: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_completed: boolean | null
+          plan_id: string
+          sort_order: number | null
+          source_analysis: string | null
+          title: string
+        }
+        Insert: {
+          category?: string
+          completed_at?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_completed?: boolean | null
+          plan_id: string
+          sort_order?: number | null
+          source_analysis?: string | null
+          title: string
+        }
+        Update: {
+          category?: string
+          completed_at?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_completed?: boolean | null
+          plan_id?: string
+          sort_order?: number | null
+          source_analysis?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "implementation_items_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "implementation_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      implementation_plans: {
+        Row: {
+          analysis_types: string[]
+          created_at: string | null
+          focus_type: string
+          id: string
+          project_id: string
+          title: string
+          tokens_used: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          analysis_types?: string[]
+          created_at?: string | null
+          focus_type?: string
+          id?: string
+          project_id: string
+          title: string
+          tokens_used?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          analysis_types?: string[]
+          created_at?: string | null
+          focus_type?: string
+          id?: string
+          project_id?: string
+          title?: string
+          tokens_used?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "implementation_plans_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plans: {
         Row: {
           config: Json | null
