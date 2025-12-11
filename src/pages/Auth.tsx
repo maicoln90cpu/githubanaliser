@@ -59,9 +59,9 @@ const Auth = () => {
 
   const checkSignupAbuse = async (ipAddress: string): Promise<boolean> => {
     try {
+      // Calls database function which reads limit from system_settings
       const { data, error } = await supabase.rpc('check_signup_abuse', {
-        p_ip_address: ipAddress,
-        p_max_attempts: 3
+        p_ip_address: ipAddress
       });
       
       if (error) {
