@@ -78,9 +78,14 @@ serve(async (req) => {
     if (hasActiveSub) {
       const subscription = subscriptions.data[0];
       subscriptionId = subscription.id;
-      subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      productId = subscription.items.data[0].price.product as string;
-      priceId = subscription.items.data[0].price.id;
+      
+      // Safe date conversion - check if current_period_end exists
+      if (subscription.current_period_end) {
+        subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
+      }
+      
+      productId = subscription.items.data[0]?.price?.product as string || null;
+      priceId = subscription.items.data[0]?.price?.id || null;
       logStep("Active subscription found", { subscriptionId, productId, priceId, endDate: subscriptionEnd });
 
       // Lookup plan by stripe_product_id
