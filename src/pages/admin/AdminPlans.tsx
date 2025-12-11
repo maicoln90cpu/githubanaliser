@@ -54,14 +54,16 @@ interface Plan {
 }
 
 const ANALYSIS_TYPES = [
-  { key: 'prd', name: 'PRD' },
-  { key: 'divulgacao', name: 'Divulgação' },
-  { key: 'captacao', name: 'Captação' },
-  { key: 'seguranca', name: 'Segurança' },
-  { key: 'ui_theme', name: 'UI/Theme' },
-  { key: 'ferramentas', name: 'Ferramentas' },
-  { key: 'features', name: 'Features' },
-  { key: 'documentacao', name: 'Documentação' },
+  { key: 'prd', name: 'Análise PRD' },
+  { key: 'divulgacao', name: 'Marketing & Lançamento' },
+  { key: 'captacao', name: 'Pitch para Investidores' },
+  { key: 'seguranca', name: 'Melhorias de Segurança' },
+  { key: 'ui_theme', name: 'Melhorias UI/Theme' },
+  { key: 'ferramentas', name: 'Melhorias de Ferramentas' },
+  { key: 'features', name: 'Novas Features' },
+  { key: 'documentacao', name: 'Documentação Técnica' },
+  { key: 'prompts', name: 'Prompts Otimizados' },
+  { key: 'qualidade', name: 'Qualidade de Código' },
 ];
 
 const DEPTH_LEVELS = [
