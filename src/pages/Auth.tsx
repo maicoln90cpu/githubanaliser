@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Github, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Github, Eye, EyeOff, Loader2, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -19,7 +19,9 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const navigate = useNavigate();
+  const userIpRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Check existing session first
@@ -41,8 +43,50 @@ const Auth = () => {
       }
     );
 
+    // Get user IP for abuse protection
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => {
+        userIpRef.current = data.ip;
+      })
+      .catch(() => {
+        // Fallback - will still allow signup but without IP tracking
+        userIpRef.current = 'unknown';
+      });
+
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const checkSignupAbuse = async (ipAddress: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.rpc('check_signup_abuse', {
+        p_ip_address: ipAddress,
+        p_max_attempts: 3
+      });
+      
+      if (error) {
+        console.error('Error checking signup abuse:', error);
+        return true; // Allow signup on error to not block legitimate users
+      }
+      
+      return data as boolean;
+    } catch {
+      return true; // Allow signup on error
+    }
+  };
+
+  const recordSignupAttempt = async (ipAddress: string, attemptEmail: string, success: boolean) => {
+    try {
+      await supabase.rpc('record_signup_attempt', {
+        p_ip_address: ipAddress,
+        p_email: attemptEmail,
+        p_success: success,
+        p_user_agent: navigator.userAgent
+      });
+    } catch (error) {
+      console.error('Error recording signup attempt:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,6 +131,21 @@ const Auth = () => {
 
         toast.success("Login realizado com sucesso!");
       } else {
+        // Anti-abuse check for signups
+        const ipAddress = userIpRef.current || 'unknown';
+        
+        if (ipAddress !== 'unknown') {
+          const canSignup = await checkSignupAbuse(ipAddress);
+          
+          if (!canSignup) {
+            setIsBlocked(true);
+            await recordSignupAttempt(ipAddress, email, false);
+            toast.error("Limite de cadastros atingido. Tente novamente em 24 horas.");
+            setIsLoading(false);
+            return;
+          }
+        }
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -96,6 +155,7 @@ const Auth = () => {
         });
 
         if (error) {
+          await recordSignupAttempt(ipAddress, email, false);
           if (error.message.includes("already registered")) {
             toast.error("Este email já está cadastrado");
           } else {
@@ -104,6 +164,8 @@ const Auth = () => {
           return;
         }
 
+        // Record successful signup
+        await recordSignupAttempt(ipAddress, email, true);
         toast.success("Conta criada com sucesso!");
       }
     } catch (error) {
@@ -227,12 +289,25 @@ const Auth = () => {
             </Button>
           </form>
 
+          {isBlocked && !isLogin && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-destructive mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-destructive">Cadastro temporariamente bloqueado</p>
+                <p className="text-muted-foreground">
+                  Detectamos múltiplos cadastros do seu IP. Por favor, aguarde 24 horas ou entre em contato com o suporte.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="text-center">
             <button
               type="button"
               onClick={() => {
                 setIsLogin(!isLogin);
                 setConfirmPassword("");
+                setIsBlocked(false);
               }}
               className="text-sm text-muted-foreground hover:text-primary transition-colors"
             >
