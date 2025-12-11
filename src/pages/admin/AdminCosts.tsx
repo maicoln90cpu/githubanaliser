@@ -117,14 +117,16 @@ const MODE_COLORS = {
 };
 
 const ANALYSIS_TYPES_PT: Record<string, string> = {
-  'prd': 'PRD',
-  'divulgacao': 'Divulgação',
-  'captacao': 'Captação',
-  'seguranca': 'Segurança',
-  'ui': 'UI/UX',
-  'ferramentas': 'Ferramentas',
+  'prd': 'Análise PRD',
+  'divulgacao': 'Marketing & Lançamento',
+  'captacao': 'Pitch para Investidores',
+  'seguranca': 'Melhorias de Segurança',
+  'ui_theme': 'Melhorias UI/Theme',
+  'ferramentas': 'Melhorias de Ferramentas',
   'features': 'Novas Features',
-  'documentacao': 'Documentação',
+  'documentacao': 'Documentação Técnica',
+  'prompts': 'Prompts Otimizados',
+  'qualidade': 'Qualidade de Código',
 };
 
 // All available AI models ranked by cost
