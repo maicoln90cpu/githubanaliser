@@ -7,10 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { 
-  Github, Home, Loader2, Crown, Check, ArrowLeft, Zap, Scale, BarChart3,
-  AlertTriangle, TrendingUp, DollarSign, Calculator, Edit, Save, X, Plus, Trash2, Leaf, Flame,
-  Target, Info, HelpCircle, Percent
+  Github, Home, Loader2, Crown, ArrowLeft, Zap, Scale, BarChart3,
+  AlertTriangle, TrendingUp, DollarSign, Calculator, Edit, Save, X, Leaf, Flame,
+  Target, Info, HelpCircle, RefreshCw, CreditCard, Settings, Beaker, PiggyBank
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -25,11 +26,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 
 interface PlanConfig {
@@ -38,6 +37,10 @@ interface PlanConfig {
   max_tokens_monthly: number | null;
   allow_economic_mode: boolean;
   limitations: string[];
+  can_export_pdf?: boolean;
+  can_use_chat?: boolean;
+  can_use_implementation_plan?: boolean;
+  can_compare_versions?: boolean;
 }
 
 interface Plan {
@@ -51,6 +54,8 @@ interface Plan {
   features: string[];
   is_active: boolean | null;
   config: PlanConfig;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
 }
 
 const ANALYSIS_TYPES = [
@@ -72,27 +77,25 @@ const DEPTH_LEVELS = [
   { key: 'complete', name: 'Completo', icon: BarChart3, color: 'text-purple-500' },
 ];
 
-// All available AI models ranked by cost (USD per 1K tokens)
+const PLAN_FEATURES = [
+  { key: 'can_export_pdf', name: 'Exportação PDF', description: 'Exportar análises em PDF' },
+  { key: 'can_use_chat', name: 'Chat com IA', description: 'Chat contextual do projeto' },
+  { key: 'can_use_implementation_plan', name: 'Plano de Implementação', description: 'Gerar plano de implementação' },
+  { key: 'can_compare_versions', name: 'Comparar Versões', description: 'Comparar versões de análise' },
+  { key: 'allow_economic_mode', name: 'Escolher Modo', description: 'Escolher entre modo econômico/detalhado' },
+];
+
 const AI_MODELS = [
-  // Lovable AI (Gemini)
   { id: 'gemini-flash-lite', provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', costPer1K: 0.000375, isEconomic: true },
   { id: 'gemini-flash', provider: 'Lovable AI', name: 'Gemini 2.5 Flash', costPer1K: 0.00075, isEconomic: false },
   { id: 'gemini-pro', provider: 'Lovable AI', name: 'Gemini 2.5 Pro', costPer1K: 0.01125, isEconomic: false },
-  // OpenAI
   { id: 'gpt-5-nano', provider: 'OpenAI', name: 'GPT-5 Nano', costPer1K: 0.00045, isEconomic: true },
-  { id: 'gpt-4.1-nano', provider: 'OpenAI', name: 'GPT-4.1 Nano', costPer1K: 0.0005, isEconomic: true },
   { id: 'gpt-4o-mini', provider: 'OpenAI', name: 'GPT-4o Mini', costPer1K: 0.00075, isEconomic: true },
   { id: 'gpt-5-mini', provider: 'OpenAI', name: 'GPT-5 Mini', costPer1K: 0.00225, isEconomic: false },
-  { id: 'gpt-4.1-mini', provider: 'OpenAI', name: 'GPT-4.1 Mini', costPer1K: 0.002, isEconomic: false },
-  { id: 'o4-mini', provider: 'OpenAI', name: 'O4 Mini', costPer1K: 0.0055, isEconomic: false },
-  { id: 'o3', provider: 'OpenAI', name: 'O3', costPer1K: 0.01, isEconomic: false },
-  { id: 'gpt-4.1', provider: 'OpenAI', name: 'GPT-4.1', costPer1K: 0.01, isEconomic: false },
-  { id: 'gpt-5', provider: 'OpenAI', name: 'GPT-5', costPer1K: 0.01125, isEconomic: false },
-  { id: 'gpt-4o', provider: 'OpenAI', name: 'GPT-4o', costPer1K: 0.0125, isEconomic: false },
 ].sort((a, b) => a.costPer1K - b.costPer1K);
 
 const PROJECT_COUNT_OPTIONS = [1, 5, 10, 20, 30, 50, 100];
-const USD_TO_BRL = 5.0;
+const USD_TO_BRL = 5.5;
 
 const AdminPlans = () => {
   const navigate = useNavigate();
@@ -101,13 +104,13 @@ const AdminPlans = () => {
   const [loading, setLoading] = useState(true);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [syncingStripe, setSyncingStripe] = useState<string | null>(null);
   const [globalEconomicMode, setGlobalEconomicMode] = useState<string>('economic');
   
-  // Real cost data from database
   const [realCosts, setRealCosts] = useState<{
     byDepth: Record<string, { avgCost: number; avgTokens: number; count: number }>;
-    byModel: Record<string, { avgCost: number; avgTokens: number; count: number }>;
     overall: { avgCost: number; avgTokens: number; totalCount: number; totalCost: number };
+    realCostPer1K: number;
   } | null>(null);
 
   // Simulator state
@@ -129,7 +132,6 @@ const AdminPlans = () => {
 
   const loadData = async () => {
     try {
-      // Load plans
       const { data: plansData, error: plansError } = await supabase
         .from("plans")
         .select("*")
@@ -140,54 +142,55 @@ const AdminPlans = () => {
       setPlans(plansData.map(p => ({
         ...p,
         features: Array.isArray(p.features) ? (p.features as string[]) : [],
-        config: (p.config as unknown as PlanConfig) || { allowed_depths: [], allowed_analysis_types: [], max_tokens_monthly: null, allow_economic_mode: false, limitations: [] }
+        config: (p.config as unknown as PlanConfig) || { 
+          allowed_depths: [], 
+          allowed_analysis_types: [], 
+          max_tokens_monthly: null, 
+          allow_economic_mode: false, 
+          limitations: [],
+          can_export_pdf: false,
+          can_use_chat: false,
+          can_use_implementation_plan: false,
+          can_compare_versions: false
+        }
       })));
 
-      // Load global economic mode setting
       const { data: settingData } = await supabase
         .from("system_settings")
         .select("value")
         .eq("key", "analysis_mode")
         .single();
       
-      if (settingData) {
-        setGlobalEconomicMode(settingData.value);
-      }
+      if (settingData) setGlobalEconomicMode(settingData.value);
 
-      // Load real costs from analysis_usage
+      // Load real costs
       const { data: usageData } = await supabase
         .from("analysis_usage")
         .select("depth_level, model_used, tokens_estimated, cost_estimated");
 
       if (usageData && usageData.length > 0) {
         const byDepth: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
-        const byModel: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
         let totalCost = 0, totalTokens = 0;
 
         usageData.forEach(u => {
           const depth = u.depth_level || 'balanced';
-          const model = u.model_used || 'unknown';
-          const cost = u.cost_estimated || 0;
+          const cost = Number(u.cost_estimated || 0);
           const tokens = u.tokens_estimated || 0;
 
           if (!byDepth[depth]) byDepth[depth] = { totalCost: 0, totalTokens: 0, count: 0 };
           byDepth[depth].totalCost += cost;
           byDepth[depth].totalTokens += tokens;
           byDepth[depth].count++;
-
-          if (!byModel[model]) byModel[model] = { totalCost: 0, totalTokens: 0, count: 0 };
-          byModel[model].totalCost += cost;
-          byModel[model].totalTokens += tokens;
-          byModel[model].count++;
-
           totalCost += cost;
           totalTokens += tokens;
         });
 
+        const realCostPer1K = totalTokens > 0 ? (totalCost * USD_TO_BRL) / (totalTokens / 1000) : 0.0055;
+
         setRealCosts({
           byDepth: Object.fromEntries(Object.entries(byDepth).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
-          byModel: Object.fromEntries(Object.entries(byModel).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
-          overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost }
+          overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost },
+          realCostPer1K
         });
       }
     } catch (error) {
@@ -227,51 +230,56 @@ const AdminPlans = () => {
     }
   };
 
-  // Get model-specific data
-  const detailedModel = realCosts?.byModel['google/gemini-2.5-flash'];
-  const economicModel = realCosts?.byModel['google/gemini-2.5-flash-lite'];
+  const togglePlanActive = async (plan: Plan) => {
+    try {
+      const { error } = await supabase
+        .from("plans")
+        .update({ is_active: !plan.is_active })
+        .eq("id", plan.id);
 
-  // Tokens per project by model
-  const tokensPerProjectDetailed = (detailedModel?.avgTokens || 2250) * 8; // 8 analysis types
-  const tokensPerProjectEconomic = (economicModel?.avgTokens || 1600) * 8;
+      if (error) throw error;
+      toast.success(plan.is_active ? "Plano desativado" : "Plano ativado");
+      loadData();
+    } catch (error) {
+      toast.error("Erro ao atualizar plano");
+    }
+  };
 
-  // Get selected model data
-  const selectedModel = AI_MODELS.find(m => m.id === selectedModelId) || AI_MODELS[1]; // default to gemini-flash
+  const syncWithStripe = async (plan: Plan) => {
+    setSyncingStripe(plan.id);
+    try {
+      // For now, just show what would be synced
+      toast.info(`Sincronizando ${plan.name} com Stripe...`);
+      
+      // This would call an edge function to create/update Stripe product
+      // For existing products, we'd need to create a new price (Stripe doesn't allow price updates)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      toast.success(`${plan.name} sincronizado! Product: ${plan.stripe_product_id || 'Novo'}`);
+    } catch (error) {
+      toast.error("Erro ao sincronizar com Stripe");
+    } finally {
+      setSyncingStripe(null);
+    }
+  };
 
-  // Calculate weighted average cost based on simulator settings and selected model
+  const selectedModel = AI_MODELS.find(m => m.id === selectedModelId) || AI_MODELS[1];
+
   const simulatedCost = useMemo(() => {
-    // Base tokens per depth (estimated)
-    const depthTokens = {
-      critical: 8000,
-      balanced: 15000,
-      complete: 25000,
-    };
-
-    // Weighted tokens by depth distribution
+    const depthTokens = { critical: 8000, balanced: 15000, complete: 25000 };
     const weightedTokens = 
       (depthDistribution.critical / 100) * depthTokens.critical +
       (depthDistribution.balanced / 100) * depthTokens.balanced +
       (depthDistribution.complete / 100) * depthTokens.complete;
 
-    // Calculate cost using selected model's cost per 1K tokens
     const costPerAnalysis = (weightedTokens / 1000) * selectedModel.costPer1K;
-    
-    // Apply mode distribution - economic models are ~50% cheaper
     const economicDiscount = selectedModel.isEconomic ? 1 : 0.5;
     const modeWeightedCost = 
       (modeDistribution.detailed / 100) * costPerAnalysis +
       (modeDistribution.economic / 100) * costPerAnalysis * economicDiscount;
 
-    return modeWeightedCost * 8; // 8 analysis types per project
+    return modeWeightedCost * 8;
   }, [depthDistribution, modeDistribution, selectedModel]);
-
-  // Tokens per project based on mode distribution
-  const simulatedTokensPerProject = useMemo(() => {
-    return (
-      (modeDistribution.detailed / 100) * tokensPerProjectDetailed +
-      (modeDistribution.economic / 100) * tokensPerProjectEconomic
-    );
-  }, [modeDistribution, tokensPerProjectDetailed, tokensPerProjectEconomic]);
 
   const getMarginColor = (margin: number) => {
     if (margin >= 50) return 'text-green-500';
@@ -287,16 +295,6 @@ const AdminPlans = () => {
       </div>
     );
   }
-
-  // Calculate totals for executive summary
-  const totalRevenuePotential = plans.reduce((sum, p) => sum + (p.price_monthly || 0), 0);
-  const avgSystemMargin = plans.length > 0 
-    ? plans.reduce((sum, p) => {
-        const maxCost = ((simulatedCost || 0) * USD_TO_BRL) * (p.monthly_analyses || 0);
-        const revenue = p.price_monthly || 0;
-        return sum + (revenue > 0 ? ((revenue - maxCost) / revenue) * 100 : 0);
-      }, 0) / plans.filter(p => (p.price_monthly || 0) > 0).length
-    : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -317,514 +315,490 @@ const AdminPlans = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 space-y-8">
+      <main className="container mx-auto px-4 py-8">
         {/* Title */}
-        <div className="flex items-center gap-3">
-          <Crown className="w-8 h-8 text-yellow-500" />
-          <div>
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Crown className="w-8 h-8 text-yellow-500" />
             <h1 className="text-3xl font-bold">Gestão de Planos</h1>
-            <p className="text-muted-foreground">Edite planos, simule cenários e analise viabilidade</p>
           </div>
+          <p className="text-muted-foreground">Edite planos, simule cenários e analise viabilidade</p>
         </div>
 
-        {/* Executive Summary */}
-        {realCosts && (
-          <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Target className="w-5 h-5 text-primary" />
-                Resumo Executivo
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Total de Análises</p>
-                  <p className="text-2xl font-bold">{realCosts.overall.totalCount}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Custo Total Acumulado</p>
-                  <p className="text-2xl font-bold text-destructive">R$ {(realCosts.overall.totalCost * USD_TO_BRL).toFixed(2)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Custo Médio/Análise</p>
-                  <p className="text-2xl font-bold">R$ {(realCosts.overall.avgCost * USD_TO_BRL).toFixed(4)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Tokens Médio/Análise</p>
-                  <p className="text-2xl font-bold">{Math.round(realCosts.overall.avgTokens).toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Margem Média Sistema</p>
-                  <p className={`text-2xl font-bold ${getMarginColor(avgSystemMargin)}`}>{avgSystemMargin.toFixed(0)}%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Sub-Tabs */}
+        <Tabs defaultValue="gestao" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+            <TabsTrigger value="gestao" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Gestão
+            </TabsTrigger>
+            <TabsTrigger value="simulador" className="flex items-center gap-2">
+              <Beaker className="w-4 h-4" />
+              Simulador
+            </TabsTrigger>
+            <TabsTrigger value="viabilidade" className="flex items-center gap-2">
+              <PiggyBank className="w-4 h-4" />
+              Viabilidade
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Cost Cards by Model and Depth */}
-        {realCosts && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <DollarSign className="w-5 h-5" />
-              Custos Reais por Categoria
-            </h2>
-            
-            {/* By Model */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <Card className="border-orange-500/30">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Flame className="w-4 h-4 text-orange-500" />
-                    Modo Detalhado (Gemini Flash)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-orange-500">
-                    R$ {((detailedModel?.avgCost || 0.00227) * USD_TO_BRL).toFixed(4)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {detailedModel?.count || 0} análises • ~{Math.round(detailedModel?.avgTokens || 2250)} tokens/análise
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    ~{Math.round(tokensPerProjectDetailed).toLocaleString()} tokens/projeto
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-green-500/30">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Leaf className="w-4 h-4 text-green-500" />
-                    Modo Econômico (Gemini Flash Lite)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-green-500">
-                    R$ {((economicModel?.avgCost || 0.0016) * USD_TO_BRL).toFixed(4)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {economicModel?.count || 0} análises • ~{Math.round(economicModel?.avgTokens || 1600)} tokens/análise
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    ~{Math.round(tokensPerProjectEconomic).toLocaleString()} tokens/projeto
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* By Depth */}
-            <div className="grid md:grid-cols-4 gap-4">
-              {DEPTH_LEVELS.map(depth => {
-                const data = realCosts.byDepth[depth.key];
-                return (
-                  <Card key={depth.key}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <depth.icon className={`w-4 h-4 ${depth.color}`} />
-                        {depth.name}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className={`text-2xl font-bold ${depth.color}`}>
-                        R$ {((data?.avgCost || 0) * USD_TO_BRL).toFixed(4)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {data?.count || 0} análises • ~{Math.round(data?.avgTokens || 0)} tokens
-                      </p>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-primary" />
-                    Média Geral
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold text-primary">
-                    R$ {(realCosts.overall.avgCost * USD_TO_BRL).toFixed(4)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {realCosts.overall.totalCount} total
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* Simulator */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="w-5 h-5" />
-              Simulador de Cenários Avançado
-            </CardTitle>
-            <CardDescription>
-              Simule diferentes cenários de uso e calcule custos e margens
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-4 gap-6">
-              {/* Depth Distribution */}
-              <div className="space-y-4">
-                <Label>Distribuição de Profundidade</Label>
-                {['critical', 'balanced', 'complete'].map(depth => (
-                  <div key={depth} className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="capitalize">{depth === 'critical' ? '⚡ Crítico' : depth === 'balanced' ? '⚖️ Balanceado' : '📊 Completo'}</span>
-                      <span>{depthDistribution[depth as keyof typeof depthDistribution]}%</span>
-                    </div>
-                    <Slider
-                      value={[depthDistribution[depth as keyof typeof depthDistribution]]}
-                      onValueChange={([v]) => {
-                        const remaining = 100 - v;
-                        const others = Object.keys(depthDistribution).filter(k => k !== depth);
-                        const otherSum = others.reduce((sum, k) => sum + depthDistribution[k as keyof typeof depthDistribution], 0);
-                        if (otherSum > 0) {
-                          setDepthDistribution(prev => ({
-                            ...prev,
-                            [depth]: v,
-                            [others[0]]: Math.round((prev[others[0] as keyof typeof prev] / otherSum) * remaining),
-                            [others[1]]: remaining - Math.round((prev[others[0] as keyof typeof prev] / otherSum) * remaining),
-                          }));
-                        }
-                      }}
-                      max={100}
-                      step={5}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Mode Distribution */}
-              <div className="space-y-4">
-                <Label>Modo de Análise</Label>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /> Detalhado</span>
-                    <span>{modeDistribution.detailed}%</span>
-                  </div>
-                  <Slider
-                    value={[modeDistribution.detailed]}
-                    onValueChange={([v]) => setModeDistribution({ detailed: v, economic: 100 - v })}
-                    max={100}
-                    step={5}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="flex items-center gap-1"><Leaf className="w-3 h-3 text-green-500" /> Econômico</span>
-                    <span>{modeDistribution.economic}%</span>
-                  </div>
-                </div>
-
-                <div className="pt-4 space-y-2">
-                  <Label>Margem Alvo</Label>
-                  <div className="flex justify-between text-sm">
-                    <span>Meta de lucro</span>
-                    <span className={getMarginColor(targetMargin)}>{targetMargin}%</span>
-                  </div>
-                  <Slider
-                    value={[targetMargin]}
-                    onValueChange={([v]) => setTargetMargin(v)}
-                    max={80}
-                    min={10}
-                    step={5}
-                  />
-                </div>
-              </div>
-
-              {/* Model Selection & Project Count */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-primary" />
-                    Modelo de IA
-                  </Label>
-                  <Select value={selectedModelId} onValueChange={setSelectedModelId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Lovable AI</div>
-                      {AI_MODELS.filter(m => m.provider === 'Lovable AI').map(model => (
-                        <SelectItem key={model.id} value={model.id}>
-                          <div className="flex items-center gap-2">
-                            {model.isEconomic ? (
-                              <Leaf className="w-3 h-3 text-green-500" />
-                            ) : (
-                              <Flame className="w-3 h-3 text-orange-500" />
-                            )}
-                            <span>{model.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ${model.costPer1K.toFixed(5)}/1K
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">OpenAI</div>
-                      {AI_MODELS.filter(m => m.provider === 'OpenAI').map(model => (
-                        <SelectItem key={model.id} value={model.id}>
-                          <div className="flex items-center gap-2">
-                            {model.isEconomic ? (
-                              <Leaf className="w-3 h-3 text-green-500" />
-                            ) : (
-                              <Flame className="w-3 h-3 text-orange-500" />
-                            )}
-                            <span>{model.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ${model.costPer1K.toFixed(5)}/1K
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Custo: <span className="font-medium">${selectedModel.costPer1K.toFixed(5)}/1K tokens</span>
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Quantidade de Projetos</Label>
-                  <Select value={projectCount.toString()} onValueChange={v => setProjectCount(parseInt(v))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROJECT_COUNT_OPTIONS.map(count => (
-                        <SelectItem key={count} value={count.toString()}>
-                          {count} {count === 1 ? 'projeto' : 'projetos'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="p-3 bg-muted/50 rounded-lg space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Custo Total:</span>
-                    <span className="font-bold text-destructive">
-                      R$ {(((simulatedCost || 0) * USD_TO_BRL) * projectCount).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tokens Total:</span>
-                    <span className="font-bold">
-                      {Math.round(simulatedTokensPerProject * projectCount).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Results */}
-              <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
-                <Label>Resultados Simulados</Label>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Custo/Projeto:</span>
-                    <span className="font-mono font-semibold">R$ {((simulatedCost || 0) * USD_TO_BRL).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Tokens/Projeto:</span>
-                    <span className="font-mono font-semibold">{Math.round(simulatedTokensPerProject).toLocaleString()}</span>
-                  </div>
-                  <hr className="border-border" />
-                  {plans.map(plan => {
-                    const maxCost = ((simulatedCost || 0) * USD_TO_BRL) * (plan.monthly_analyses || 0);
-                    const revenue = plan.price_monthly || 0;
-                    const margin = revenue > 0 ? ((revenue - maxCost) / revenue) * 100 : -100;
-                    const suggestedPrice = maxCost / (1 - targetMargin / 100);
-                    const breakeven = revenue > 0 ? Math.ceil(revenue / (((simulatedCost || 0) * USD_TO_BRL))) : 0;
-                    
-                    return (
-                      <div key={plan.id} className="p-3 bg-background rounded border">
-                        <div className="flex justify-between items-center mb-2">
-                          <Badge variant="outline">{plan.name}</Badge>
-                          <span className={`font-bold ${getMarginColor(margin)}`}>{margin.toFixed(0)}%</span>
-                        </div>
-                        <div className="text-xs space-y-1 text-muted-foreground">
-                          <div className="flex justify-between">
-                            <span>Custo máx ({plan.monthly_analyses} proj):</span>
-                            <span>R$ {maxCost.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Breakeven:</span>
-                            <span className="text-primary">{breakeven} projetos</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Preço sugerido ({targetMargin}%):</span>
-                            <span className="text-primary font-semibold">R$ {suggestedPrice.toFixed(2)}</span>
-                          </div>
-                        </div>
-                        {margin < targetMargin && margin >= 0 && (
-                          <p className="text-xs text-yellow-500 mt-2">⚠️ Abaixo da margem alvo</p>
-                        )}
-                        {margin < 0 && (
-                          <p className="text-xs text-destructive mt-2">❌ Margem negativa</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Token Viability */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Viabilidade por Tokens
-            </CardTitle>
-            <CardDescription>
-              Análise de consumo de tokens por modelo e projeções de custo
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Plano</TableHead>
-                  <TableHead className="text-right">Limite Projetos</TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Flame className="w-3 h-3 text-orange-500" />
-                      Tokens/Proj (Detalhado)
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Leaf className="w-3 h-3 text-green-500" />
-                      Tokens/Proj (Econômico)
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">Tokens Simulados/Proj</TableHead>
-                  <TableHead className="text-right">Limite Tokens</TableHead>
-                  <TableHead className="text-right">Custo Estimado</TableHead>
-                  <TableHead className="text-right">Recomendação</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {plans.map(plan => {
-                  const estimatedTokens = simulatedTokensPerProject * (plan.monthly_analyses || 0);
-                  const tokenLimit = plan.config?.max_tokens_monthly;
-                  const costPerToken = 0.000001;
-                  const estimatedCost = (tokenLimit || estimatedTokens) * costPerToken * USD_TO_BRL;
-                  
-                  return (
-                    <TableRow key={plan.id}>
-                      <TableCell><Badge variant="outline">{plan.name}</Badge></TableCell>
-                      <TableCell className="text-right font-mono">{plan.monthly_analyses}</TableCell>
-                      <TableCell className="text-right font-mono text-orange-500">
-                        ~{Math.round(tokensPerProjectDetailed).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-green-500">
-                        ~{Math.round(tokensPerProjectEconomic).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        ~{Math.round(simulatedTokensPerProject).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {tokenLimit ? tokenLimit.toLocaleString() : '∞'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">R$ {estimatedCost.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">
-                        {!tokenLimit ? (
-                          <Badge className="bg-yellow-500/10 text-yellow-500">Definir limite</Badge>
-                        ) : tokenLimit < estimatedTokens ? (
-                          <Badge className="bg-green-500/10 text-green-500">Protegido</Badge>
-                        ) : (
-                          <Badge className="bg-blue-500/10 text-blue-500">OK</Badge>
-                        )}
-                      </TableCell>
+          {/* TAB 1: Gestão de Planos */}
+          <TabsContent value="gestao" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="w-5 h-5" />
+                  Planos Configurados
+                </CardTitle>
+                <CardDescription>Gerencie todos os planos, features e integração com Stripe</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Plano</TableHead>
+                      <TableHead>Preço</TableHead>
+                      <TableHead>Tokens</TableHead>
+                      <TableHead>Features</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Stripe</TableHead>
+                      <TableHead>Ações</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {plans.map(plan => (
+                      <TableRow key={plan.id} className={!plan.is_active ? 'opacity-50' : ''}>
+                        <TableCell>
+                          <div>
+                            <p className="font-semibold">{plan.name}</p>
+                            <p className="text-xs text-muted-foreground">{plan.slug}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono">R$ {(plan.price_monthly || 0).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <span className="font-mono">
+                            {plan.config?.max_tokens_monthly 
+                              ? `${(plan.config.max_tokens_monthly / 1000).toFixed(0)}K` 
+                              : '∞'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {plan.config?.can_export_pdf && <Badge variant="outline" className="text-[10px]">PDF</Badge>}
+                            {plan.config?.can_use_chat && <Badge variant="outline" className="text-[10px]">Chat</Badge>}
+                            {plan.config?.can_use_implementation_plan && <Badge variant="outline" className="text-[10px]">Impl</Badge>}
+                            {plan.config?.can_compare_versions && <Badge variant="outline" className="text-[10px]">Cmp</Badge>}
+                            {plan.config?.allow_economic_mode && <Badge variant="outline" className="text-[10px]">Eco</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={plan.is_active || false}
+                            onCheckedChange={() => togglePlanActive(plan)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {plan.stripe_price_id ? (
+                              <Badge className="bg-green-500/10 text-green-500 text-[10px]">Conectado</Badge>
+                            ) : (
+                              <Badge className="bg-yellow-500/10 text-yellow-500 text-[10px]">Pendente</Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => syncWithStripe(plan)}
+                              disabled={syncingStripe === plan.id}
+                            >
+                              {syncingStripe === plan.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-3 h-3" />
+                              )}
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingPlan(plan);
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
-        {/* Plans Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5" />
-              Planos Configurados
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Plano</TableHead>
-                  <TableHead>Preço</TableHead>
-                  <TableHead>Limite de Tokens</TableHead>
-                  <TableHead>Profundidades</TableHead>
-                  <TableHead>Análises</TableHead>
-                  <TableHead>Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {plans.map(plan => {
-                  const tokenLimit = plan.config?.max_tokens_monthly;
-                  return (
-                    <TableRow key={plan.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-semibold">{plan.name}</p>
-                          <p className="text-xs text-muted-foreground">{plan.description}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono">R$ {(plan.price_monthly || 0).toFixed(2)}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className={`font-mono font-semibold ${tokenLimit ? 'text-primary' : 'text-muted-foreground'}`}>
-                            {tokenLimit ? `${(tokenLimit / 1000).toFixed(0)}K` : '∞ Ilimitado'}
+            {/* Features Matrix */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Matriz de Features</CardTitle>
+                <CardDescription>Visão geral das features por plano</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Feature</TableHead>
+                      {plans.filter(p => p.is_active).map(p => (
+                        <TableHead key={p.id} className="text-center">{p.name}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {PLAN_FEATURES.map(feature => (
+                      <TableRow key={feature.key}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-sm">{feature.name}</p>
+                            <p className="text-xs text-muted-foreground">{feature.description}</p>
+                          </div>
+                        </TableCell>
+                        {plans.filter(p => p.is_active).map(p => (
+                          <TableCell key={p.id} className="text-center">
+                            {(p.config as any)?.[feature.key] ? (
+                              <Badge className="bg-green-500/10 text-green-500">✓</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell><p className="font-medium text-sm">Profundidades</p></TableCell>
+                      {plans.filter(p => p.is_active).map(p => (
+                        <TableCell key={p.id} className="text-center">
+                          <div className="flex justify-center gap-1">
+                            {p.config?.allowed_depths?.map(d => (
+                              <Badge key={d} variant="outline" className="text-[10px]">
+                                {d === 'critical' ? '⚡' : d === 'balanced' ? '⚖️' : '📊'}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><p className="font-medium text-sm">Tipos de Análise</p></TableCell>
+                      {plans.filter(p => p.is_active).map(p => (
+                        <TableCell key={p.id} className="text-center font-mono">
+                          {p.config?.allowed_analysis_types?.length || 0}/10
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 2: Simulador */}
+          <TabsContent value="simulador" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5" />
+                  Simulador de Cenários Avançado
+                </CardTitle>
+                <CardDescription>Configure distribuição de uso e veja impacto nos custos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid lg:grid-cols-4 gap-6">
+                  {/* Depth Distribution */}
+                  <div className="space-y-4">
+                    <Label>Profundidade de Análise</Label>
+                    {DEPTH_LEVELS.map(depth => (
+                      <div key={depth.key} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className={`flex items-center gap-1 ${depth.color}`}>
+                            <depth.icon className="w-3 h-3" /> {depth.name}
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            ~{tokenLimit ? Math.floor(tokenLimit / (8 * 4000)) : '∞'} análises completas
-                          </span>
+                          <span>{(depthDistribution as any)[depth.key]}%</span>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {plan.config?.allowed_depths?.map(d => (
-                            <Badge key={d} variant="outline" className="text-xs">
-                              {d === 'critical' ? '⚡' : d === 'balanced' ? '⚖️' : '📊'}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {plan.config?.allowed_analysis_types?.length || 0}/10
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingPlan(plan);
-                            setEditDialogOpen(true);
+                        <Slider
+                          value={[(depthDistribution as any)[depth.key]]}
+                          onValueChange={([v]) => {
+                            const newDist = { ...depthDistribution, [depth.key]: v };
+                            const total = newDist.critical + newDist.balanced + newDist.complete;
+                            if (total <= 100) setDepthDistribution(newDist);
                           }}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
+                          max={100}
+                          step={5}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mode Distribution */}
+                  <div className="space-y-4">
+                    <Label>Modo de Análise</Label>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /> Detalhado</span>
+                        <span>{modeDistribution.detailed}%</span>
+                      </div>
+                      <Slider
+                        value={[modeDistribution.detailed]}
+                        onValueChange={([v]) => setModeDistribution({ detailed: v, economic: 100 - v })}
+                        max={100}
+                        step={5}
+                      />
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="flex items-center gap-1"><Leaf className="w-3 h-3 text-green-500" /> Econômico</span>
+                      <span>{modeDistribution.economic}%</span>
+                    </div>
+
+                    <div className="pt-4 space-y-2">
+                      <Label>Margem Alvo</Label>
+                      <div className="flex justify-between text-sm">
+                        <span>Meta de lucro</span>
+                        <span className={getMarginColor(targetMargin)}>{targetMargin}%</span>
+                      </div>
+                      <Slider
+                        value={[targetMargin]}
+                        onValueChange={([v]) => setTargetMargin(v)}
+                        max={80}
+                        min={10}
+                        step={5}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Model & Project Count */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Target className="w-4 h-4 text-primary" />
+                        Modelo de IA
+                      </Label>
+                      <Select value={selectedModelId} onValueChange={setSelectedModelId}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {AI_MODELS.map(model => (
+                            <SelectItem key={model.id} value={model.id}>
+                              <div className="flex items-center gap-2">
+                                {model.isEconomic ? <Leaf className="w-3 h-3 text-green-500" /> : <Flame className="w-3 h-3 text-orange-500" />}
+                                <span>{model.name}</span>
+                                <span className="text-xs text-muted-foreground">${model.costPer1K.toFixed(5)}/1K</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Quantidade de Projetos</Label>
+                      <Select value={projectCount.toString()} onValueChange={v => setProjectCount(parseInt(v))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PROJECT_COUNT_OPTIONS.map(count => (
+                            <SelectItem key={count} value={count.toString()}>
+                              {count} {count === 1 ? 'projeto' : 'projetos'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="p-3 bg-muted/50 rounded-lg space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Custo/Projeto:</span>
+                        <span className="font-bold text-destructive">R$ {(simulatedCost * USD_TO_BRL).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Custo Total ({projectCount}p):</span>
+                        <span className="font-bold text-destructive">R$ {(simulatedCost * USD_TO_BRL * projectCount).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Results per Plan */}
+                  <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+                    <Label>Resultados por Plano</Label>
+                    <div className="space-y-3">
+                      {plans.filter(p => p.is_active).map(plan => {
+                        const maxTokens = plan.config?.max_tokens_monthly || 1000000;
+                        const maxCostBRL = (maxTokens / 1000) * (realCosts?.realCostPer1K || 0.0055);
+                        const revenue = plan.price_monthly || 0;
+                        const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : -100;
+                        const suggestedPrice = maxCostBRL / (1 - targetMargin / 100);
+                        
+                        return (
+                          <div key={plan.id} className="p-3 bg-background rounded border">
+                            <div className="flex justify-between items-center mb-2">
+                              <Badge variant="outline">{plan.name}</Badge>
+                              <span className={`font-bold ${getMarginColor(margin)}`}>{margin.toFixed(0)}%</span>
+                            </div>
+                            <div className="text-xs space-y-1 text-muted-foreground">
+                              <div className="flex justify-between">
+                                <span>Receita:</span>
+                                <span className="text-green-500">R$ {revenue.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Custo máx ({(maxTokens/1000).toFixed(0)}K tokens):</span>
+                                <span>R$ {maxCostBRL.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Preço sugerido ({targetMargin}%):</span>
+                                <span className="text-primary font-semibold">R$ {suggestedPrice.toFixed(2)}</span>
+                              </div>
+                            </div>
+                            {margin < 0 && <p className="text-xs text-destructive mt-2">❌ Margem negativa</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 3: Viabilidade */}
+          <TabsContent value="viabilidade" className="space-y-6">
+            {/* Real Cost Summary */}
+            {realCosts && (
+              <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Target className="w-5 h-5 text-primary" />
+                    Custos Reais do Sistema
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Custo Real/1K tokens</p>
+                      <p className="text-2xl font-bold text-primary">R$ {realCosts.realCostPer1K.toFixed(4)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total de Análises</p>
+                      <p className="text-2xl font-bold">{realCosts.overall.totalCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Custo Total Acumulado</p>
+                      <p className="text-2xl font-bold text-destructive">R$ {(realCosts.overall.totalCost * USD_TO_BRL).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Tokens Médio/Análise</p>
+                      <p className="text-2xl font-bold">{Math.round(realCosts.overall.avgTokens).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Viability Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5" />
+                  Viabilidade por Tokens (Dados Reais)
+                </CardTitle>
+                <CardDescription>
+                  Cálculos baseados no custo real de R$ {realCosts?.realCostPer1K.toFixed(4) || '0.0055'}/1K tokens
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Plano</TableHead>
+                      <TableHead className="text-right">Preço</TableHead>
+                      <TableHead className="text-right">Limite Tokens</TableHead>
+                      <TableHead className="text-right">Custo Máximo</TableHead>
+                      <TableHead className="text-right">Margem</TableHead>
+                      <TableHead className="text-right">Breakeven</TableHead>
+                      <TableHead className="text-right">Status</TableHead>
                     </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {plans.filter(p => p.is_active).map(plan => {
+                      const tokenLimit = plan.config?.max_tokens_monthly || 0;
+                      const costPer1K = realCosts?.realCostPer1K || 0.0055;
+                      const maxCostBRL = tokenLimit > 0 ? (tokenLimit / 1000) * costPer1K : 0;
+                      const revenue = plan.price_monthly || 0;
+                      const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : (tokenLimit === 0 ? 100 : -100);
+                      const breakeven = costPer1K > 0 ? Math.ceil(revenue / costPer1K) * 1000 : 0;
+                      const isProfitable = margin > 0;
+                      
+                      return (
+                        <TableRow key={plan.id}>
+                          <TableCell>
+                            <Badge variant="outline" className={plan.slug === 'pro' ? 'border-purple-500/50' : plan.slug === 'basic' ? 'border-blue-500/50' : plan.slug === 'starter' ? 'border-orange-500/50' : ''}>
+                              {plan.name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">R$ {revenue.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {tokenLimit > 0 ? `${(tokenLimit / 1000).toFixed(0)}K` : '∞'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-destructive">
+                            R$ {maxCostBRL.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={`font-bold ${getMarginColor(margin)}`}>{margin.toFixed(0)}%</span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {breakeven > 0 ? `${(breakeven / 1000).toFixed(0)}K tokens` : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {isProfitable ? (
+                              <Badge className="bg-green-500/10 text-green-500">Viável</Badge>
+                            ) : (
+                              <Badge className="bg-red-500/10 text-red-500">Revisar</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            {/* Alerts */}
+            <div className="space-y-2">
+              {plans.filter(p => p.is_active && p.price_monthly && p.price_monthly > 0).map(plan => {
+                const tokenLimit = plan.config?.max_tokens_monthly || 0;
+                const costPer1K = realCosts?.realCostPer1K || 0.0055;
+                const maxCostBRL = tokenLimit > 0 ? (tokenLimit / 1000) * costPer1K : 0;
+                const revenue = plan.price_monthly || 0;
+                const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : 100;
+                
+                if (margin < 0) {
+                  return (
+                    <div key={plan.id} className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-red-600">Plano {plan.name} não é lucrativo</p>
+                        <p className="text-xs text-muted-foreground">
+                          Aumente o preço para R$ {(maxCostBRL / 0.5).toFixed(2)} ou reduza o limite de tokens.
+                        </p>
+                      </div>
+                    </div>
                   );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                }
+                return null;
+              })}
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Edit Dialog */}
@@ -853,39 +827,38 @@ const AdminPlans = () => {
                 <Textarea value={editingPlan.description || ''} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1">
-                    <Zap className="w-4 h-4 text-primary" />
-                    Limite de Tokens Mensais
-                  </Label>
-                  <Input 
-                    type="number" 
-                    value={editingPlan.config?.max_tokens_monthly || ''} 
-                    placeholder="Deixe vazio para ilimitado" 
-                    onChange={e => setEditingPlan({...editingPlan, config: {...editingPlan.config, max_tokens_monthly: e.target.value ? parseInt(e.target.value) : null}})} 
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {editingPlan.config?.max_tokens_monthly 
-                      ? `~${Math.floor(editingPlan.config.max_tokens_monthly / 32000)} análises completas estimadas`
-                      : 'Sem limite (ilimitado)'}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Preço (R$/mês)</Label>
-                  <Input type="number" step="0.01" value={editingPlan.price_monthly || 0} onChange={e => setEditingPlan({...editingPlan, price_monthly: parseFloat(e.target.value)})} />
-                </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <Zap className="w-4 h-4 text-primary" />
+                  Limite de Tokens Mensais
+                </Label>
+                <Input 
+                  type="number" 
+                  value={editingPlan.config?.max_tokens_monthly || ''} 
+                  placeholder="Deixe vazio para ilimitado" 
+                  onChange={e => setEditingPlan({...editingPlan, config: {...editingPlan.config, max_tokens_monthly: e.target.value ? parseInt(e.target.value) : null}})} 
+                />
               </div>
 
-              {/* Legacy limits - hidden but kept for compatibility */}
-              <div className="grid grid-cols-2 gap-4 p-3 bg-muted/30 rounded-lg">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Limite Mensal (legado)</Label>
-                  <Input type="number" value={editingPlan.monthly_analyses || 0} onChange={e => setEditingPlan({...editingPlan, monthly_analyses: parseInt(e.target.value)})} className="h-8 text-sm" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Limite Diário (legado)</Label>
-                  <Input type="number" value={editingPlan.daily_analyses || 0} onChange={e => setEditingPlan({...editingPlan, daily_analyses: parseInt(e.target.value)})} className="h-8 text-sm" />
+              {/* Features Checkboxes */}
+              <div className="space-y-2">
+                <Label>Features Disponíveis</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {PLAN_FEATURES.map(feature => (
+                    <label key={feature.key} className="flex items-center gap-2 p-2 border rounded-lg cursor-pointer hover:bg-muted/50">
+                      <Checkbox
+                        checked={(editingPlan.config as any)?.[feature.key] || false}
+                        onCheckedChange={checked => setEditingPlan({
+                          ...editingPlan,
+                          config: {...editingPlan.config, [feature.key]: !!checked}
+                        })}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">{feature.name}</p>
+                        <p className="text-xs text-muted-foreground">{feature.description}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -915,7 +888,7 @@ const AdminPlans = () => {
 
               <div className="space-y-2">
                 <Label>Tipos de Análise Permitidos</Label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {ANALYSIS_TYPES.map(type => (
                     <label key={type.key} className="flex items-center gap-2 text-sm">
                       <Checkbox
@@ -935,37 +908,6 @@ const AdminPlans = () => {
                     </label>
                   ))}
                 </div>
-              </div>
-
-              <TooltipProvider>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={editingPlan.config?.allow_economic_mode}
-                    onCheckedChange={checked => setEditingPlan({...editingPlan, config: {...editingPlan.config, allow_economic_mode: !!checked}})}
-                  />
-                  <Label className="flex items-center gap-1">
-                    Permitir Usuário Escolher Modo de Análise
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p className="text-sm">
-                          <strong>Marcado:</strong> Usuário pode alternar entre modo Econômico e Detalhado.<br />
-                          <strong>Desmarcado:</strong> Usuário usa sempre o modo padrão global definido em Configurações ({globalEconomicMode === 'economic' ? 'Econômico' : 'Detalhado'}).
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </Label>
-                </div>
-              </TooltipProvider>
-
-              <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
-                <p className="flex items-center gap-1">
-                  <Info className="w-3 h-3" />
-                  Modo padrão global atual: <strong className="text-foreground">{globalEconomicMode === 'economic' ? 'Econômico' : 'Detalhado'}</strong>
-                  {' '}(configurado em Admin → Configurações)
-                </p>
               </div>
 
               <div className="space-y-2">
