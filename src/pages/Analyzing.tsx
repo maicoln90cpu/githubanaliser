@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Github, Check, Circle, AlertCircle, XCircle } from "lucide-react";
@@ -14,34 +14,12 @@ interface Step {
   analysisType?: string;
 }
 
-type AnalysisStatus = 
-  | "pending" 
-  | "extracting" 
-  | "generating_prd" 
-  | "generating_divulgacao"
-  | "generating_captacao"
-  | "generating_seguranca"
-  | "generating_ui"
-  | "generating_ferramentas"
-  | "generating_features"
-  | "generating_documentacao"
-  | "generating_prompts"
-  | "generating_quality"
-  | "completed" 
-  | "error";
-
-const analysisTypeToStatus: Record<string, AnalysisStatus> = {
-  prd: "generating_prd",
-  divulgacao: "generating_divulgacao",
-  captacao: "generating_captacao",
-  seguranca: "generating_seguranca",
-  ui_theme: "generating_ui",
-  ferramentas: "generating_ferramentas",
-  features: "generating_features",
-  documentacao: "generating_documentacao",
-  prompts: "generating_prompts",
-  quality: "generating_quality",
-};
+interface QueueItem {
+  id: string;
+  analysis_type: string;
+  status: string;
+  error_message?: string;
+}
 
 const allSteps: Step[] = [
   { id: "connect", label: "Conectando ao GitHub", status: "pending" },
@@ -69,12 +47,12 @@ const Analyzing = () => {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentAnalysisType, setCurrentAnalysisType] = useState<string | null>(null);
+  
+  const analysisStartedRef = useRef(false);
+  const isProcessingRef = useRef(false);
   const hasCompletedRef = useRef(false);
-  const analysisStartedRef = useRef(false); // Lock para evitar análises duplicadas
-  const pollFailCountRef = useRef(0); // Track consecutive poll failures
-  const lastProgressRef = useRef(0); // Track last progress for stale detection
-  const staleStartTimeRef = useRef<number | null>(null); // Track when progress became stale
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
   
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
@@ -87,7 +65,6 @@ const Analyzing = () => {
     if (analysisTypesParam) {
       return analysisTypesParam.split(",");
     }
-    // Default: all types
     return ["prd", "divulgacao", "captacao", "seguranca", "ui_theme", "ferramentas", "features", "documentacao"];
   }, [analysisTypesParam]);
 
@@ -111,172 +88,152 @@ const Analyzing = () => {
 
   const [steps, setSteps] = useState<Step[]>(dynamicSteps);
 
-  // Update steps when dynamicSteps change
   useEffect(() => {
     setSteps(dynamicSteps);
   }, [dynamicSteps]);
 
-  // Build status to step index mapping
-  const statusToStepIndex = useMemo(() => {
-    const mapping: Record<AnalysisStatus, number> = {
-      pending: 0,
-      extracting: 1,
-      generating_prd: -1,
-      generating_divulgacao: -1,
-      generating_captacao: -1,
-      generating_seguranca: -1,
-      generating_ui: -1,
-      generating_ferramentas: -1,
-      generating_features: -1,
-      generating_documentacao: -1,
-      generating_prompts: -1,
-      generating_quality: -1,
-      completed: steps.length - 1,
-      error: -1,
-    };
-
-    let index = 2; // After connect and structure
-    for (const type of selectedAnalysisTypes) {
-      const status = analysisTypeToStatus[type];
-      if (status) {
-        mapping[status] = index;
-        index++;
-      }
-    }
-
-    return mapping;
-  }, [selectedAnalysisTypes, steps.length]);
-
-  const calculateTimeRemaining = (currentStepIndex: number, totalSteps: number) => {
+  const calculateTimeRemaining = useCallback((completedCount: number, totalCount: number) => {
     const elapsed = Date.now() - startTime;
-    const completedSteps = currentStepIndex;
-    if (completedSteps <= 0) return "~2min";
+    if (completedCount <= 0) return "~2min";
     
-    const avgTimePerStep = elapsed / completedSteps;
-    const remainingSteps = totalSteps - completedSteps;
-    const remainingMs = avgTimePerStep * remainingSteps;
+    const avgTimePerItem = elapsed / completedCount;
+    const remainingItems = totalCount - completedCount;
+    const remainingMs = avgTimePerItem * remainingItems;
     
     if (remainingMs < 1000) return "quase pronto...";
     if (remainingMs < 60000) return `~${Math.ceil(remainingMs / 1000)}s`;
     return `~${Math.ceil(remainingMs / 60000)}min`;
-  };
+  }, [startTime]);
 
-  const updateStepsFromStatus = (status: AnalysisStatus) => {
-    const stepIndex = statusToStepIndex[status];
-    const totalSteps = steps.length;
-    
-    setSteps(prev => prev.map((step, i) => {
-      if (status === "error") {
-        return step;
-      }
-      if (status === "completed") {
-        return { ...step, status: "complete" };
-      }
-      if (i < stepIndex) {
-        return { ...step, status: "complete" };
-      }
-      if (i === stepIndex) {
-        return { ...step, status: "loading" };
-      }
-      return { ...step, status: "pending" };
-    }));
+  // Process next item in queue
+  const processNextQueueItem = useCallback(async (projId: string) => {
+    if (isProcessingRef.current || hasCompletedRef.current) return;
 
-    if (status === "completed") {
-      setProgress(100);
-    } else if (stepIndex >= 0) {
-      setProgress(Math.round(((stepIndex + 0.5) / totalSteps) * 100));
-      setEstimatedTimeRemaining(calculateTimeRemaining(stepIndex, totalSteps));
-    }
-  };
-
-  const pollStatus = async (id: string, isForced = false) => {
-    console.log(`[Polling] Iniciando poll para projeto ${id}${isForced ? ' (forçado)' : ''}`);
-    
     try {
-      const { data: project, error } = await supabase
-        .from("projects")
-        .select("analysis_status, error_message")
-        .eq("id", id)
-        .single();
+      // Get pending queue items
+      const { data: queueItems, error: queueError } = await supabase
+        .from("analysis_queue")
+        .select("*")
+        .eq("project_id", projId)
+        .order("created_at", { ascending: true });
 
-      if (error) {
-        pollFailCountRef.current++;
-        console.error(`[Polling] Erro ao buscar status (tentativa ${pollFailCountRef.current}):`, error);
+      if (queueError) {
+        console.error("[Queue] Erro ao buscar fila:", queueError);
+        return;
+      }
+
+      const pendingItems = queueItems?.filter(item => item.status === "pending") || [];
+      const completedItems = queueItems?.filter(item => item.status === "completed") || [];
+      const processingItems = queueItems?.filter(item => item.status === "processing") || [];
+      const errorItems = queueItems?.filter(item => item.status === "error") || [];
+      const totalItems = queueItems?.length || 0;
+
+      // Update progress
+      const completedCount = completedItems.length;
+      const progressPercent = Math.round(((completedCount + 2) / (totalItems + 3)) * 100); // +2 for connect/structure, +3 for total
+      setProgress(progressPercent);
+      setEstimatedTimeRemaining(calculateTimeRemaining(completedCount, totalItems));
+
+      // Update steps based on queue status
+      setSteps(prev => prev.map(step => {
+        if (step.id === "connect") return { ...step, status: "complete" };
+        if (step.id === "structure") return { ...step, status: "complete" };
+        if (step.id === "complete") {
+          if (pendingItems.length === 0 && processingItems.length === 0) {
+            return { ...step, status: "complete" };
+          }
+          return { ...step, status: "pending" };
+        }
         
-        // After 5 consecutive failures, show warning but keep trying
-        if (pollFailCountRef.current >= 5) {
-          console.warn("[Polling] Múltiplas falhas consecutivas. Continuando tentativas...");
+        if (step.analysisType) {
+          const queueItem = queueItems?.find(q => q.analysis_type === step.analysisType);
+          if (queueItem) {
+            if (queueItem.status === "completed") return { ...step, status: "complete" };
+            if (queueItem.status === "processing") return { ...step, status: "loading" };
+            if (queueItem.status === "error") return { ...step, status: "error" };
+          }
+        }
+        return step;
+      }));
+
+      // Check if all done
+      if (pendingItems.length === 0 && processingItems.length === 0) {
+        if (!hasCompletedRef.current) {
+          hasCompletedRef.current = true;
+          
+          // Update project status
+          await supabase
+            .from("projects")
+            .update({ analysis_status: "completed" })
+            .eq("id", projId);
+          
+          setProgress(100);
+          toast.success("Análise concluída!");
+          
+          setTimeout(() => {
+            navigate(`/projeto/${projId}`);
+          }, 500);
         }
         return;
       }
 
-      // Reset fail counter on success
-      pollFailCountRef.current = 0;
-      
-      const status = project.analysis_status as AnalysisStatus;
-      console.log(`[Polling] Status atual: ${status}`);
-      
-      updateStepsFromStatus(status);
-
-      // Detect stale progress (stuck at same level for too long)
-      const currentProgress = statusToStepIndex[status] || 0;
-      if (currentProgress === lastProgressRef.current && currentProgress > 0) {
-        if (!staleStartTimeRef.current) {
-          staleStartTimeRef.current = Date.now();
-        } else {
-          const staleTime = Date.now() - staleStartTimeRef.current;
-          // If stuck for more than 45 seconds, log warning
-          if (staleTime > 45000 && !isForced) {
-            console.warn(`[Polling] Progresso parado em ${currentProgress} por ${Math.round(staleTime/1000)}s`);
-          }
-        }
-      } else {
-        lastProgressRef.current = currentProgress;
-        staleStartTimeRef.current = null;
+      // If something is already processing, wait
+      if (processingItems.length > 0) {
+        setCurrentAnalysisType(processingItems[0].analysis_type);
+        return;
       }
 
-      if (status === "completed" && !hasCompletedRef.current) {
-        hasCompletedRef.current = true;
-        console.log("[Polling] ✓ Análise concluída! Navegando para projeto...");
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
+      // Process next pending item
+      if (pendingItems.length > 0) {
+        isProcessingRef.current = true;
+        const nextItem = pendingItems[0];
+        setCurrentAnalysisType(nextItem.analysis_type);
+        
+        console.log(`[Queue] Processando: ${nextItem.analysis_type}`);
+        
+        try {
+          const { data, error } = await supabase.functions.invoke("process-single-analysis", {
+            body: { queueItemId: nextItem.id }
+          });
+
+          if (error) {
+            console.error(`[Queue] Erro ao processar ${nextItem.analysis_type}:`, error);
+            // Continue to next item even if this one fails
+          } else {
+            console.log(`[Queue] Concluído: ${nextItem.analysis_type}`);
+          }
+        } catch (e) {
+          console.error(`[Queue] Exceção ao processar ${nextItem.analysis_type}:`, e);
         }
-        toast.success("Análise concluída!");
-        setTimeout(() => {
-          navigate(`/projeto/${id}`);
-        }, 500);
-      } else if (status === "error") {
-        console.error("[Polling] ✗ Erro na análise:", project.error_message);
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-        }
-        setErrorMessage(project.error_message || "Erro desconhecido na análise");
-        toast.error("Erro ao analisar o projeto");
+        
+        isProcessingRef.current = false;
       }
     } catch (error) {
-      pollFailCountRef.current++;
-      console.error(`[Polling] Exceção no polling (tentativa ${pollFailCountRef.current}):`, error);
+      console.error("[Queue] Erro geral:", error);
+      isProcessingRef.current = false;
     }
-  };
+  }, [calculateTimeRemaining, navigate]);
 
-  // Forced check after 30 seconds of apparent stalling
+  // Poll and process queue
   useEffect(() => {
-    if (!projectId) return;
-    
-    const staleCheckInterval = setInterval(() => {
-      if (staleStartTimeRef.current) {
-        const staleTime = Date.now() - staleStartTimeRef.current;
-        if (staleTime > 30000 && !hasCompletedRef.current) {
-          console.log("[Polling] Verificação forçada após 30s de progresso parado...");
-          pollStatus(projectId, true);
-        }
-      }
-    }, 10000); // Check every 10 seconds
-    
-    return () => clearInterval(staleCheckInterval);
-  }, [projectId]);
+    if (!projectId || hasCompletedRef.current) return;
 
+    // Initial check
+    processNextQueueItem(projectId);
+
+    // Poll every 2 seconds
+    pollingRef.current = setInterval(() => {
+      processNextQueueItem(projectId);
+    }, 2000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [projectId, processNextQueueItem]);
+
+  // Start analysis
   useEffect(() => {
     if (authLoading) return;
 
@@ -289,21 +246,10 @@ const Analyzing = () => {
     if (existingProjectId) {
       setProjectId(existingProjectId);
       setSteps(prev => prev.map((step, i) => 
-        i === 0 ? { ...step, status: "complete" } : step
+        i <= 1 ? { ...step, status: "complete" } : step
       ));
-      setProgress(10);
-      
-      pollingRef.current = setInterval(() => {
-        pollStatus(existingProjectId);
-      }, 3000);
-      
-      pollStatus(existingProjectId);
-      
-      return () => {
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-        }
-      };
+      setProgress(15);
+      return;
     }
 
     if (!githubUrl) {
@@ -313,7 +259,6 @@ const Analyzing = () => {
     }
 
     const startAnalysis = async () => {
-      // Lock para evitar chamadas duplicadas (React StrictMode chama useEffect 2x)
       if (analysisStartedRef.current) {
         console.log("⚠️ Análise já iniciada, ignorando chamada duplicada");
         return;
@@ -339,40 +284,61 @@ const Analyzing = () => {
         if (error) {
           console.error("Erro ao iniciar análise:", error);
           toast.error("Erro ao iniciar análise");
-          analysisStartedRef.current = false; // Reset lock on error
+          analysisStartedRef.current = false;
           navigate("/dashboard");
           return;
         }
 
         if (!data?.projectId) {
           toast.error("Resposta inválida do servidor");
-          analysisStartedRef.current = false; // Reset lock on error
+          analysisStartedRef.current = false;
           navigate("/dashboard");
           return;
         }
 
-        // Se a análise já estava em andamento, não duplicar polling
         if (data.alreadyInProgress) {
-          console.log("✓ Análise já em andamento, apenas acompanhando...");
+          console.log("✓ Análise já em andamento, acompanhando...");
         }
 
         setSteps(prev => prev.map((step, i) => 
-          i === 0 ? { ...step, status: "complete" } : step
+          i <= 1 ? { ...step, status: i === 1 ? "loading" : "complete" } : step
         ));
         setProgress(10);
-
         setProjectId(data.projectId);
 
-        pollingRef.current = setInterval(() => {
-          pollStatus(data.projectId);
-        }, 3000);
+        // Poll for queue_ready status
+        const checkQueueReady = async () => {
+          const { data: project } = await supabase
+            .from("projects")
+            .select("analysis_status")
+            .eq("id", data.projectId)
+            .single();
 
-        pollStatus(data.projectId);
+          if (project?.analysis_status === "queue_ready" || project?.analysis_status === "error") {
+            setSteps(prev => prev.map((step, i) => 
+              i <= 1 ? { ...step, status: "complete" } : step
+            ));
+            setProgress(15);
+            return true;
+          }
+          if (project?.analysis_status === "error") {
+            setErrorMessage("Erro ao preparar análise");
+            return true;
+          }
+          return false;
+        };
+
+        // Wait for extraction to complete
+        let ready = await checkQueueReady();
+        while (!ready) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          ready = await checkQueueReady();
+        }
 
       } catch (error) {
         console.error("Erro:", error);
         toast.error("Erro ao processar análise");
-        analysisStartedRef.current = false; // Reset lock on error
+        analysisStartedRef.current = false;
         navigate("/dashboard");
       }
     };
@@ -384,7 +350,7 @@ const Analyzing = () => {
         clearInterval(pollingRef.current);
       }
     };
-  }, [githubUrl, navigate, user, authLoading, existingProjectId, selectedAnalysisTypes]);
+  }, [githubUrl, navigate, user, authLoading, existingProjectId, selectedAnalysisTypes, useCacheParam, depthParam]);
 
   const getStepIcon = (status: Step["status"]) => {
     switch (status) {
@@ -402,31 +368,39 @@ const Analyzing = () => {
   const handleCancel = async () => {
     setIsCancelling(true);
     
-    // Stop polling
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
 
     try {
-      // Check if there are any completed analyses for this project
       if (projectId) {
+        // Cancel pending queue items
+        await supabase
+          .from("analysis_queue")
+          .delete()
+          .eq("project_id", projectId)
+          .eq("status", "pending");
+
         const { data: analyses } = await supabase
           .from("analyses")
           .select("id, type")
           .eq("project_id", projectId);
 
         if (analyses && analyses.length > 0) {
-          // Has completed analyses, go to project page
+          // Update project status
+          await supabase
+            .from("projects")
+            .update({ analysis_status: "completed" })
+            .eq("id", projectId);
+          
           toast.info(`Análise cancelada. ${analyses.length} análise(s) já concluída(s) foram salvas.`);
           navigate(`/projeto/${projectId}`);
         } else {
-          // No completed analyses, just go to dashboard
           toast.info("Análise cancelada.");
           navigate("/dashboard");
         }
       } else {
-        // No project created yet
         toast.info("Análise cancelada.");
         navigate("/dashboard");
       }
@@ -489,31 +463,34 @@ const Analyzing = () => {
           {steps.map((step) => (
             <div
               key={step.id}
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ${
-                step.status === "loading" 
-                  ? "bg-primary/10 border border-primary/20" 
+              className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                step.status === "loading"
+                  ? "bg-primary/10 border border-primary/20"
                   : step.status === "complete"
-                  ? "bg-muted/30"
-                  : "bg-muted/10"
+                  ? "bg-muted/50"
+                  : step.status === "error"
+                  ? "bg-destructive/10"
+                  : ""
               }`}
             >
-              <div className="flex-shrink-0">
-                {getStepIcon(step.status)}
-              </div>
-              <span className={`text-sm transition-colors ${
-                step.status === "loading" 
-                  ? "text-foreground font-medium" 
-                  : step.status === "complete"
-                  ? "text-muted-foreground"
-                  : "text-muted-foreground/60"
-              }`}>
+              {getStepIcon(step.status)}
+              <span
+                className={`text-sm ${
+                  step.status === "loading"
+                    ? "text-primary font-medium"
+                    : step.status === "complete"
+                    ? "text-muted-foreground"
+                    : step.status === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground/60"
+                }`}
+              >
                 {step.label}
               </span>
             </div>
           ))}
         </div>
 
-        {/* Cancel Button */}
         <div className="pt-4">
           <Button 
             variant="outline" 
@@ -526,8 +503,11 @@ const Analyzing = () => {
             ) : (
               <XCircle className="w-4 h-4" />
             )}
-            {isCancelling ? "Cancelando..." : "Cancelar análise"}
+            Cancelar análise
           </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Análises já concluídas serão mantidas
+          </p>
         </div>
       </div>
     </div>
