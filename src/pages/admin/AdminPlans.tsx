@@ -109,8 +109,9 @@ const AdminPlans = () => {
   
   const [realCosts, setRealCosts] = useState<{
     byDepth: Record<string, { avgCost: number; avgTokens: number; count: number }>;
-    overall: { avgCost: number; avgTokens: number; totalCount: number; totalCost: number };
-    realCostPer1K: number;
+    overall: { avgCost: number; avgTokens: number; totalCount: number; totalCost: number; totalTokens: number };
+    costPer1KUSD: number;  // Custo real por 1K tokens em USD
+    costPer1KBRL: number;  // Custo real por 1K tokens em BRL
   } | null>(null);
 
   // Simulator state
@@ -185,12 +186,16 @@ const AdminPlans = () => {
           totalTokens += tokens;
         });
 
-        const realCostPer1K = totalTokens > 0 ? (totalCost * USD_TO_BRL) / (totalTokens / 1000) : 0.0055;
+        // Custo real por 1K tokens
+        // Fórmula: (custoTotal / totalTokens) * 1000
+        const costPer1KUSD = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0.001; // fallback ~$0.001/1K
+        const costPer1KBRL = costPer1KUSD * USD_TO_BRL;
 
         setRealCosts({
           byDepth: Object.fromEntries(Object.entries(byDepth).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
-          overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost },
-          realCostPer1K
+          overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost, totalTokens },
+          costPer1KUSD,
+          costPer1KBRL
         });
       }
     } catch (error) {
@@ -674,7 +679,7 @@ const AdminPlans = () => {
                     <div className="space-y-3">
                       {plans.filter(p => p.is_active).map(plan => {
                         const maxTokens = plan.config?.max_tokens_monthly || 1000000;
-                        const maxCostBRL = (maxTokens / 1000) * (realCosts?.realCostPer1K || 0.0055);
+                        const maxCostBRL = (maxTokens / 1000) * (realCosts?.costPer1KBRL || 0.0055);
                         const revenue = plan.price_monthly || 0;
                         const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : -100;
                         const suggestedPrice = maxCostBRL / (1 - targetMargin / 100);
@@ -722,22 +727,26 @@ const AdminPlans = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
-                      <p className="text-xs text-muted-foreground">Custo Real/1K tokens</p>
-                      <p className="text-2xl font-bold text-primary">R$ {realCosts.realCostPer1K.toFixed(4)}</p>
+                      <p className="text-xs text-muted-foreground">Custo/1K (USD)</p>
+                      <p className="text-xl font-bold">$ {realCosts.costPer1KUSD.toFixed(5)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Custo/1K (BRL)</p>
+                      <p className="text-2xl font-bold text-primary">R$ {realCosts.costPer1KBRL.toFixed(4)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Total de Análises</p>
                       <p className="text-2xl font-bold">{realCosts.overall.totalCount}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Custo Total Acumulado</p>
+                      <p className="text-xs text-muted-foreground">Custo Total (BRL)</p>
                       <p className="text-2xl font-bold text-destructive">R$ {(realCosts.overall.totalCost * USD_TO_BRL).toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Tokens Médio/Análise</p>
-                      <p className="text-2xl font-bold">{Math.round(realCosts.overall.avgTokens).toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Tokens Totais</p>
+                      <p className="text-2xl font-bold">{(realCosts.overall.totalTokens / 1000).toFixed(0)}K</p>
                     </div>
                   </div>
                 </CardContent>
@@ -752,7 +761,7 @@ const AdminPlans = () => {
                   Viabilidade por Tokens (Dados Reais)
                 </CardTitle>
                 <CardDescription>
-                  Cálculos baseados no custo real de R$ {realCosts?.realCostPer1K.toFixed(4) || '0.0055'}/1K tokens
+                  Cálculos: Custo Máximo = (Tokens / 1000) × R$ {realCosts?.costPer1KBRL.toFixed(4) || '0.0055'} | Margem = ((Receita - Custo) / Receita) × 100
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -771,10 +780,14 @@ const AdminPlans = () => {
                   <TableBody>
                     {plans.filter(p => p.is_active).map(plan => {
                       const tokenLimit = plan.config?.max_tokens_monthly || 0;
-                      const costPer1K = realCosts?.realCostPer1K || 0.0055;
+                      // Usar custo real por 1K tokens em BRL
+                      const costPer1K = realCosts?.costPer1KBRL || 0.0055;
+                      // Custo Máximo = (limite_tokens / 1000) × custo_por_1K
                       const maxCostBRL = tokenLimit > 0 ? (tokenLimit / 1000) * costPer1K : 0;
                       const revenue = plan.price_monthly || 0;
+                      // Margem = ((Receita - Custo) / Receita) × 100
                       const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : (tokenLimit === 0 ? 100 : -100);
+                      // Breakeven = Receita / custo_por_1K × 1000 (tokens onde custo = receita)
                       const breakeven = costPer1K > 0 ? Math.ceil(revenue / costPer1K) * 1000 : 0;
                       const isProfitable = margin > 0;
                       
@@ -817,7 +830,7 @@ const AdminPlans = () => {
             <div className="space-y-2">
               {plans.filter(p => p.is_active && p.price_monthly && p.price_monthly > 0).map(plan => {
                 const tokenLimit = plan.config?.max_tokens_monthly || 0;
-                const costPer1K = realCosts?.realCostPer1K || 0.0055;
+                const costPer1K = realCosts?.costPer1KBRL || 0.0055;
                 const maxCostBRL = tokenLimit > 0 ? (tokenLimit / 1000) * costPer1K : 0;
                 const revenue = plan.price_monthly || 0;
                 const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : 100;
