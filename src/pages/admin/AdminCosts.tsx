@@ -92,6 +92,8 @@ interface AnalysisTypeStats {
   type: string;
   detailedCount: number;
   economicCount: number;
+  detailedCost: number;
+  economicCost: number;
   totalCost: number;
   avgCost: number;
 }
@@ -318,18 +320,21 @@ const AdminCosts = () => {
 
       setDepthStats(depthStatsData);
 
-      // Analysis type statistics
-      const typeMap = new Map<string, { detailedCount: number; economicCount: number; totalCost: number }>();
+      // Analysis type statistics - with costs separated by mode
+      const typeMap = new Map<string, { detailedCount: number; economicCount: number; detailedCost: number; economicCost: number; totalCost: number }>();
       
       usageData?.forEach(u => {
         const type = u.analysis_type || 'unknown';
         const isEconomic = u.model_used?.includes('lite');
+        const cost = Number(u.cost_estimated || 0);
         
-        const existing = typeMap.get(type) || { detailedCount: 0, economicCount: 0, totalCost: 0 };
+        const existing = typeMap.get(type) || { detailedCount: 0, economicCount: 0, detailedCost: 0, economicCost: 0, totalCost: 0 };
         typeMap.set(type, {
           detailedCount: existing.detailedCount + (isEconomic ? 0 : 1),
           economicCount: existing.economicCount + (isEconomic ? 1 : 0),
-          totalCost: existing.totalCost + Number(u.cost_estimated || 0),
+          detailedCost: existing.detailedCost + (isEconomic ? 0 : cost),
+          economicCost: existing.economicCost + (isEconomic ? cost : 0),
+          totalCost: existing.totalCost + cost,
         });
       });
 
@@ -338,6 +343,8 @@ const AdminCosts = () => {
           type,
           detailedCount: data.detailedCount,
           economicCount: data.economicCount,
+          detailedCost: data.detailedCost,
+          economicCost: data.economicCost,
           totalCost: data.totalCost,
           avgCost: data.totalCost / (data.detailedCount + data.economicCount),
         }))
@@ -867,17 +874,28 @@ const AdminCosts = () => {
                       <th className="text-right py-3 px-2">
                         <span className="flex items-center justify-end gap-1">
                           <Flame className="w-3 h-3 text-orange-500" />
-                          Detalhado
+                          Qtd
+                        </span>
+                      </th>
+                      <th className="text-right py-3 px-2">
+                        <span className="flex items-center justify-end gap-1">
+                          <Flame className="w-3 h-3 text-orange-500" />
+                          Custo
                         </span>
                       </th>
                       <th className="text-right py-3 px-2">
                         <span className="flex items-center justify-end gap-1">
                           <Leaf className="w-3 h-3 text-green-500" />
-                          Econômico
+                          Qtd
+                        </span>
+                      </th>
+                      <th className="text-right py-3 px-2">
+                        <span className="flex items-center justify-end gap-1">
+                          <Leaf className="w-3 h-3 text-green-500" />
+                          Custo
                         </span>
                       </th>
                       <th className="text-right py-3 px-2">Total</th>
-                      <th className="text-right py-3 px-2">Custo</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -894,16 +912,27 @@ const AdminCosts = () => {
                           )}
                         </td>
                         <td className="text-right py-3 px-2">
+                          {t.detailedCost > 0 ? (
+                            <span className="text-orange-500">R$ {(t.detailedCost * USD_TO_BRL).toFixed(2)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="text-right py-3 px-2">
                           {t.economicCount > 0 ? (
                             <span className="text-green-500">{t.economicCount}</span>
                           ) : (
                             <span className="text-muted-foreground">0</span>
                           )}
                         </td>
-                        <td className="text-right py-3 px-2 font-medium">
-                          {t.detailedCount + t.economicCount}
-                        </td>
                         <td className="text-right py-3 px-2">
+                          {t.economicCost > 0 ? (
+                            <span className="text-green-500">R$ {(t.economicCost * USD_TO_BRL).toFixed(2)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="text-right py-3 px-2 font-medium">
                           R$ {(t.totalCost * USD_TO_BRL).toFixed(2)}
                         </td>
                       </tr>
