@@ -94,6 +94,10 @@ serve(async (req) => {
         logStep("Plan found in database", { planId: planData.id, slug: planData.slug });
 
         // Update or create user_subscriptions record
+        const startDate = subscription.start_date 
+          ? new Date(subscription.start_date * 1000).toISOString() 
+          : new Date().toISOString();
+        
         const { error: upsertError } = await supabaseClient
           .from("user_subscriptions")
           .upsert({
@@ -103,7 +107,7 @@ serve(async (req) => {
             stripe_subscription_id: subscriptionId,
             stripe_customer_id: customerId,
             expires_at: subscriptionEnd,
-            started_at: new Date(subscriptions.data[0].start_date * 1000).toISOString(),
+            started_at: startDate,
           }, {
             onConflict: 'user_id'
           });
