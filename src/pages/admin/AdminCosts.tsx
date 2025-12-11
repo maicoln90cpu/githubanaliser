@@ -80,13 +80,15 @@ interface DepthStats {
   totalCost: number;
 }
 
-interface ModeStats {
-  mode: 'detailed' | 'economic';
+interface ModelUsageStats {
+  provider: string;
   modelName: string;
+  modelKey: string;
   count: number;
   avgTokens: number;
   avgCost: number;
   totalCost: number;
+  isEconomic: boolean;
 }
 
 interface AnalysisTypeStats {
@@ -159,7 +161,7 @@ const AdminCosts = () => {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
   const [userCosts, setUserCosts] = useState<UserCost[]>([]);
   const [depthStats, setDepthStats] = useState<DepthStats[]>([]);
-  const [modeStats, setModeStats] = useState<ModeStats[]>([]);
+  const [modelUsageStats, setModelUsageStats] = useState<ModelUsageStats[]>([]);
   const [analysisTypeStats, setAnalysisTypeStats] = useState<AnalysisTypeStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasRealData, setHasRealData] = useState(false);
@@ -262,38 +264,54 @@ const AdminCosts = () => {
 
       setDailyUsage(dailyData);
 
-      // Mode statistics
-      const modeMap = new Map<string, { count: number; tokens: number; cost: number }>();
+      // Model usage statistics - group by actual model_used
+      const modelMap = new Map<string, { count: number; tokens: number; cost: number }>();
       usageData?.forEach(u => {
-        const isEconomic = u.model_used?.includes('lite');
-        const mode = isEconomic ? 'economic' : 'detailed';
-        const existing = modeMap.get(mode) || { count: 0, tokens: 0, cost: 0 };
-        modeMap.set(mode, {
+        const modelKey = u.model_used || 'unknown';
+        const existing = modelMap.get(modelKey) || { count: 0, tokens: 0, cost: 0 };
+        modelMap.set(modelKey, {
           count: existing.count + 1,
           tokens: existing.tokens + (u.tokens_estimated || 0),
           cost: existing.cost + Number(u.cost_estimated || 0),
         });
       });
 
-      const modeStatsData: ModeStats[] = [
-        { 
-          mode: 'detailed', 
-          modelName: 'gemini-2.5-flash',
-          count: modeMap.get('detailed')?.count || 0, 
-          avgTokens: modeMap.get('detailed')?.count ? Math.round((modeMap.get('detailed')?.tokens || 0) / modeMap.get('detailed')!.count) : 0,
-          avgCost: modeMap.get('detailed')?.count ? (modeMap.get('detailed')?.cost || 0) / modeMap.get('detailed')!.count : 0,
-          totalCost: modeMap.get('detailed')?.cost || 0,
-        },
-        { 
-          mode: 'economic', 
-          modelName: 'gemini-2.5-flash-lite',
-          count: modeMap.get('economic')?.count || 0, 
-          avgTokens: modeMap.get('economic')?.count ? Math.round((modeMap.get('economic')?.tokens || 0) / modeMap.get('economic')!.count) : 0,
-          avgCost: modeMap.get('economic')?.count ? (modeMap.get('economic')?.cost || 0) / modeMap.get('economic')!.count : 0,
-          totalCost: modeMap.get('economic')?.cost || 0,
-        },
-      ];
-      setModeStats(modeStatsData);
+      // Map model keys to display names and providers
+      const getModelInfo = (modelKey: string): { provider: string; displayName: string; isEconomic: boolean } => {
+        const lowerKey = modelKey.toLowerCase();
+        if (lowerKey.includes('gpt-5-mini')) return { provider: 'OpenAI', displayName: 'GPT-5 Mini', isEconomic: true };
+        if (lowerKey.includes('gpt-5-nano')) return { provider: 'OpenAI', displayName: 'GPT-5 Nano', isEconomic: true };
+        if (lowerKey.includes('gpt-5')) return { provider: 'OpenAI', displayName: 'GPT-5', isEconomic: false };
+        if (lowerKey.includes('gpt-4.1-mini')) return { provider: 'OpenAI', displayName: 'GPT-4.1 Mini', isEconomic: true };
+        if (lowerKey.includes('gpt-4.1-nano')) return { provider: 'OpenAI', displayName: 'GPT-4.1 Nano', isEconomic: true };
+        if (lowerKey.includes('gpt-4.1')) return { provider: 'OpenAI', displayName: 'GPT-4.1', isEconomic: false };
+        if (lowerKey.includes('gpt-4o-mini')) return { provider: 'OpenAI', displayName: 'GPT-4o Mini', isEconomic: true };
+        if (lowerKey.includes('gpt-4o')) return { provider: 'OpenAI', displayName: 'GPT-4o', isEconomic: false };
+        if (lowerKey.includes('o4-mini')) return { provider: 'OpenAI', displayName: 'O4 Mini', isEconomic: true };
+        if (lowerKey.includes('o3')) return { provider: 'OpenAI', displayName: 'O3', isEconomic: false };
+        if (lowerKey.includes('flash-lite') || lowerKey.includes('flash_lite')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Flash Lite', isEconomic: true };
+        if (lowerKey.includes('flash')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Flash', isEconomic: false };
+        if (lowerKey.includes('gemini') && lowerKey.includes('pro')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Pro', isEconomic: false };
+        return { provider: 'Unknown', displayName: modelKey, isEconomic: false };
+      };
+
+      const modelUsageData: ModelUsageStats[] = Array.from(modelMap.entries())
+        .filter(([_, data]) => data.count > 0)
+        .map(([modelKey, data]) => {
+          const info = getModelInfo(modelKey);
+          return {
+            provider: info.provider,
+            modelName: info.displayName,
+            modelKey,
+            count: data.count,
+            avgTokens: Math.round(data.tokens / data.count),
+            avgCost: data.cost / data.count,
+            totalCost: data.cost,
+            isEconomic: info.isEconomic,
+          };
+        })
+        .sort((a, b) => b.totalCost - a.totalCost);
+      setModelUsageStats(modelUsageData);
 
       // Depth statistics
       const depthMap = new Map<string, { count: number; tokens: number; cost: number }>();
@@ -414,10 +432,10 @@ const AdminCosts = () => {
   const monthlyProjection = dailyAvg * 30;
   const monthlyProjectedCost = stats ? (stats.avgCostPerAnalysis * monthlyProjection) : 0;
 
-  const modePieData = modeStats.filter(m => m.count > 0).map(m => ({
-    name: m.mode === 'detailed' ? 'Detalhado' : 'Econômico',
+  const modePieData = modelUsageStats.map(m => ({
+    name: m.modelName,
     value: m.count,
-    color: MODE_COLORS[m.mode],
+    color: m.isEconomic ? MODE_COLORS['economic'] : MODE_COLORS['detailed'],
   }));
 
   const depthPieData = depthStats.filter(d => d.count > 0).map(d => ({
@@ -426,8 +444,11 @@ const AdminCosts = () => {
     color: DEPTH_COLORS[d.depth as keyof typeof DEPTH_COLORS],
   }));
 
-  const totalDetailedAnalyses = modeStats.find(m => m.mode === 'detailed')?.count || 0;
-  const avgDetailedCost = modeStats.find(m => m.mode === 'detailed')?.avgCost || 0;
+  const detailedModels = modelUsageStats.filter(m => !m.isEconomic);
+  const totalDetailedAnalyses = detailedModels.reduce((sum, m) => sum + m.count, 0);
+  const avgDetailedCost = detailedModels.length > 0 
+    ? detailedModels.reduce((sum, m) => sum + m.totalCost, 0) / totalDetailedAnalyses 
+    : 0;
   const potentialSavings = totalDetailedAnalyses * avgDetailedCost * 0.8;
 
   const depthEstimations = [
@@ -554,42 +575,64 @@ const AdminCosts = () => {
               </div>
             </div>
 
-            {/* Mode Comparison Table */}
+            {/* Model Usage Table - All models with real data */}
             <div className="p-6 bg-card border border-border rounded-xl">
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                 <Flame className="w-5 h-5 text-orange-500" />
-                Custo por Modo de Análise
+                Custo por Modelo de IA (Dados Reais)
               </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-2">Modo</th>
-                      <th className="text-left py-3 px-2">Modelo</th>
-                      <th className="text-right py-3 px-2">Análises</th>
-                      <th className="text-right py-3 px-2">Tokens Médios</th>
-                      <th className="text-right py-3 px-2">Custo Médio</th>
-                      <th className="text-right py-3 px-2">Custo Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {modeStats.map((m) => (
-                      <tr key={m.mode} className="border-b border-border/50">
-                        <td className="py-3 px-2">
-                          <Badge className={m.mode === 'detailed' ? 'bg-orange-500/10 text-orange-500' : 'bg-green-500/10 text-green-500'}>
-                            {m.mode === 'detailed' ? <><Flame className="w-3 h-3 mr-1" /> Detalhado</> : <><Leaf className="w-3 h-3 mr-1" /> Econômico</>}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-2 font-mono text-xs text-muted-foreground">{m.modelName}</td>
-                        <td className="text-right py-3 px-2">{m.count}</td>
-                        <td className="text-right py-3 px-2 font-mono">{m.avgTokens.toLocaleString()}</td>
-                        <td className="text-right py-3 px-2">R$ {(m.avgCost * USD_TO_BRL).toFixed(4)}</td>
-                        <td className="text-right py-3 px-2 font-medium">R$ {(m.totalCost * USD_TO_BRL).toFixed(2)}</td>
+              {modelUsageStats.length === 0 ? (
+                <p className="text-muted-foreground text-sm">Nenhum dado de uso encontrado. Execute análises para ver dados reais.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-2">Provider</th>
+                        <th className="text-left py-3 px-2">Modelo</th>
+                        <th className="text-center py-3 px-2">Tipo</th>
+                        <th className="text-right py-3 px-2">Análises</th>
+                        <th className="text-right py-3 px-2">Tokens Médios</th>
+                        <th className="text-right py-3 px-2">Custo Médio</th>
+                        <th className="text-right py-3 px-2">Custo Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {modelUsageStats.map((m) => (
+                        <tr key={m.modelKey} className="border-b border-border/50 hover:bg-muted/30">
+                          <td className="py-3 px-2">
+                            <Badge className={m.provider === 'OpenAI' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}>
+                              {m.provider === 'OpenAI' ? '🔵' : '🟢'} {m.provider}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-2 font-mono text-xs">{m.modelName}</td>
+                          <td className="py-3 px-2 text-center">
+                            <Badge className={m.isEconomic ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}>
+                              {m.isEconomic ? <><Leaf className="w-3 h-3 mr-1" /> Eco</> : <><Flame className="w-3 h-3 mr-1" /> Std</>}
+                            </Badge>
+                          </td>
+                          <td className="text-right py-3 px-2">{m.count}</td>
+                          <td className="text-right py-3 px-2 font-mono">{m.avgTokens.toLocaleString()}</td>
+                          <td className="text-right py-3 px-2">R$ {(m.avgCost * USD_TO_BRL).toFixed(4)}</td>
+                          <td className="text-right py-3 px-2 font-medium">R$ {(m.totalCost * USD_TO_BRL).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                      {/* Total row */}
+                      <tr className="border-t-2 border-border font-semibold bg-muted/20">
+                        <td colSpan={3} className="py-3 px-2">TOTAL</td>
+                        <td className="text-right py-3 px-2">{modelUsageStats.reduce((sum, m) => sum + m.count, 0)}</td>
+                        <td className="text-right py-3 px-2 font-mono">
+                          {Math.round(modelUsageStats.reduce((sum, m) => sum + m.avgTokens * m.count, 0) / modelUsageStats.reduce((sum, m) => sum + m.count, 0) || 0).toLocaleString()}
+                        </td>
+                        <td className="text-right py-3 px-2">
+                          R$ {((modelUsageStats.reduce((sum, m) => sum + m.totalCost, 0) / modelUsageStats.reduce((sum, m) => sum + m.count, 0) || 0) * USD_TO_BRL).toFixed(4)}
+                        </td>
+                        <td className="text-right py-3 px-2">R$ {(modelUsageStats.reduce((sum, m) => sum + m.totalCost, 0) * USD_TO_BRL).toFixed(2)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Depth Cost Estimation */}

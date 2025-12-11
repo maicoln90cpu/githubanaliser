@@ -393,6 +393,36 @@ export type Database = {
         }
         Relationships: []
       }
+      signup_attempts: {
+        Row: {
+          blocked: boolean | null
+          created_at: string | null
+          email: string | null
+          id: string
+          ip_address: string
+          success: boolean | null
+          user_agent: string | null
+        }
+        Insert: {
+          blocked?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          ip_address: string
+          success?: boolean | null
+          user_agent?: string | null
+        }
+        Update: {
+          blocked?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          ip_address?: string
+          success?: boolean | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       system_settings: {
         Row: {
           description: string | null
@@ -525,6 +555,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_signup_abuse: {
+        Args: { p_ip_address: string; p_max_attempts?: number }
+        Returns: boolean
+      }
       get_dashboard_data: { Args: { p_user_id: string }; Returns: Json }
       get_user_daily_usage: { Args: { p_user_id: string }; Returns: number }
       get_user_monthly_usage: { Args: { p_user_id: string }; Returns: number }
@@ -545,6 +579,15 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      record_signup_attempt: {
+        Args: {
+          p_email: string
+          p_ip_address: string
+          p_success: boolean
+          p_user_agent?: string
+        }
+        Returns: undefined
       }
     }
     Enums: {
