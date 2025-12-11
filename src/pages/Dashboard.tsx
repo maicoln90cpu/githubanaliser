@@ -440,10 +440,29 @@ const Dashboard = () => {
                     </p>
                   </div>
                 </div>
-                {plan?.planName === 'Free' && (
+                {plan?.planName === 'Free' ? (
                   <Button variant="hero" size="sm" onClick={() => navigate("/")}>
                     <Sparkles className="w-4 h-4 mr-1" />
                     Upgrade
+                  </Button>
+                ) : plan?.planName !== 'Admin' && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={async () => {
+                      try {
+                        const { data, error } = await supabase.functions.invoke("customer-portal");
+                        if (error) throw error;
+                        if (data?.url) {
+                          window.open(data.url, "_blank");
+                        }
+                      } catch (err) {
+                        console.error("Portal error:", err);
+                        toast.error("Erro ao abrir portal de assinatura");
+                      }
+                    }}
+                  >
+                    Gerenciar Assinatura
                   </Button>
                 )}
               </div>

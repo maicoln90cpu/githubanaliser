@@ -106,6 +106,8 @@ interface DynamicPlan {
   price_monthly: number | null;
   features: string[];
   is_active: boolean | null;
+  stripe_price_id: string | null;
+  stripe_product_id: string | null;
 }
 
 const faqs = [
@@ -168,6 +170,7 @@ const Home = () => {
   const [depthSuggestion, setDepthSuggestion] = useState<{ depth: AnalysisDepth; reason: string } | null>(null);
   const [plans, setPlans] = useState<DynamicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [showGitHubHelpDialog, setShowGitHubHelpDialog] = useState(false);
   const [repoValidationError, setRepoValidationError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -196,7 +199,7 @@ const Home = () => {
       try {
         const { data, error } = await supabase
           .from("plans")
-          .select("*")
+          .select("*, stripe_price_id, stripe_product_id")
           .eq("is_active", true)
           .order("price_monthly", { ascending: true });
 
@@ -214,6 +217,42 @@ const Home = () => {
     };
     loadPlans();
   }, []);
+
+  // Handle Stripe checkout
+  const handleCheckout = async (priceId: string | null, planSlug: string) => {
+    if (!user) {
+      toast.error("Você precisa estar logado para assinar um plano");
+      navigate("/auth");
+      return;
+    }
+
+    if (!priceId) {
+      // Free plan - just navigate to dashboard
+      navigate("/dashboard");
+      return;
+    }
+
+    setCheckoutLoading(planSlug);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { priceId }
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        // Open checkout in new tab
+        window.open(data.url, "_blank");
+      } else {
+        throw new Error("No checkout URL returned");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      toast.error("Erro ao iniciar checkout. Tente novamente.");
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
 
   // Filter out disabled analyses and adjust depth when plan loads
   useEffect(() => {
@@ -957,9 +996,15 @@ const Home = () => {
                     <Button 
                       variant={isPopular ? "default" : "outline"} 
                       className="w-full"
-                      onClick={() => navigate("/auth")}
+                      onClick={() => handleCheckout(p.stripe_price_id, p.slug)}
+                      disabled={checkoutLoading === p.slug}
                     >
-                      {cta}
+                      {checkoutLoading === p.slug ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Processando...
+                        </>
+                      ) : cta}
                     </Button>
                   </CardContent>
                 </Card>

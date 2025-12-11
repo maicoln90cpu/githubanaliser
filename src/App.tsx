@@ -23,6 +23,8 @@ import ProjectChat from "./pages/ProjectChat";
 import Improvements from "./pages/Improvements";
 import History from "./pages/History";
 import AnalysisComparison from "./pages/AnalysisComparison";
+import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentCanceled from "./pages/PaymentCanceled";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminProjects from "./pages/admin/AdminProjects";
@@ -61,6 +63,8 @@ const App = () => (
           <Route path="/melhorias-features/:id" element={<Improvements />} />
           <Route path="/historico" element={<History />} />
           <Route path="/comparar/:id" element={<AnalysisComparison />} />
+          <Route path="/payment-success" element={<PaymentSuccess />} />
+          <Route path="/payment-canceled" element={<PaymentCanceled />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/usuarios" element={<AdminUsers />} />
           <Route path="/admin/projetos" element={<AdminProjects />} />
