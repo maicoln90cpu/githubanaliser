@@ -25,6 +25,7 @@ import History from "./pages/History";
 import AnalysisComparison from "./pages/AnalysisComparison";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCanceled from "./pages/PaymentCanceled";
+import Subscription from "./pages/Subscription";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminProjects from "./pages/admin/AdminProjects";
@@ -65,6 +66,7 @@ const App = () => (
           <Route path="/comparar/:id" element={<AnalysisComparison />} />
           <Route path="/payment-success" element={<PaymentSuccess />} />
           <Route path="/payment-canceled" element={<PaymentCanceled />} />
+          <Route path="/assinatura" element={<Subscription />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/usuarios" element={<AdminUsers />} />
           <Route path="/admin/projetos" element={<AdminProjects />} />
