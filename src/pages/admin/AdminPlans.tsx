@@ -70,6 +70,25 @@ const DEPTH_LEVELS = [
   { key: 'complete', name: 'Completo', icon: BarChart3, color: 'text-purple-500' },
 ];
 
+// All available AI models ranked by cost (USD per 1K tokens)
+const AI_MODELS = [
+  // Lovable AI (Gemini)
+  { id: 'gemini-flash-lite', provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', costPer1K: 0.000375, isEconomic: true },
+  { id: 'gemini-flash', provider: 'Lovable AI', name: 'Gemini 2.5 Flash', costPer1K: 0.00075, isEconomic: false },
+  { id: 'gemini-pro', provider: 'Lovable AI', name: 'Gemini 2.5 Pro', costPer1K: 0.01125, isEconomic: false },
+  // OpenAI
+  { id: 'gpt-5-nano', provider: 'OpenAI', name: 'GPT-5 Nano', costPer1K: 0.00045, isEconomic: true },
+  { id: 'gpt-4.1-nano', provider: 'OpenAI', name: 'GPT-4.1 Nano', costPer1K: 0.0005, isEconomic: true },
+  { id: 'gpt-4o-mini', provider: 'OpenAI', name: 'GPT-4o Mini', costPer1K: 0.00075, isEconomic: true },
+  { id: 'gpt-5-mini', provider: 'OpenAI', name: 'GPT-5 Mini', costPer1K: 0.00225, isEconomic: false },
+  { id: 'gpt-4.1-mini', provider: 'OpenAI', name: 'GPT-4.1 Mini', costPer1K: 0.002, isEconomic: false },
+  { id: 'o4-mini', provider: 'OpenAI', name: 'O4 Mini', costPer1K: 0.0055, isEconomic: false },
+  { id: 'o3', provider: 'OpenAI', name: 'O3', costPer1K: 0.01, isEconomic: false },
+  { id: 'gpt-4.1', provider: 'OpenAI', name: 'GPT-4.1', costPer1K: 0.01, isEconomic: false },
+  { id: 'gpt-5', provider: 'OpenAI', name: 'GPT-5', costPer1K: 0.01125, isEconomic: false },
+  { id: 'gpt-4o', provider: 'OpenAI', name: 'GPT-4o', costPer1K: 0.0125, isEconomic: false },
+].sort((a, b) => a.costPer1K - b.costPer1K);
+
 const PROJECT_COUNT_OPTIONS = [1, 5, 10, 20, 30, 50, 100];
 const USD_TO_BRL = 5.0;
 
@@ -94,6 +113,7 @@ const AdminPlans = () => {
   const [modeDistribution, setModeDistribution] = useState({ detailed: 70, economic: 30 });
   const [targetMargin, setTargetMargin] = useState(50);
   const [projectCount, setProjectCount] = useState(10);
+  const [selectedModelId, setSelectedModelId] = useState('gemini-flash');
 
   useEffect(() => {
     if (adminLoading) return;
@@ -213,30 +233,35 @@ const AdminPlans = () => {
   const tokensPerProjectDetailed = (detailedModel?.avgTokens || 2250) * 8; // 8 analysis types
   const tokensPerProjectEconomic = (economicModel?.avgTokens || 1600) * 8;
 
-  // Calculate weighted average cost based on simulator settings
+  // Get selected model data
+  const selectedModel = AI_MODELS.find(m => m.id === selectedModelId) || AI_MODELS[1]; // default to gemini-flash
+
+  // Calculate weighted average cost based on simulator settings and selected model
   const simulatedCost = useMemo(() => {
-    if (!realCosts) return null;
-    
-    const depthCosts = {
-      critical: realCosts.byDepth['critical']?.avgCost || 0.0044,
-      balanced: realCosts.byDepth['balanced']?.avgCost || 0.0088,
-      complete: realCosts.byDepth['complete']?.avgCost || 0.022,
+    // Base tokens per depth (estimated)
+    const depthTokens = {
+      critical: 8000,
+      balanced: 15000,
+      complete: 25000,
     };
 
-    // Weighted by depth
-    const depthWeightedCost = 
-      (depthDistribution.critical / 100) * depthCosts.critical +
-      (depthDistribution.balanced / 100) * depthCosts.balanced +
-      (depthDistribution.complete / 100) * depthCosts.complete;
+    // Weighted tokens by depth distribution
+    const weightedTokens = 
+      (depthDistribution.critical / 100) * depthTokens.critical +
+      (depthDistribution.balanced / 100) * depthTokens.balanced +
+      (depthDistribution.complete / 100) * depthTokens.complete;
 
-    // Economic mode uses Flash Lite (~30% cheaper)
-    const economicDiscount = 0.7;
+    // Calculate cost using selected model's cost per 1K tokens
+    const costPerAnalysis = (weightedTokens / 1000) * selectedModel.costPer1K;
+    
+    // Apply mode distribution - economic models are ~50% cheaper
+    const economicDiscount = selectedModel.isEconomic ? 1 : 0.5;
     const modeWeightedCost = 
-      (modeDistribution.detailed / 100) * depthWeightedCost +
-      (modeDistribution.economic / 100) * depthWeightedCost * economicDiscount;
+      (modeDistribution.detailed / 100) * costPerAnalysis +
+      (modeDistribution.economic / 100) * costPerAnalysis * economicDiscount;
 
     return modeWeightedCost * 8; // 8 analysis types per project
-  }, [realCosts, depthDistribution, modeDistribution]);
+  }, [depthDistribution, modeDistribution, selectedModel]);
 
   // Tokens per project based on mode distribution
   const simulatedTokensPerProject = useMemo(() => {
@@ -511,21 +536,72 @@ const AdminPlans = () => {
                 </div>
               </div>
 
-              {/* Project Count */}
+              {/* Model Selection & Project Count */}
               <div className="space-y-4">
-                <Label>Quantidade de Projetos</Label>
-                <Select value={projectCount.toString()} onValueChange={v => setProjectCount(parseInt(v))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROJECT_COUNT_OPTIONS.map(count => (
-                      <SelectItem key={count} value={count.toString()}>
-                        {count} {count === 1 ? 'projeto' : 'projetos'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-primary" />
+                    Modelo de IA
+                  </Label>
+                  <Select value={selectedModelId} onValueChange={setSelectedModelId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Lovable AI</div>
+                      {AI_MODELS.filter(m => m.provider === 'Lovable AI').map(model => (
+                        <SelectItem key={model.id} value={model.id}>
+                          <div className="flex items-center gap-2">
+                            {model.isEconomic ? (
+                              <Leaf className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <Flame className="w-3 h-3 text-orange-500" />
+                            )}
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ${model.costPer1K.toFixed(5)}/1K
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">OpenAI</div>
+                      {AI_MODELS.filter(m => m.provider === 'OpenAI').map(model => (
+                        <SelectItem key={model.id} value={model.id}>
+                          <div className="flex items-center gap-2">
+                            {model.isEconomic ? (
+                              <Leaf className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <Flame className="w-3 h-3 text-orange-500" />
+                            )}
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ${model.costPer1K.toFixed(5)}/1K
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Custo: <span className="font-medium">${selectedModel.costPer1K.toFixed(5)}/1K tokens</span>
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Quantidade de Projetos</Label>
+                  <Select value={projectCount.toString()} onValueChange={v => setProjectCount(parseInt(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROJECT_COUNT_OPTIONS.map(count => (
+                        <SelectItem key={count} value={count.toString()}>
+                          {count} {count === 1 ? 'projeto' : 'projetos'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <div className="p-3 bg-muted/50 rounded-lg space-y-2 text-sm">
                   <div className="flex justify-between">
