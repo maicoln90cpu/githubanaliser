@@ -2,13 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, CheckSquare, Eye, EyeOff, Lock, Info } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, Lock, Info } from "lucide-react";
 import { toast } from "sonner";
 import html2pdf from "html2pdf.js";
 import { CheckableMarkdown } from "./CheckableMarkdown";
-import { useChecklistState } from "@/hooks/useChecklistState";
 import { useUserPlan } from "@/hooks/useUserPlan";
-import { Progress } from "@/components/ui/progress";
 import { ViabilityScore } from "./ViabilityScore";
 import {
   Breadcrumb,
@@ -65,19 +63,8 @@ const AnalysisPageLayout = ({
   const [loading, setLoading] = useState(true);
   const [analysisNotFound, setAnalysisNotFound] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [showOnlyPending, setShowOnlyPending] = useState(false);
   
   const canExportPDF = plan?.canExportPDF || plan?.isAdmin;
-
-  // Checklist state
-  const {
-    completedItems,
-    completedCount,
-    totalItems,
-    setTotalItems,
-    progress,
-    toggleItem,
-  } = useChecklistState(analysis?.id);
 
   useEffect(() => {
     const loadData = async () => {
@@ -106,7 +93,6 @@ const AnalysisPageLayout = ({
           .maybeSingle();
 
         if (analysisError || !analysisData) {
-          // Em vez de redirecionar, mostrar opção de gerar
           setAnalysisNotFound(true);
         } else {
           setAnalysis(analysisData);
@@ -135,7 +121,6 @@ const AnalysisPageLayout = ({
       : "Iniciando geração da análise..."
     );
     
-    // Redirecionar para a página de análise com o tipo específico e useCache
     navigate(`/analisando?projectId=${id}&analysisTypes=${type}&useCache=${hasCachedData}`);
   };
 
@@ -143,7 +128,6 @@ const AnalysisPageLayout = ({
     const element = document.getElementById("analysis-content");
     if (!element) return;
     
-    // Criar wrapper temporário com estilos forçados para PDF
     const wrapper = document.createElement("div");
     wrapper.innerHTML = element.innerHTML;
     wrapper.style.cssText = `
@@ -153,7 +137,6 @@ const AnalysisPageLayout = ({
       padding: 20px;
     `;
     
-    // Forçar cor preta em todos os elementos
     const allElements = wrapper.querySelectorAll("*");
     allElements.forEach((el) => {
       (el as HTMLElement).style.color = "#000000";
@@ -189,11 +172,9 @@ const AnalysisPageLayout = ({
     );
   }
 
-  // Tela de análise não encontrada
   if (analysisNotFound) {
     return (
       <div className="min-h-screen bg-background">
-        {/* Header */}
         <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
           <div className="container mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
@@ -250,7 +231,6 @@ const AnalysisPageLayout = ({
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
@@ -291,42 +271,6 @@ const AnalysisPageLayout = ({
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Checklist Progress Bar */}
-        {totalItems > 0 && (
-          <div className="mb-6 p-4 bg-card border border-border rounded-xl animate-fade-in">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-primary" />
-                <span className="font-medium">Progresso do Checklist</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  {completedCount} de {totalItems} itens ({progress}%)
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setShowOnlyPending(!showOnlyPending)}
-                  className="gap-2"
-                >
-                  {showOnlyPending ? (
-                    <>
-                      <Eye className="w-4 h-4" />
-                      Mostrar todos
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="w-4 h-4" />
-                      Só pendentes
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </div>
-        )}
-
         {/* Breadcrumb */}
         <Breadcrumb className="mb-6">
           <BreadcrumbList>
@@ -382,13 +326,7 @@ const AnalysisPageLayout = ({
           id="analysis-content" 
           className="prose prose-slate dark:prose-invert max-w-none bg-card border border-border rounded-xl p-8 shadow-sm markdown-content animate-slide-up"
         >
-          <CheckableMarkdown
-            content={analysis?.content || "Nenhuma análise disponível."}
-            completedItems={completedItems}
-            onToggleItem={toggleItem}
-            onTotalItemsChange={setTotalItems}
-            showOnlyPending={showOnlyPending}
-          />
+          <CheckableMarkdown content={analysis?.content || "Nenhuma análise disponível."} />
         </div>
 
         {/* Navigation */}
