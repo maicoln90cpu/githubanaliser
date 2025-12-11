@@ -858,7 +858,7 @@ async function trackAnalysisUsage(
   }
 }
 
-async function processAnalysisInBackground(
+async function extractAndPrepareAnalysis(
   projectId: string,
   githubUrl: string,
   owner: string,
@@ -873,13 +873,6 @@ async function processAnalysisInBackground(
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Load AI provider settings
-  const aiProviderSettings = await loadAIProviderSettings(supabase);
-  
-  // Load depth-specific settings
-  const depthConfig = await loadDepthSettings(supabase, depth);
-  console.log(`🎛️ Profundidade: ${depth} (modelo: ${depthConfig.model}, contexto: ${depthConfig.maxContext})`);
-
   // Default to all types if not specified
   const typesToGenerate = analysisTypes.length > 0 
     ? analysisTypes 
@@ -889,8 +882,6 @@ async function processAnalysisInBackground(
   console.log("Usar cache:", useCache);
 
   try {
-    let projectContext: string;
-
     // Check for cached data if useCache is true
     if (useCache) {
       const { data: projectData } = await supabase
@@ -901,16 +892,10 @@ async function processAnalysisInBackground(
 
       if (projectData?.github_data) {
         console.log("✓ Usando dados em cache do GitHub");
-        projectContext = buildProjectContextFromCache(
-          projectData.github_data as unknown as GitHubData,
-          projectName,
-          githubUrl
-        );
       } else {
         console.log("Cache não encontrado, extraindo novamente...");
         await updateProjectStatus(supabase, projectId, "extracting");
-        const { projectContext: ctx, githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
-        projectContext = ctx;
+        const { githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
         
         // Save to cache
         await supabase
@@ -922,8 +907,7 @@ async function processAnalysisInBackground(
     } else {
       // Full extraction (no cache)
       await updateProjectStatus(supabase, projectId, "extracting");
-      const { projectContext: ctx, githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
-      projectContext = ctx;
+      const { githubData } = await extractGitHubData(owner, repo, githubUrl, projectName);
       
       // Save to cache for future re-analyses
       await supabase
@@ -933,152 +917,40 @@ async function processAnalysisInBackground(
       console.log("✓ Dados salvos no cache");
     }
 
-    // Apply context limit based on depth
-    if (projectContext.length > depthConfig.maxContext) {
-      console.log(`⚠️ Contexto truncado de ${projectContext.length} para ${depthConfig.maxContext} caracteres`);
-      projectContext = projectContext.substring(0, depthConfig.maxContext);
-    }
-
-    console.log(`Contexto preparado: ${projectContext.length} caracteres`);
-
-    // Get API keys based on provider
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    // Create queue items for each analysis type
+    console.log("📋 Criando itens na fila de análise...");
     
-    if (aiProviderSettings.provider === 'openai') {
-      if (!openaiApiKey) {
-        console.log("⚠️ OPENAI_API_KEY não configurada, usando Lovable AI");
-        aiProviderSettings.provider = 'lovable';
-      }
+    // Clear any existing pending queue items for this project
+    await supabase
+      .from("analysis_queue")
+      .delete()
+      .eq("project_id", projectId)
+      .in("status", ["pending", "error"]);
+
+    const queueItems = typesToGenerate.map(analysisType => ({
+      project_id: projectId,
+      analysis_type: analysisType,
+      status: "pending",
+      depth_level: depth,
+      user_id: userId,
+    }));
+
+    const { error: queueError } = await supabase
+      .from("analysis_queue")
+      .insert(queueItems);
+
+    if (queueError) {
+      console.error("❌ Erro ao criar fila de análises:", queueError);
+      throw new Error("Falha ao criar fila de análises");
     }
+
+    console.log(`✓ ${queueItems.length} itens adicionados à fila`);
     
-    if (aiProviderSettings.provider === 'lovable' && !lovableApiKey) {
-      throw new Error("LOVABLE_API_KEY não configurada");
-    }
-
-    // Load prompts from database
-    const dbPrompts = await loadPromptsFromDB(supabase);
-    
-    const markdownFormatInstructions = `
-IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
-- Use tabelas markdown com | para organizar dados comparativos
-- Use emojis para categorização visual (✅ ⚠️ 🔴 💡 📊 🎯 etc)
-- Use badges de prioridade: 🔴 Alta | 🟡 Média | 🟢 Baixa
-- Use blockquotes (>) para destacar informações importantes
-- Use listas numeradas e com bullets
-- Separe seções com --- quando apropriado
-- Use **negrito** para títulos de itens importantes
-- Use \`código\` para termos técnicos
-`;
-
-    // Variables for prompt template replacement
-    const promptVariables: Record<string, string> = {
-      projectName: projectName,
-      githubUrl: githubUrl,
-      readme: projectContext.includes("## README") 
-        ? projectContext.split("## README")[1]?.split("##")[0]?.trim() || "" 
-        : "",
-      structure: projectContext.includes("## Estrutura") 
-        ? projectContext.split("## Estrutura")[1]?.split("##")[0]?.trim() || ""
-        : "",
-      dependencies: projectContext.includes("## package.json")
-        ? projectContext.split("## package.json")[1]?.split("##")[0]?.trim() || ""
-        : "",
-      sourceCode: projectContext.includes("## Código Fonte")
-        ? projectContext.split("## Código Fonte")[1]?.split("##")[0]?.trim() || ""
-        : "",
-    };
-
-    // Helper function to generate analysis using DB prompt or fallback
-    async function generateAnalysis(
-      analysisType: string,
-      statusKey: string
-    ): Promise<void> {
-      await updateProjectStatus(supabase, projectId, statusKey);
-      console.log(`Gerando ${analysisType}...`);
-
-      // Get prompt from DB or use fallback
-      const dbPrompt = dbPrompts.get(analysisType);
-      let systemPrompt: string;
-      let userPrompt: string;
-
-      if (dbPrompt) {
-        console.log(`📝 Usando prompt do banco para ${analysisType}`);
-        systemPrompt = dbPrompt.system_prompt;
-        userPrompt = replacePromptVariables(dbPrompt.user_prompt_template, promptVariables);
-      } else {
-        console.log(`⚠️ Prompt não encontrado no banco, usando fallback para ${analysisType}`);
-        const fallback = DEFAULT_PROMPTS[analysisType];
-        systemPrompt = fallback?.system || "Você é um assistente especializado.";
-        userPrompt = `${fallback?.user || "Analise o projeto."}\n\n${projectContext}`;
-      }
-
-      // Add markdown instructions to user prompt if not already present
-      if (!userPrompt.includes("markdown")) {
-        userPrompt = `${userPrompt}\n\n${markdownFormatInstructions}`;
-      }
-
-      // Add project context if using DB prompt (template might not include full context)
-      if (dbPrompt && !userPrompt.includes(projectContext.substring(0, 100))) {
-        userPrompt = `${userPrompt}\n\nContexto do Projeto:\n${projectContext}`;
-      }
-
-      // Call the appropriate AI provider
-      let result: AIResponse;
-      
-      if (aiProviderSettings.provider === 'openai' && openaiApiKey) {
-        result = await callOpenAI(
-          openaiApiKey,
-          systemPrompt,
-          userPrompt,
-          aiProviderSettings.openaiModel
-        );
-      } else {
-        result = await callLovableAI(
-          lovableApiKey!,
-          systemPrompt,
-          userPrompt,
-          depthConfig.model
-        );
-      }
-      
-      const saved = await saveAnalysis(supabase, projectId, analysisType, result.content);
-      if (saved) {
-        await trackAnalysisUsage(supabase, userId, projectId, analysisType, result, depth);
-      }
-      
-      await delay(2000);
-    }
-
-    // Generate each selected analysis type
-    const analysisTypeMap: Record<string, string> = {
-      prd: "generating_prd",
-      divulgacao: "generating_divulgacao",
-      captacao: "generating_captacao",
-      seguranca: "generating_seguranca",
-      ui_theme: "generating_ui",
-      ferramentas: "generating_ferramentas",
-      features: "generating_features",
-      documentacao: "generating_documentacao",
-      prompts: "generating_prompts",
-      quality: "generating_quality"
-    };
-
-    for (const analysisType of typesToGenerate) {
-      const statusKey = analysisTypeMap[analysisType];
-      if (statusKey) {
-        await generateAnalysis(analysisType, statusKey);
-      } else {
-        console.log(`⚠️ Tipo de análise desconhecido: ${analysisType}`);
-      }
-    }
-
-    // === CONCLUÍDO ===
-    await updateProjectStatus(supabase, projectId, "completed");
-    console.log("=== ANÁLISE CONCLUÍDA ===");
+    // Update project status to indicate queue is ready
+    await updateProjectStatus(supabase, projectId, "queue_ready");
 
   } catch (error) {
-    console.error("Erro na análise:", error);
+    console.error("Erro na preparação:", error);
     await updateProjectStatus(
       supabase, 
       projectId, 
@@ -1231,7 +1103,7 @@ serve(async (req) => {
     }
 
     EdgeRuntime.waitUntil(
-      processAnalysisInBackground(
+      extractAndPrepareAnalysis(
         project.id, 
         githubUrl, 
         owner, 

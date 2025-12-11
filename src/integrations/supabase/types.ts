@@ -91,6 +91,56 @@ export type Database = {
         }
         Relationships: []
       }
+      analysis_queue: {
+        Row: {
+          analysis_type: string
+          completed_at: string | null
+          created_at: string | null
+          depth_level: string
+          error_message: string | null
+          id: string
+          project_id: string
+          retry_count: number | null
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          analysis_type: string
+          completed_at?: string | null
+          created_at?: string | null
+          depth_level?: string
+          error_message?: string | null
+          id?: string
+          project_id: string
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          analysis_type?: string
+          completed_at?: string | null
+          created_at?: string | null
+          depth_level?: string
+          error_message?: string | null
+          id?: string
+          project_id?: string
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_queue_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analysis_usage: {
         Row: {
           analysis_type: string
