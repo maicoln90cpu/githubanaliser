@@ -41,7 +41,8 @@ serve(async (req) => {
 
     if (webhookSecret) {
       try {
-        event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+        // Use constructEventAsync for Deno environments
+        event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         logStep("ERROR", { message: `Webhook signature verification failed: ${errorMessage}` });
@@ -147,6 +148,15 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
     ? 'active' 
     : subscription.status;
 
+  // Safe date conversion helper
+  const startDate = subscription.start_date 
+    ? new Date(subscription.start_date * 1000).toISOString()
+    : new Date().toISOString();
+  
+  const expiresAt = subscription.current_period_end 
+    ? new Date(subscription.current_period_end * 1000).toISOString() 
+    : null;
+
   // Upsert subscription
   const { error } = await supabaseClient
     .from("user_subscriptions")
@@ -156,10 +166,8 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
       stripe_subscription_id: subscription.id,
       stripe_customer_id: customerId,
       status: status,
-      started_at: new Date(subscription.start_date * 1000).toISOString(),
-      expires_at: subscription.current_period_end 
-        ? new Date(subscription.current_period_end * 1000).toISOString() 
-        : null,
+      started_at: startDate,
+      expires_at: expiresAt,
     }, {
       onConflict: 'user_id',
     });
