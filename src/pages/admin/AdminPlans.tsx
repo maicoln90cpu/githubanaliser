@@ -109,9 +109,10 @@ const AdminPlans = () => {
   
   const [realCosts, setRealCosts] = useState<{
     byDepth: Record<string, { avgCost: number; avgTokens: number; count: number }>;
+    byModel: Record<string, { avgCost: number; avgTokens: number; count: number; costPer1K: number }>;
     overall: { avgCost: number; avgTokens: number; totalCount: number; totalCost: number; totalTokens: number };
-    costPer1KUSD: number;  // Custo real por 1K tokens em USD
-    costPer1KBRL: number;  // Custo real por 1K tokens em BRL
+    costPer1KUSD: number;
+    costPer1KBRL: number;
   } | null>(null);
 
   // Simulator state
@@ -164,35 +165,58 @@ const AdminPlans = () => {
       
       if (settingData) setGlobalEconomicMode(settingData.value);
 
-      // Load real costs
+      // Load real costs grouped by depth AND model
       const { data: usageData } = await supabase
         .from("analysis_usage")
         .select("depth_level, model_used, tokens_estimated, cost_estimated");
 
       if (usageData && usageData.length > 0) {
         const byDepth: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
+        const byModel: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
         let totalCost = 0, totalTokens = 0;
 
         usageData.forEach(u => {
           const depth = u.depth_level || 'balanced';
+          const model = u.model_used || 'unknown';
           const cost = Number(u.cost_estimated || 0);
           const tokens = u.tokens_estimated || 0;
 
+          // By depth
           if (!byDepth[depth]) byDepth[depth] = { totalCost: 0, totalTokens: 0, count: 0 };
           byDepth[depth].totalCost += cost;
           byDepth[depth].totalTokens += tokens;
           byDepth[depth].count++;
+
+          // By model
+          if (!byModel[model]) byModel[model] = { totalCost: 0, totalTokens: 0, count: 0 };
+          byModel[model].totalCost += cost;
+          byModel[model].totalTokens += tokens;
+          byModel[model].count++;
+
           totalCost += cost;
           totalTokens += tokens;
         });
 
-        // Custo real por 1K tokens
-        // Fórmula: (custoTotal / totalTokens) * 1000
-        const costPer1KUSD = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0.001; // fallback ~$0.001/1K
+        // Custo real por 1K tokens global
+        const costPer1KUSD = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0.001;
         const costPer1KBRL = costPer1KUSD * USD_TO_BRL;
+
+        // Custo por modelo
+        const byModelFormatted = Object.fromEntries(
+          Object.entries(byModel).map(([k, v]) => [
+            k, 
+            { 
+              avgCost: v.totalCost / v.count, 
+              avgTokens: v.totalTokens / v.count, 
+              count: v.count,
+              costPer1K: v.totalTokens > 0 ? (v.totalCost / v.totalTokens) * 1000 : 0.001
+            }
+          ])
+        );
 
         setRealCosts({
           byDepth: Object.fromEntries(Object.entries(byDepth).map(([k, v]) => [k, { avgCost: v.totalCost / v.count, avgTokens: v.totalTokens / v.count, count: v.count }])),
+          byModel: byModelFormatted,
           overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost, totalTokens },
           costPer1KUSD,
           costPer1KBRL
@@ -295,6 +319,37 @@ const AdminPlans = () => {
 
   const selectedModel = AI_MODELS.find(m => m.id === selectedModelId) || AI_MODELS[1];
 
+  // Mapear ID de modelo para chave no analysis_usage
+  const getModelUsageKey = (modelId: string): string => {
+    const mapping: Record<string, string> = {
+      'gemini-flash-lite': 'google/gemini-2.5-flash-lite',
+      'gemini-flash': 'google/gemini-2.5-flash',
+      'gemini-pro': 'google/gemini-2.5-pro',
+      'gpt-5-nano': 'gpt-5-nano',
+      'gpt-4o-mini': 'gpt-4o-mini',
+      'gpt-5-mini': 'gpt-5-mini',
+    };
+    return mapping[modelId] || modelId;
+  };
+
+  // Custo real por 1K tokens do modelo selecionado
+  const realModelCostPer1K = useMemo(() => {
+    const usageKey = getModelUsageKey(selectedModelId);
+    const modelData = realCosts?.byModel?.[usageKey];
+    if (modelData && modelData.costPer1K > 0) {
+      return modelData.costPer1K;
+    }
+    // Fallback para custo hardcoded se não houver dados reais
+    return selectedModel.costPer1K;
+  }, [selectedModelId, realCosts, selectedModel]);
+
+  // Tokens médios por modelo real
+  const realModelAvgTokens = useMemo(() => {
+    const usageKey = getModelUsageKey(selectedModelId);
+    const modelData = realCosts?.byModel?.[usageKey];
+    return modelData?.avgTokens || 0;
+  }, [selectedModelId, realCosts]);
+
   const simulatedCost = useMemo(() => {
     const depthTokens = { critical: 8000, balanced: 15000, complete: 25000 };
     const weightedTokens = 
@@ -302,14 +357,27 @@ const AdminPlans = () => {
       (depthDistribution.balanced / 100) * depthTokens.balanced +
       (depthDistribution.complete / 100) * depthTokens.complete;
 
-    const costPerAnalysis = (weightedTokens / 1000) * selectedModel.costPer1K;
+    // Usar custo real por 1K tokens do modelo selecionado
+    const costPerAnalysis = (weightedTokens / 1000) * realModelCostPer1K;
+    
+    // Modo econômico: se modelo já é econômico, sem desconto adicional; se não, 50% desconto
     const economicDiscount = selectedModel.isEconomic ? 1 : 0.5;
     const modeWeightedCost = 
       (modeDistribution.detailed / 100) * costPerAnalysis +
       (modeDistribution.economic / 100) * costPerAnalysis * economicDiscount;
 
-    return modeWeightedCost * 8;
-  }, [depthDistribution, modeDistribution, selectedModel]);
+    return modeWeightedCost * 8; // 8 análises por projeto
+  }, [depthDistribution, modeDistribution, realModelCostPer1K, selectedModel]);
+
+  // Tokens simulados por projeto
+  const simulatedTokens = useMemo(() => {
+    const depthTokens = { critical: 8000, balanced: 15000, complete: 25000 };
+    const weightedTokens = 
+      (depthDistribution.critical / 100) * depthTokens.critical +
+      (depthDistribution.balanced / 100) * depthTokens.balanced +
+      (depthDistribution.complete / 100) * depthTokens.complete;
+    return weightedTokens * 8; // 8 análises por projeto
+  }, [depthDistribution]);
 
   const getMarginColor = (margin: number) => {
     if (margin >= 50) return 'text-green-500';
@@ -663,6 +731,20 @@ const AdminPlans = () => {
 
                     <div className="p-3 bg-muted/50 rounded-lg space-y-2 text-sm">
                       <div className="flex justify-between">
+                        <span className="text-muted-foreground">Custo/1K tokens:</span>
+                        <span className="font-mono text-xs">${realModelCostPer1K.toFixed(6)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tokens/Projeto:</span>
+                        <span className="font-mono">{simulatedTokens.toLocaleString()}</span>
+                      </div>
+                      {realModelAvgTokens > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Tokens reais médios:</span>
+                          <span className="font-mono text-green-500">{realModelAvgTokens.toLocaleString()}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-border pt-2 mt-2 flex justify-between">
                         <span className="text-muted-foreground">Custo/Projeto:</span>
                         <span className="font-bold text-destructive">R$ {(simulatedCost * USD_TO_BRL).toFixed(2)}</span>
                       </div>
@@ -679,10 +761,14 @@ const AdminPlans = () => {
                     <div className="space-y-3">
                       {plans.filter(p => p.is_active).map(plan => {
                         const maxTokens = plan.config?.max_tokens_monthly || 1000000;
-                        const maxCostBRL = (maxTokens / 1000) * (realCosts?.costPer1KBRL || 0.0055);
+                        // Usar custo real do modelo selecionado para cálculo de custo máximo
+                        const maxCostUSD = (maxTokens / 1000) * realModelCostPer1K;
+                        const maxCostBRL = maxCostUSD * USD_TO_BRL;
                         const revenue = plan.price_monthly || 0;
                         const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : -100;
                         const suggestedPrice = maxCostBRL / (1 - targetMargin / 100);
+                        const tokensPerProject = simulatedTokens;
+                        const projectsWithLimit = tokensPerProject > 0 ? Math.floor(maxTokens / tokensPerProject) : 0;
                         
                         return (
                           <div key={plan.id} className="p-3 bg-background rounded border">
@@ -698,6 +784,10 @@ const AdminPlans = () => {
                               <div className="flex justify-between">
                                 <span>Custo máx ({(maxTokens/1000).toFixed(0)}K tokens):</span>
                                 <span>R$ {maxCostBRL.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Projetos estimados:</span>
+                                <span className="font-mono">{projectsWithLimit}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Preço sugerido ({targetMargin}%):</span>
