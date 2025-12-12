@@ -18,8 +18,19 @@ import {
   AlertTriangle,
   Trophy,
   PieChart as PieChartIcon,
-  GitCompare
+  GitCompare,
+  Lightbulb,
+  CheckCircle2,
+  Rocket,
+  Scale
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import {
@@ -153,6 +164,394 @@ const ALL_MODELS = [
 ].sort((a, b) => a.costPer1K - b.costPer1K);
 
 const RANKING_BADGES = ['🥇', '🥈', '🥉'];
+
+const DEFAULT_TOKENS_BY_DEPTH: Record<string, number> = {
+  critical: 10000,
+  balanced: 15000,
+  complete: 20000
+};
+
+// System Recommendation Tab Component
+interface SystemRecommendationTabProps {
+  modelUsageStats: ModelUsageStats[];
+  depthStats: DepthStats[];
+  hasRealData: boolean;
+}
+
+const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: SystemRecommendationTabProps) => {
+  const [providerFilter, setProviderFilter] = useState<string>("all");
+  const [depthFilter, setDepthFilter] = useState<string>("all");
+  const [modeFilter, setModeFilter] = useState<string>("all");
+  const [savingConfig, setSavingConfig] = useState<string | null>(null);
+
+  // Get real costs from usage or fallback to ALL_MODELS
+  const modelsWithRealCosts = useMemo(() => {
+    const realCostsByModel: Record<string, { costPer1K: number; avgTokens: number; count: number }> = {};
+    
+    modelUsageStats.forEach(m => {
+      if (m.totalCost > 0 && m.avgTokens > 0) {
+        realCostsByModel[m.modelKey] = {
+          costPer1K: (m.totalCost / (m.avgTokens * m.count / 1000)),
+          avgTokens: m.avgTokens,
+          count: m.count
+        };
+      }
+    });
+
+    return ALL_MODELS.map(model => {
+      const key = model.name.toLowerCase().replace(/\s+/g, '-');
+      const realData = realCostsByModel[key];
+      return {
+        ...model,
+        realCostPer1K: realData?.costPer1K || model.costPer1K,
+        hasRealData: !!realData,
+        usageCount: realData?.count || 0
+      };
+    });
+  }, [modelUsageStats]);
+
+  // Filter models by provider
+  const filteredModels = useMemo(() => {
+    let models = modelsWithRealCosts;
+    if (providerFilter !== "all") {
+      models = models.filter(m => m.provider === providerFilter);
+    }
+    return models.sort((a, b) => a.realCostPer1K - b.realCostPer1K);
+  }, [modelsWithRealCosts, providerFilter]);
+
+  // Get depth tokens (real or default)
+  const getDepthTokens = (depth: string) => {
+    const realDepth = depthStats.find(d => d.depth === depth);
+    return realDepth?.avgTokens || DEFAULT_TOKENS_BY_DEPTH[depth] || 15000;
+  };
+
+  // Calculate recommendation profiles
+  const recommendations = useMemo(() => {
+    if (filteredModels.length === 0) return [];
+
+    const selectedDepth = depthFilter !== "all" ? depthFilter : null;
+    const selectedMode = modeFilter !== "all" ? modeFilter : null;
+
+    // Filter by economic mode if selected
+    let modelsForEconomic = filteredModels;
+    let modelsForPerformance = filteredModels;
+    
+    if (selectedMode === "economic") {
+      modelsForEconomic = filteredModels.filter(m => 
+        m.name.includes("Lite") || m.name.includes("Nano") || m.name.includes("Mini")
+      );
+      modelsForPerformance = modelsForEconomic;
+    } else if (selectedMode === "detailed") {
+      modelsForPerformance = filteredModels.filter(m => 
+        !m.name.includes("Lite") && !m.name.includes("Nano")
+      );
+      modelsForEconomic = modelsForPerformance;
+    }
+
+    if (modelsForEconomic.length === 0) modelsForEconomic = filteredModels;
+    if (modelsForPerformance.length === 0) modelsForPerformance = filteredModels;
+
+    // Mais Econômico - cheapest model + critical depth
+    const economicModel = modelsForEconomic[0];
+    const economicDepth = selectedDepth || "critical";
+    const economicTokens = getDepthTokens(economicDepth);
+    const economicCostPerAnalysis = (economicTokens / 1000) * economicModel.realCostPer1K;
+
+    // Equilibrado - balanced model + balanced depth
+    const balancedIndex = Math.floor(filteredModels.length / 2);
+    const balancedModel = filteredModels[balancedIndex] || filteredModels[0];
+    const balancedDepth = selectedDepth || "balanced";
+    const balancedTokens = getDepthTokens(balancedDepth);
+    const balancedCostPerAnalysis = (balancedTokens / 1000) * balancedModel.realCostPer1K;
+
+    // Melhor Performance - most powerful model + complete depth
+    const performanceModel = modelsForPerformance[modelsForPerformance.length - 1];
+    const performanceDepth = selectedDepth || "complete";
+    const performanceTokens = getDepthTokens(performanceDepth);
+    const performanceCostPerAnalysis = (performanceTokens / 1000) * performanceModel.realCostPer1K;
+
+    return [
+      {
+        id: "economic",
+        name: "Mais Econômico",
+        icon: <Leaf className="w-6 h-6 text-green-500" />,
+        color: "green",
+        model: economicModel,
+        depth: economicDepth,
+        mode: "Econômico",
+        tokens: economicTokens,
+        costPerAnalysis: economicCostPerAnalysis,
+        costPer100: economicCostPerAnalysis * 100,
+        description: "Menor custo possível mantendo qualidade básica"
+      },
+      {
+        id: "balanced",
+        name: "Equilibrado",
+        icon: <Scale className="w-6 h-6 text-blue-500" />,
+        color: "blue",
+        model: balancedModel,
+        depth: balancedDepth,
+        mode: "Balanceado",
+        tokens: balancedTokens,
+        costPerAnalysis: balancedCostPerAnalysis,
+        costPer100: balancedCostPerAnalysis * 100,
+        description: "Melhor relação custo-benefício"
+      },
+      {
+        id: "performance",
+        name: "Melhor Performance",
+        icon: <Rocket className="w-6 h-6 text-purple-500" />,
+        color: "purple",
+        model: performanceModel,
+        depth: performanceDepth,
+        mode: "Detalhado",
+        tokens: performanceTokens,
+        costPerAnalysis: performanceCostPerAnalysis,
+        costPer100: performanceCostPerAnalysis * 100,
+        description: "Máxima qualidade e profundidade"
+      }
+    ];
+  }, [filteredModels, depthFilter, modeFilter, depthStats]);
+
+  const handleApplyConfig = async (profile: typeof recommendations[0]) => {
+    setSavingConfig(profile.id);
+    try {
+      // Map depth to config key
+      const depthConfigKey = `${profile.depth}_config`;
+      
+      // Get model identifier for storage
+      const modelId = profile.model.provider === 'Lovable AI' 
+        ? `google/${profile.model.name.toLowerCase().replace(/\s+/g, '-')}`
+        : profile.model.name.toLowerCase().replace(/\s+/g, '-');
+
+      // Update system settings with recommended config
+      const updates = [
+        { key: 'recommended_model', value: modelId },
+        { key: 'recommended_depth', value: profile.depth },
+        { key: 'recommended_mode', value: profile.mode.toLowerCase() },
+        { key: 'last_recommendation_applied', value: new Date().toISOString() }
+      ];
+
+      for (const update of updates) {
+        await supabase.from("system_settings").upsert({
+          key: update.key,
+          value: update.value,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
+      }
+
+      toast.success(`Configuração "${profile.name}" aplicada com sucesso!`);
+    } catch (error) {
+      console.error("Error applying config:", error);
+      toast.error("Erro ao aplicar configuração");
+    } finally {
+      setSavingConfig(null);
+    }
+  };
+
+  const getColorClasses = (color: string) => {
+    switch (color) {
+      case "green": return "bg-green-500/10 border-green-500/30 hover:border-green-500/50";
+      case "blue": return "bg-blue-500/10 border-blue-500/30 hover:border-blue-500/50";
+      case "purple": return "bg-purple-500/10 border-purple-500/30 hover:border-purple-500/50";
+      default: return "bg-muted/50 border-border";
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="p-4 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-xl">
+        <div className="flex items-center gap-3 mb-2">
+          <Lightbulb className="w-5 h-5 text-amber-500" />
+          <h3 className="font-semibold">Recomendações Inteligentes</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          O sistema analisa seus dados de uso e sugere configurações otimizadas para diferentes objetivos.
+          {hasRealData ? " Cálculos baseados em dados reais do sistema." : " Usando estimativas - execute análises para dados mais precisos."}
+        </p>
+      </div>
+
+      {/* Filters */}
+      <div className="p-4 bg-card border border-border rounded-xl">
+        <h4 className="text-sm font-medium mb-4 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" />
+          Filtros de Seleção
+        </h4>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground">Provider</label>
+            <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="Lovable AI">🟢 Lovable AI</SelectItem>
+                <SelectItem value="OpenAI">🔵 OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground">Profundidade</label>
+            <Select value={depthFilter} onValueChange={setDepthFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="critical">⚡ Critical</SelectItem>
+                <SelectItem value="balanced">⚖️ Balanced</SelectItem>
+                <SelectItem value="complete">📊 Complete</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-muted-foreground">Modo</label>
+            <Select value={modeFilter} onValueChange={setModeFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="economic">🌿 Econômico</SelectItem>
+                <SelectItem value="detailed">🔥 Detalhado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Recommendation Cards */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {recommendations.map((rec) => (
+          <div 
+            key={rec.id}
+            className={`p-6 border rounded-xl transition-all ${getColorClasses(rec.color)}`}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              {rec.icon}
+              <div>
+                <h3 className="font-semibold">{rec.name}</h3>
+                <p className="text-xs text-muted-foreground">{rec.description}</p>
+              </div>
+            </div>
+
+            {/* Config Details */}
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
+                <span className="text-sm text-muted-foreground">Provider</span>
+                <Badge variant="outline" className="text-xs">
+                  {rec.model.provider === 'Lovable AI' ? '🟢' : '🔵'} {rec.model.provider}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
+                <span className="text-sm text-muted-foreground">Modelo</span>
+                <span className="text-sm font-medium">{rec.model.name}</span>
+              </div>
+              <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
+                <span className="text-sm text-muted-foreground">Profundidade</span>
+                <Badge variant="outline" className="text-xs capitalize">{rec.depth}</Badge>
+              </div>
+              <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
+                <span className="text-sm text-muted-foreground">Modo</span>
+                <span className="text-sm">{rec.mode}</span>
+              </div>
+            </div>
+
+            {/* Cost Estimates */}
+            <div className="p-3 bg-background/80 rounded-lg mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-muted-foreground">Custo/Análise</span>
+                <span className="font-semibold text-green-600">
+                  R$ {(rec.costPerAnalysis * USD_TO_BRL).toFixed(4)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Custo/100 Análises</span>
+                <span className="font-semibold">
+                  R$ {(rec.costPer100 * USD_TO_BRL).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Apply Button */}
+            <Button 
+              onClick={() => handleApplyConfig(rec)} 
+              className="w-full"
+              variant={rec.color === "green" ? "default" : "outline"}
+              disabled={savingConfig === rec.id}
+            >
+              {savingConfig === rec.id ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+              )}
+              Aplicar Configuração
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      {/* Comparison Table */}
+      <div className="p-6 bg-card border border-border rounded-xl">
+        <h4 className="font-semibold mb-4">Comparativo de Custos</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2 px-2">Perfil</th>
+                <th className="text-left py-2 px-2">Modelo</th>
+                <th className="text-center py-2 px-2">Tokens/Análise</th>
+                <th className="text-right py-2 px-2">Custo/1K</th>
+                <th className="text-right py-2 px-2">Custo/Análise</th>
+                <th className="text-right py-2 px-2">Economia vs Performance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recommendations.map((rec, idx) => {
+                const performanceCost = recommendations[2]?.costPerAnalysis || rec.costPerAnalysis;
+                const savings = performanceCost > 0 
+                  ? ((1 - rec.costPerAnalysis / performanceCost) * 100).toFixed(0)
+                  : "0";
+                return (
+                  <tr key={rec.id} className="border-b border-border/50">
+                    <td className="py-3 px-2">
+                      <div className="flex items-center gap-2">
+                        {rec.icon}
+                        <span className="font-medium">{rec.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-2">
+                      <Badge variant="outline" className="text-xs">
+                        {rec.model.provider === 'Lovable AI' ? '🟢' : '🔵'} {rec.model.name}
+                      </Badge>
+                    </td>
+                    <td className="text-center py-3 px-2">{rec.tokens.toLocaleString()}</td>
+                    <td className="text-right py-3 px-2">R$ {(rec.model.realCostPer1K * USD_TO_BRL).toFixed(4)}</td>
+                    <td className="text-right py-3 px-2 font-medium">
+                      R$ {(rec.costPerAnalysis * USD_TO_BRL).toFixed(4)}
+                    </td>
+                    <td className="text-right py-3 px-2">
+                      {idx < 2 ? (
+                        <Badge variant="secondary" className="bg-green-500/10 text-green-600">
+                          -{savings}%
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">Referência</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const AdminCosts = () => {
   const navigate = useNavigate();
@@ -564,7 +963,7 @@ const AdminCosts = () => {
 
         {/* Sub-Tabs */}
         <Tabs defaultValue="custos" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
             <TabsTrigger value="custos" className="flex items-center gap-2">
               <DollarSign className="w-4 h-4" />
               Custos Reais
@@ -576,6 +975,10 @@ const AdminCosts = () => {
             <TabsTrigger value="comparativos" className="flex items-center gap-2">
               <GitCompare className="w-4 h-4" />
               Comparativos
+            </TabsTrigger>
+            <TabsTrigger value="indicacao" className="flex items-center gap-2">
+              <Lightbulb className="w-4 h-4" />
+              Indicação
             </TabsTrigger>
           </TabsList>
 
@@ -1130,6 +1533,15 @@ const AdminCosts = () => {
                 })}
               </div>
             </div>
+          </TabsContent>
+
+          {/* TAB 4: Indicação do Sistema */}
+          <TabsContent value="indicacao" className="space-y-6">
+            <SystemRecommendationTab 
+              modelUsageStats={modelUsageStats} 
+              depthStats={depthStats}
+              hasRealData={hasRealData}
+            />
           </TabsContent>
         </Tabs>
       </main>
