@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -451,11 +451,65 @@ const AdminCosts = () => {
     : 0;
   const potentialSavings = totalDetailedAnalyses * avgDetailedCost * 0.8;
 
-  const depthEstimations = [
-    { depth: 'Critical', tokens: 10000, contextLabel: '10K' },
-    { depth: 'Balanced', tokens: 15000, contextLabel: '15K' },
-    { depth: 'Complete', tokens: 20000, contextLabel: '20K' },
-  ];
+  // Criar estimativas dinâmicas por profundidade e modelo usando dados reais
+  const depthModelEstimations = useMemo(() => {
+    const depths = ['critical', 'balanced', 'complete'];
+    const defaultTokens: Record<string, number> = { critical: 10000, balanced: 15000, complete: 20000 };
+    
+    // Extrair modelos únicos dos dados reais
+    const uniqueModels = modelUsageStats.map(m => ({
+      key: m.modelKey,
+      name: m.modelName,
+      provider: m.provider,
+      isEconomic: m.isEconomic,
+      realCostPer1K: m.count > 0 && m.avgTokens > 0 ? (m.avgCost / m.avgTokens) * 1000 : null,
+    }));
+    
+    // Se não houver dados reais, usar modelos padrão
+    if (uniqueModels.length === 0) {
+      return {
+        depths: depths.map(d => ({ 
+          depth: d, 
+          tokens: defaultTokens[d], 
+          label: d.charAt(0).toUpperCase() + d.slice(1) 
+        })),
+        models: [
+          { key: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Lovable AI', isEconomic: false, realCostPer1K: 0.00075 },
+          { key: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'Lovable AI', isEconomic: true, realCostPer1K: 0.000375 },
+        ],
+        data: [] as { depth: string; tokens: number; costs: Record<string, number> }[],
+      };
+    }
+
+    // Calcular tokens médios reais por profundidade
+    const realTokensByDepth: Record<string, number> = {};
+    depthStats.forEach(d => {
+      if (d.count > 0) realTokensByDepth[d.depth] = d.avgTokens;
+    });
+    
+    // Gerar dados por profundidade
+    const data = depths.map(depth => {
+      const tokens = realTokensByDepth[depth] || defaultTokens[depth];
+      const costs: Record<string, number> = {};
+      
+      uniqueModels.forEach(model => {
+        const costPer1K = model.realCostPer1K || 0.001;
+        costs[model.key] = (tokens / 1000) * costPer1K * USD_TO_BRL;
+      });
+      
+      return { depth, tokens, costs };
+    });
+    
+    return { 
+      depths: depths.map(d => ({ 
+        depth: d, 
+        tokens: realTokensByDepth[d] || defaultTokens[d],
+        label: d.charAt(0).toUpperCase() + d.slice(1) 
+      })),
+      models: uniqueModels, 
+      data 
+    };
+  }, [modelUsageStats, depthStats]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -635,47 +689,82 @@ const AdminCosts = () => {
               )}
             </div>
 
-            {/* Depth Cost Estimation */}
+            {/* Depth Cost Estimation - Dynamic Models */}
             <div className="p-6 bg-card border border-border rounded-xl">
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                 <Calculator className="w-5 h-5 text-blue-500" />
-                Estimativa por Profundidade
+                Estimativa por Profundidade (Todos os Modelos)
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Baseado em custo real: R$ {realCostPer1K.toFixed(4)}/1K tokens
+                Baseado em dados reais de uso. Modelos sem dados: estimativas teóricas.
               </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-2">Profundidade</th>
-                      <th className="text-right py-3 px-2">Contexto</th>
-                      <th className="text-right py-3 px-2"><Flame className="w-3 h-3 text-orange-500 inline mr-1" />Flash</th>
-                      <th className="text-right py-3 px-2"><Leaf className="w-3 h-3 text-green-500 inline mr-1" />Flash-Lite</th>
-                      <th className="text-right py-3 px-2">Economia</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {depthEstimations.map((d) => {
-                      const flashCost = (d.tokens / 1000) * realCostPer1K;
-                      const liteCost = flashCost * 0.2;
-                      return (
-                        <tr key={d.depth} className="border-b border-border/50">
-                          <td className="py-3 px-2">
-                            <Badge className={d.depth === 'Critical' ? 'bg-green-500/10 text-green-500' : d.depth === 'Balanced' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'}>
-                              {d.depth}
-                            </Badge>
-                          </td>
-                          <td className="text-right py-3 px-2 font-mono">{d.contextLabel} tokens</td>
-                          <td className="text-right py-3 px-2 font-medium text-orange-500">R$ {flashCost.toFixed(4)}</td>
-                          <td className="text-right py-3 px-2 font-medium text-green-500">R$ {liteCost.toFixed(4)}</td>
-                          <td className="text-right py-3 px-2"><Badge className="bg-green-500/10 text-green-500">80%</Badge></td>
+              {depthModelEstimations.models.length === 0 ? (
+                <p className="text-muted-foreground text-sm">Execute análises para ver estimativas por modelo.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-2">Profundidade</th>
+                        <th className="text-right py-3 px-2">Tokens</th>
+                        {depthModelEstimations.models.map(model => (
+                          <th key={model.key} className="text-right py-3 px-2">
+                            <div className="flex items-center justify-end gap-1">
+                              <Badge className={model.provider === 'OpenAI' ? 'bg-blue-500/10 text-blue-500 text-[10px]' : 'bg-green-500/10 text-green-500 text-[10px]'}>
+                                {model.provider === 'OpenAI' ? '🔵' : '🟢'}
+                              </Badge>
+                              <span className="text-xs">{model.name}</span>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {depthModelEstimations.data.map((row) => {
+                        const depthInfo = depthModelEstimations.depths.find(d => d.depth === row.depth);
+                        return (
+                          <tr key={row.depth} className="border-b border-border/50">
+                            <td className="py-3 px-2">
+                              <Badge className={row.depth === 'critical' ? 'bg-green-500/10 text-green-500' : row.depth === 'balanced' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'}>
+                                {depthInfo?.label}
+                              </Badge>
+                            </td>
+                            <td className="text-right py-3 px-2 font-mono text-xs">{row.tokens.toLocaleString()}</td>
+                            {depthModelEstimations.models.map(model => (
+                              <td key={model.key} className={`text-right py-3 px-2 font-medium ${model.isEconomic ? 'text-green-500' : 'text-orange-500'}`}>
+                                R$ {(row.costs[model.key] || 0).toFixed(4)}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                      {/* Economia row */}
+                      {depthModelEstimations.models.length > 1 && (
+                        <tr className="border-t-2 border-border bg-muted/20">
+                          <td colSpan={2} className="py-3 px-2 font-medium">Economia vs mais caro</td>
+                          {depthModelEstimations.models.map((model, idx) => {
+                            if (depthModelEstimations.data.length === 0) return <td key={model.key}>-</td>;
+                            const avgCost = depthModelEstimations.data.reduce((sum, row) => sum + (row.costs[model.key] || 0), 0) / depthModelEstimations.data.length;
+                            const maxCost = Math.max(...depthModelEstimations.models.map(m => 
+                              depthModelEstimations.data.reduce((sum, row) => sum + (row.costs[m.key] || 0), 0) / depthModelEstimations.data.length
+                            ));
+                            const savings = maxCost > 0 ? ((maxCost - avgCost) / maxCost) * 100 : 0;
+                            return (
+                              <td key={model.key} className="text-right py-3 px-2">
+                                {savings > 0 ? (
+                                  <Badge className="bg-green-500/10 text-green-500">{savings.toFixed(0)}%</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Charts Grid */}
