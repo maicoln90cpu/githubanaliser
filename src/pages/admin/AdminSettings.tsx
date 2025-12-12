@@ -74,6 +74,36 @@ const OPENAI_MODELS = {
   'gpt-4o-mini': { name: 'GPT-4o Mini', inputCost: 0.00015, outputCost: 0.0006 },
 };
 
+// Model options grouped by provider for depth configuration
+const MODEL_OPTIONS = [
+  { 
+    group: 'Lovable AI', 
+    badge: '🟢',
+    options: [
+      { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+      { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    ]
+  },
+  { 
+    group: 'OpenAI', 
+    badge: '🔵',
+    options: [
+      { value: 'openai/gpt-5-nano', label: 'GPT-5 Nano' },
+      { value: 'openai/gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+      { value: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
+      { value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+      { value: 'openai/o4-mini', label: 'O4 Mini' },
+      { value: 'openai/o3', label: 'O3' },
+      { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
+      { value: 'openai/gpt-5', label: 'GPT-5' },
+      { value: 'openai/gpt-4o', label: 'GPT-4o' },
+    ]
+  },
+];
+
 const AdminSettings = () => {
   const navigate = useNavigate();
   const { isAdmin, isLoading: adminLoading } = useAdmin();
@@ -842,10 +872,28 @@ const AdminSettings = () => {
                 </div>
                 <div>
                   <Label>Modelo</Label>
-                  <Input
-                    value={criticalConfig.model}
-                    onChange={(e) => setCriticalConfig(prev => ({ ...prev, model: e.target.value }))}
-                  />
+                  <Select 
+                    value={criticalConfig.model} 
+                    onValueChange={(value) => setCriticalConfig(prev => ({ ...prev, model: value }))}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione o modelo" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border z-50">
+                      {MODEL_OPTIONS.map((group) => (
+                        <div key={group.group}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                            {group.badge} {group.group}
+                          </div>
+                          {group.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {group.badge} {option.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
@@ -878,10 +926,28 @@ const AdminSettings = () => {
                 </div>
                 <div>
                   <Label>Modelo</Label>
-                  <Input
-                    value={balancedConfig.model}
-                    onChange={(e) => setBalancedConfig(prev => ({ ...prev, model: e.target.value }))}
-                  />
+                  <Select 
+                    value={balancedConfig.model} 
+                    onValueChange={(value) => setBalancedConfig(prev => ({ ...prev, model: value }))}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione o modelo" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border z-50">
+                      {MODEL_OPTIONS.map((group) => (
+                        <div key={group.group}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                            {group.badge} {group.group}
+                          </div>
+                          {group.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {group.badge} {option.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
@@ -914,10 +980,28 @@ const AdminSettings = () => {
                 </div>
                 <div>
                   <Label>Modelo</Label>
-                  <Input
-                    value={completeConfig.model}
-                    onChange={(e) => setCompleteConfig(prev => ({ ...prev, model: e.target.value }))}
-                  />
+                  <Select 
+                    value={completeConfig.model} 
+                    onValueChange={(value) => setCompleteConfig(prev => ({ ...prev, model: value }))}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione o modelo" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border z-50">
+                      {MODEL_OPTIONS.map((group) => (
+                        <div key={group.group}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                            {group.badge} {group.group}
+                          </div>
+                          {group.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {group.badge} {option.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
