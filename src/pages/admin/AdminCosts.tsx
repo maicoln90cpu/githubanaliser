@@ -418,40 +418,8 @@ const AdminCosts = () => {
     }
   };
 
-  if (adminLoading || loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  const dailyAvg = dailyUsage.length > 0 
-    ? dailyUsage.reduce((sum, d) => sum + d.analyses, 0) / dailyUsage.length 
-    : 0;
-  const monthlyProjection = dailyAvg * 30;
-  const monthlyProjectedCost = stats ? (stats.avgCostPerAnalysis * monthlyProjection) : 0;
-
-  const modePieData = modelUsageStats.map(m => ({
-    name: m.modelName,
-    value: m.count,
-    color: m.isEconomic ? MODE_COLORS['economic'] : MODE_COLORS['detailed'],
-  }));
-
-  const depthPieData = depthStats.filter(d => d.count > 0).map(d => ({
-    name: d.depth.charAt(0).toUpperCase() + d.depth.slice(1),
-    value: d.count,
-    color: DEPTH_COLORS[d.depth as keyof typeof DEPTH_COLORS],
-  }));
-
-  const detailedModels = modelUsageStats.filter(m => !m.isEconomic);
-  const totalDetailedAnalyses = detailedModels.reduce((sum, m) => sum + m.count, 0);
-  const avgDetailedCost = detailedModels.length > 0 
-    ? detailedModels.reduce((sum, m) => sum + m.totalCost, 0) / totalDetailedAnalyses 
-    : 0;
-  const potentialSavings = totalDetailedAnalyses * avgDetailedCost * 0.8;
-
   // Criar estimativas dinâmicas por profundidade e modelo usando dados reais
+  // MUST be before any early returns to avoid React hooks error
   const depthModelEstimations = useMemo(() => {
     const depths = ['critical', 'balanced', 'complete'];
     const defaultTokens: Record<string, number> = { critical: 10000, balanced: 15000, complete: 20000 };
@@ -510,6 +478,41 @@ const AdminCosts = () => {
       data 
     };
   }, [modelUsageStats, depthStats]);
+
+  // Early return AFTER useMemo hook
+  if (adminLoading || loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Derived calculations
+  const dailyAvg = dailyUsage.length > 0 
+    ? dailyUsage.reduce((sum, d) => sum + d.analyses, 0) / dailyUsage.length 
+    : 0;
+  const monthlyProjection = dailyAvg * 30;
+  const monthlyProjectedCost = stats ? (stats.avgCostPerAnalysis * monthlyProjection) : 0;
+
+  const modePieData = modelUsageStats.map(m => ({
+    name: m.modelName,
+    value: m.count,
+    color: m.isEconomic ? MODE_COLORS['economic'] : MODE_COLORS['detailed'],
+  }));
+
+  const depthPieData = depthStats.filter(d => d.count > 0).map(d => ({
+    name: d.depth.charAt(0).toUpperCase() + d.depth.slice(1),
+    value: d.count,
+    color: DEPTH_COLORS[d.depth as keyof typeof DEPTH_COLORS],
+  }));
+
+  const detailedModels = modelUsageStats.filter(m => !m.isEconomic);
+  const totalDetailedAnalyses = detailedModels.reduce((sum, m) => sum + m.count, 0);
+  const avgDetailedCost = detailedModels.length > 0 
+    ? detailedModels.reduce((sum, m) => sum + m.totalCost, 0) / totalDetailedAnalyses 
+    : 0;
+  const potentialSavings = totalDetailedAnalyses * avgDetailedCost * 0.8;
 
   return (
     <div className="min-h-screen bg-background">
