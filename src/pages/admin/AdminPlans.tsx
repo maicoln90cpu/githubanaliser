@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { 
-  Github, Home, Loader2, Crown, ArrowLeft, Zap, Scale, BarChart3,
+  Github, Loader2, Crown, ArrowLeft, Zap, Scale, BarChart3,
   AlertTriangle, TrendingUp, DollarSign, Calculator, Edit, Save, X, Leaf, Flame,
   Target, Info, HelpCircle, RefreshCw, CreditCard, Settings, Beaker, PiggyBank
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
+import { useRealModelCosts } from "@/hooks/useRealModelCosts";
+import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES } from "@/lib/modelCosts";
 import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -85,17 +87,16 @@ const PLAN_FEATURES = [
   { key: 'allow_economic_mode', name: 'Escolher Modo', description: 'Escolher entre modo econômico/detalhado' },
 ];
 
-const AI_MODELS = [
-  { id: 'gemini-flash-lite', provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', costPer1K: 0.000375, isEconomic: true },
-  { id: 'gemini-flash', provider: 'Lovable AI', name: 'Gemini 2.5 Flash', costPer1K: 0.00075, isEconomic: false },
-  { id: 'gemini-pro', provider: 'Lovable AI', name: 'Gemini 2.5 Pro', costPer1K: 0.01125, isEconomic: false },
-  { id: 'gpt-5-nano', provider: 'OpenAI', name: 'GPT-5 Nano', costPer1K: 0.00045, isEconomic: true },
-  { id: 'gpt-4o-mini', provider: 'OpenAI', name: 'GPT-4o Mini', costPer1K: 0.00075, isEconomic: true },
-  { id: 'gpt-5-mini', provider: 'OpenAI', name: 'GPT-5 Mini', costPer1K: 0.00225, isEconomic: false },
-].sort((a, b) => a.costPer1K - b.costPer1K);
+// Convert MODEL_COSTS to AI_MODELS format for compatibility
+const AI_MODELS = MODEL_COSTS.map(m => ({
+  id: m.id.replace('google/', '').replace('openai/', ''),
+  provider: m.provider,
+  name: m.name,
+  costPer1K: (m.inputPer1K + m.outputPer1K) / 2,
+  isEconomic: m.isEconomic || false,
+})).sort((a, b) => a.costPer1K - b.costPer1K);
 
 const PROJECT_COUNT_OPTIONS = [1, 5, 10, 20, 30, 50, 100];
-const USD_TO_BRL = 5.5;
 
 const AdminPlans = () => {
   const navigate = useNavigate();
@@ -351,11 +352,11 @@ const AdminPlans = () => {
   }, [selectedModelId, realCosts]);
 
   const simulatedCost = useMemo(() => {
-    const depthTokens = { critical: 8000, balanced: 15000, complete: 25000 };
+    // Use DEPTH_TOKEN_ESTIMATES from modelCosts.ts
     const weightedTokens = 
-      (depthDistribution.critical / 100) * depthTokens.critical +
-      (depthDistribution.balanced / 100) * depthTokens.balanced +
-      (depthDistribution.complete / 100) * depthTokens.complete;
+      (depthDistribution.critical / 100) * DEPTH_TOKEN_ESTIMATES.critical +
+      (depthDistribution.balanced / 100) * DEPTH_TOKEN_ESTIMATES.balanced +
+      (depthDistribution.complete / 100) * DEPTH_TOKEN_ESTIMATES.complete;
 
     // Usar custo real por 1K tokens do modelo selecionado
     const costPerAnalysis = (weightedTokens / 1000) * realModelCostPer1K;
@@ -369,13 +370,12 @@ const AdminPlans = () => {
     return modeWeightedCost * 8; // 8 análises por projeto
   }, [depthDistribution, modeDistribution, realModelCostPer1K, selectedModel]);
 
-  // Tokens simulados por projeto
+  // Tokens simulados por projeto - use DEPTH_TOKEN_ESTIMATES
   const simulatedTokens = useMemo(() => {
-    const depthTokens = { critical: 8000, balanced: 15000, complete: 25000 };
     const weightedTokens = 
-      (depthDistribution.critical / 100) * depthTokens.critical +
-      (depthDistribution.balanced / 100) * depthTokens.balanced +
-      (depthDistribution.complete / 100) * depthTokens.complete;
+      (depthDistribution.critical / 100) * DEPTH_TOKEN_ESTIMATES.critical +
+      (depthDistribution.balanced / 100) * DEPTH_TOKEN_ESTIMATES.balanced +
+      (depthDistribution.complete / 100) * DEPTH_TOKEN_ESTIMATES.complete;
     return weightedTokens * 8; // 8 análises por projeto
   }, [depthDistribution]);
 
