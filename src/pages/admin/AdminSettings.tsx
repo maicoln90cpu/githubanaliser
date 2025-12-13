@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -22,11 +22,13 @@ import {
   Cpu,
   CheckCircle2,
   Info,
-  ShieldAlert
+  ShieldAlert,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/hooks/useAuth";
+import { useRealModelCosts } from "@/hooks/useRealModelCosts";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -41,6 +43,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { MODEL_OPTIONS, MODEL_COSTS, USD_TO_BRL, getModelCost } from "@/lib/modelCosts";
 
 interface SystemSetting {
   key: string;
@@ -60,49 +63,16 @@ interface PlanDepthConfig {
   allowedDepths: string[];
 }
 
-// OpenAI models and costs (per 1K tokens) - Standard tier pricing
-const OPENAI_MODELS = {
-  'gpt-5': { name: 'GPT-5', inputCost: 0.00125, outputCost: 0.01 },
-  'gpt-5-mini': { name: 'GPT-5 Mini', inputCost: 0.00025, outputCost: 0.002 },
-  'gpt-5-nano': { name: 'GPT-5 Nano', inputCost: 0.00005, outputCost: 0.0004 },
-  'gpt-4.1': { name: 'GPT-4.1', inputCost: 0.002, outputCost: 0.008 },
-  'gpt-4.1-mini': { name: 'GPT-4.1 Mini', inputCost: 0.0004, outputCost: 0.0016 },
-  'gpt-4.1-nano': { name: 'GPT-4.1 Nano', inputCost: 0.0001, outputCost: 0.0004 },
-  'o3': { name: 'O3', inputCost: 0.002, outputCost: 0.008 },
-  'o4-mini': { name: 'O4 Mini', inputCost: 0.0011, outputCost: 0.0044 },
-  'gpt-4o': { name: 'GPT-4o', inputCost: 0.0025, outputCost: 0.01 },
-  'gpt-4o-mini': { name: 'GPT-4o Mini', inputCost: 0.00015, outputCost: 0.0006 },
-};
-
-// Model options grouped by provider for depth configuration
-const MODEL_OPTIONS = [
-  { 
-    group: 'Lovable AI', 
-    badge: '🟢',
-    options: [
-      { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-      { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
-    ]
-  },
-  { 
-    group: 'OpenAI', 
-    badge: '🔵',
-    options: [
-      { value: 'openai/gpt-5-nano', label: 'GPT-5 Nano' },
-      { value: 'openai/gpt-4.1-nano', label: 'GPT-4.1 Nano' },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-      { value: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
-      { value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-      { value: 'openai/o4-mini', label: 'O4 Mini' },
-      { value: 'openai/o3', label: 'O3' },
-      { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
-      { value: 'openai/gpt-5', label: 'GPT-5' },
-      { value: 'openai/gpt-4o', label: 'GPT-4o' },
-    ]
-  },
-];
+// OpenAI models and costs (per 1K tokens) - kept for backward compatibility display
+const OPENAI_MODELS = Object.fromEntries(
+  MODEL_COSTS
+    .filter(m => m.provider === 'OpenAI')
+    .map(m => [m.id.replace('openai/', ''), { 
+      name: m.name, 
+      inputCost: m.inputPer1K, 
+      outputCost: m.outputPer1K 
+    }])
+);
 
 const AdminSettings = () => {
   const navigate = useNavigate();
@@ -110,7 +80,11 @@ const AdminSettings = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<'economic' | 'detailed'>('detailed');
+  
+  // Real costs hook
+  const { getDepthCostBRL, hasRealData, loading: costsLoading } = useRealModelCosts();
   
   // AI Provider settings
   const [aiProvider, setAiProvider] = useState<'lovable' | 'openai'>('lovable');
@@ -128,6 +102,13 @@ const AdminSettings = () => {
   
   // Security settings
   const [signupLimitPerIp, setSignupLimitPerIp] = useState<number>(3);
+  
+  // Memoized cost estimates using real data
+  const depthCosts = useMemo(() => ({
+    critical: getDepthCostBRL('critical', criticalConfig.model),
+    balanced: getDepthCostBRL('balanced', balancedConfig.model),
+    complete: getDepthCostBRL('complete', completeConfig.model),
+  }), [criticalConfig.model, balancedConfig.model, completeConfig.model, getDepthCostBRL]);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -329,6 +310,45 @@ const AdminSettings = () => {
       toast.error("Erro ao salvar configuração");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Sync depth configurations to plans.config in the plans table
+  const syncDepthsToPlans = async () => {
+    setSyncing(true);
+    try {
+      // For each plan, update the config.allowed_depths
+      for (const pd of planDepths) {
+        const plan = plans.find(p => p.id === pd.planId);
+        if (!plan) continue;
+
+        const currentConfig = typeof plan.config === 'object' ? plan.config : {};
+        const newConfig = {
+          ...currentConfig,
+          allowed_depths: pd.allowedDepths,
+        };
+
+        await supabase
+          .from("plans")
+          .update({ config: newConfig })
+          .eq("id", pd.planId);
+      }
+
+      toast.success("Configurações sincronizadas com a tabela de planos");
+      
+      // Reload plans to reflect changes
+      const { data: plansData } = await supabase
+        .from("plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("price_monthly", { ascending: true });
+      
+      setPlans(plansData || []);
+    } catch (error) {
+      console.error("Erro ao sincronizar:", error);
+      toast.error("Erro ao sincronizar com planos");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -850,6 +870,18 @@ const AdminSettings = () => {
                 <div className="flex items-center gap-2">
                   <Badge className="bg-green-500/20 text-green-500">Critical</Badge>
                   <span className="text-sm text-muted-foreground">Análise rápida e econômica</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <Badge variant="outline" className="text-xs">
+                          {depthCosts.critical}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Custo estimado por análise (baseado em dados reais)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <Button 
                   size="sm" 
@@ -871,7 +903,12 @@ const AdminSettings = () => {
                   />
                 </div>
                 <div>
-                  <Label>Modelo</Label>
+                  <Label className="flex items-center gap-2">
+                    Modelo
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({depthCosts.critical}/análise)
+                    </span>
+                  </Label>
                   <Select 
                     value={criticalConfig.model} 
                     onValueChange={(value) => setCriticalConfig(prev => ({ ...prev, model: value }))}
@@ -904,6 +941,18 @@ const AdminSettings = () => {
                 <div className="flex items-center gap-2">
                   <Badge className="bg-blue-500/20 text-blue-500">Balanced</Badge>
                   <span className="text-sm text-muted-foreground">Equilíbrio entre custo e qualidade</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <Badge variant="outline" className="text-xs">
+                          {depthCosts.balanced}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Custo estimado por análise (baseado em dados reais)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <Button 
                   size="sm" 
@@ -925,7 +974,12 @@ const AdminSettings = () => {
                   />
                 </div>
                 <div>
-                  <Label>Modelo</Label>
+                  <Label className="flex items-center gap-2">
+                    Modelo
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({depthCosts.balanced}/análise)
+                    </span>
+                  </Label>
                   <Select 
                     value={balancedConfig.model} 
                     onValueChange={(value) => setBalancedConfig(prev => ({ ...prev, model: value }))}
@@ -958,6 +1012,18 @@ const AdminSettings = () => {
                 <div className="flex items-center gap-2">
                   <Badge className="bg-purple-500/20 text-purple-500">Complete</Badge>
                   <span className="text-sm text-muted-foreground">Análise completa e detalhada</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <Badge variant="outline" className="text-xs">
+                          {depthCosts.complete}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Custo estimado por análise (baseado em dados reais)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <Button 
                   size="sm" 
@@ -979,7 +1045,12 @@ const AdminSettings = () => {
                   />
                 </div>
                 <div>
-                  <Label>Modelo</Label>
+                  <Label className="flex items-center gap-2">
+                    Modelo
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({depthCosts.complete}/análise)
+                    </span>
+                  </Label>
                   <Select 
                     value={completeConfig.model} 
                     onValueChange={(value) => setCompleteConfig(prev => ({ ...prev, model: value }))}
@@ -1015,15 +1086,24 @@ const AdminSettings = () => {
               <Crown className="w-5 h-5 text-yellow-500" />
               <h2 className="text-xl font-semibold">Profundidades por Plano</h2>
             </div>
-            <Button 
-              onClick={savePlanDepths}
-              disabled={saving}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              Salvar Configurações
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                onClick={syncDepthsToPlans}
+                disabled={syncing}
+              >
+                {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                Sincronizar com Plans
+              </Button>
+              <Button 
+                onClick={savePlanDepths}
+                disabled={saving}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Salvar
+              </Button>
+            </div>
           </div>
-
           <div className="space-y-4">
             {planDepths.map((pd) => (
               <div key={pd.planId} className="p-4 bg-muted/30 rounded-lg">
@@ -1086,7 +1166,7 @@ const AdminSettings = () => {
                   </td>
                   <td className="text-right py-3 px-4">{criticalConfig.context.toLocaleString()}</td>
                   <td className="text-right py-3 px-4 text-xs font-mono">{criticalConfig.model.split('/')[1]}</td>
-                  <td className="text-right py-3 px-4 text-green-500">~R$ 0.01</td>
+                  <td className="text-right py-3 px-4 text-green-500">{depthCosts.critical}</td>
                 </tr>
                 <tr className="border-b border-border/50">
                   <td className="py-3 px-4">
@@ -1094,7 +1174,7 @@ const AdminSettings = () => {
                   </td>
                   <td className="text-right py-3 px-4">{balancedConfig.context.toLocaleString()}</td>
                   <td className="text-right py-3 px-4 text-xs font-mono">{balancedConfig.model.split('/')[1]}</td>
-                  <td className="text-right py-3 px-4">~R$ 0.03</td>
+                  <td className="text-right py-3 px-4 text-blue-500">{depthCosts.balanced}</td>
                 </tr>
                 <tr className="border-b border-border/50">
                   <td className="py-3 px-4">
@@ -1102,7 +1182,7 @@ const AdminSettings = () => {
                   </td>
                   <td className="text-right py-3 px-4">{completeConfig.context.toLocaleString()}</td>
                   <td className="text-right py-3 px-4 text-xs font-mono">{completeConfig.model.split('/')[1]}</td>
-                  <td className="text-right py-3 px-4">~R$ 0.08</td>
+                  <td className="text-right py-3 px-4 text-purple-500">{depthCosts.complete}</td>
                 </tr>
               </tbody>
             </table>
