@@ -20,17 +20,19 @@ import { useAuth } from "@/hooks/useAuth";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-interface Analysis {
+interface VersionInfo {
+  id: string;
+  depth_level: string | null;
+  model_used: string | null;
+  created_at: string;
+  tokens_estimated: number | null;
+}
+
+interface AnalysisContent {
   id: string;
   content: string;
   type: string;
   created_at: string;
-}
-
-interface VersionInfo {
-  depth_level: string | null;
-  model_used: string | null;
-  created_at: string | null;
 }
 
 const depthLabels: Record<string, { label: string; icon: typeof Zap; className: string }> = {
@@ -56,8 +58,8 @@ const AnalysisComparison = () => {
   
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState("");
-  const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [versions, setVersions] = useState<VersionInfo[]>([]);
+  const [analysisContent, setAnalysisContent] = useState<AnalysisContent | null>(null);
   const [selectedV1, setSelectedV1] = useState<number>(0);
   const [selectedV2, setSelectedV2] = useState<number>(1);
 
@@ -77,43 +79,37 @@ const AnalysisComparison = () => {
         .from("projects")
         .select("name")
         .eq("id", projectId)
-        .single();
+        .maybeSingle();
       
       if (project) setProjectName(project.name);
 
-      // Load all analyses of this type for this project
-      const { data: analysesData } = await supabase
-        .from("analyses")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("type", analysisType)
-        .order("created_at", { ascending: false });
-
-      // Load version info from usage - match by analysis dates
-      const { data: usageData } = await supabase
+      // Load versions from analysis_usage (source of truth for multiple versions)
+      const { data: usageData, error: usageError } = await supabase
         .from("analysis_usage")
-        .select("depth_level, model_used, created_at")
+        .select("id, depth_level, model_used, created_at, tokens_estimated")
         .eq("project_id", projectId)
         .eq("analysis_type", analysisType)
         .order("created_at", { ascending: false });
 
-      // Match analyses with their usage info by creation time proximity
-      const enrichedVersions: VersionInfo[] = (analysesData || []).map(analysis => {
-        // Find usage entry with closest timestamp
-        const usage = usageData?.find(u => {
-          if (!u.created_at || !analysis.created_at) return false;
-          const diff = Math.abs(new Date(u.created_at).getTime() - new Date(analysis.created_at).getTime());
-          return diff < 60000; // Within 1 minute
-        });
-        return {
-          depth_level: usage?.depth_level || null,
-          model_used: usage?.model_used || null,
-          created_at: analysis.created_at
-        };
-      });
+      if (usageError) {
+        console.error("Error loading usage data:", usageError);
+        toast.error("Erro ao carregar versões");
+        setLoading(false);
+        return;
+      }
 
-      setAnalyses(analysesData || []);
-      setVersions(enrichedVersions);
+      // Load the analysis content (single record with latest content)
+      const { data: analysisData } = await supabase
+        .from("analyses")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("type", analysisType)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setVersions(usageData || []);
+      setAnalysisContent(analysisData);
 
       // Set initial selections from URL params
       if (version1Param) setSelectedV1(parseInt(version1Param));
@@ -131,13 +127,56 @@ const AnalysisComparison = () => {
     const version = versions[index];
     if (!version) return `Versão ${index + 1}`;
     
-    const depth = version.depth_level ? depthLabels[version.depth_level]?.label : "";
+    const depth = version.depth_level ? depthLabels[version.depth_level]?.label : "—";
     const mode = version.model_used?.includes("lite") ? "Econômico" : "Detalhado";
     const date = version.created_at 
-      ? new Date(version.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+      ? new Date(version.created_at).toLocaleDateString("pt-BR", { 
+          day: "2-digit", 
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        })
       : "";
     
     return `${depth} • ${mode} • ${date}`;
+  };
+
+  const getVersionContent = (index: number): string => {
+    // Since analyses table only stores the latest version,
+    // we show metadata about each version but note that content is the same
+    // In a future improvement, we could store full content per version
+    const version = versions[index];
+    if (!version) return "Conteúdo não disponível";
+    
+    // If this is the most recent version (index 0), show the actual content
+    if (index === 0 && analysisContent) {
+      return analysisContent.content;
+    }
+    
+    // For older versions, show metadata since we don't have the old content
+    const depth = version.depth_level ? depthLabels[version.depth_level]?.label : "Desconhecido";
+    const mode = version.model_used?.includes("lite") ? "Econômico" : "Detalhado";
+    const tokens = version.tokens_estimated || 0;
+    const date = version.created_at 
+      ? new Date(version.created_at).toLocaleString("pt-BR")
+      : "Data desconhecida";
+
+    return `## ⚠️ Conteúdo não disponível
+
+Esta é uma versão anterior da análise. O sistema atualmente armazena apenas o conteúdo da versão mais recente.
+
+### Informações desta versão:
+
+| Propriedade | Valor |
+|-------------|-------|
+| **Profundidade** | ${depth} |
+| **Modo** | ${mode} |
+| **Tokens usados** | ${tokens.toLocaleString("pt-BR")} |
+| **Data de criação** | ${date} |
+
+---
+
+*Para comparar conteúdos completos, gere uma nova análise com configurações diferentes.*`;
   };
 
   if (loading || authLoading) {
@@ -148,7 +187,7 @@ const AnalysisComparison = () => {
     );
   }
 
-  if (analyses.length < 2) {
+  if (versions.length < 2) {
     return (
       <div className="min-h-screen bg-background">
         <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-50">
@@ -168,6 +207,10 @@ const AnalysisComparison = () => {
           <h2 className="text-2xl font-bold mb-2">Comparação não disponível</h2>
           <p className="text-muted-foreground mb-6">
             É necessário ter pelo menos 2 versões da análise para comparar.
+            <br />
+            <span className="text-sm">
+              Atualmente existem {versions.length} versão(ões) registrada(s).
+            </span>
           </p>
           <Button onClick={() => navigate(`/projeto/${projectId}`)}>
             Voltar para o Projeto
@@ -177,8 +220,6 @@ const AnalysisComparison = () => {
     );
   }
 
-  const analysis1 = analyses[selectedV1];
-  const analysis2 = analyses[selectedV2];
   const version1 = versions[selectedV1];
   const version2 = versions[selectedV2];
 
@@ -210,6 +251,7 @@ const AnalysisComparison = () => {
           <div className="flex items-center gap-3 mb-2">
             <GitCompare className="w-8 h-8 text-primary" />
             <h1 className="text-2xl font-bold">Comparar Versões</h1>
+            <Badge variant="secondary">{versions.length} versões</Badge>
           </div>
           <p className="text-muted-foreground">{projectName}</p>
         </div>
@@ -276,7 +318,7 @@ const AnalysisComparison = () => {
           <div className="bg-card border border-border rounded-xl p-6 max-h-[70vh] overflow-y-auto">
             <div className="prose prose-slate dark:prose-invert max-w-none prose-sm">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {analysis1?.content || "Conteúdo não disponível"}
+                {getVersionContent(selectedV1)}
               </ReactMarkdown>
             </div>
           </div>
@@ -284,7 +326,7 @@ const AnalysisComparison = () => {
           <div className="bg-card border border-border rounded-xl p-6 max-h-[70vh] overflow-y-auto">
             <div className="prose prose-slate dark:prose-invert max-w-none prose-sm">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {analysis2?.content || "Conteúdo não disponível"}
+                {getVersionContent(selectedV2)}
               </ReactMarkdown>
             </div>
           </div>
