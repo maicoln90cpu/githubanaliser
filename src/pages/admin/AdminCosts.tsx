@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { 
   Github, 
-  Home, 
   Loader2, 
   DollarSign,
   Users,
@@ -33,6 +32,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
+import { useRealModelCosts } from "@/hooks/useRealModelCosts";
+import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostBRL } from "@/lib/modelCosts";
 import {
   Table,
   TableBody,
@@ -120,7 +121,6 @@ interface PlanData {
   max_tokens_monthly: number | null;
 }
 
-const USD_TO_BRL = 5.5;
 const COST_PER_ANALYSIS = 0.002;
 
 const DEPTH_COLORS = {
@@ -147,29 +147,16 @@ const ANALYSIS_TYPES_PT: Record<string, string> = {
   'qualidade': 'Qualidade de Código',
 };
 
-const ALL_MODELS = [
-  { provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', inputPer1M: 0.075, outputPer1M: 0.30, costPer1K: 0.000375 },
-  { provider: 'Lovable AI', name: 'Gemini 2.5 Flash', inputPer1M: 0.15, outputPer1M: 0.60, costPer1K: 0.00075 },
-  { provider: 'Lovable AI', name: 'Gemini 2.5 Pro', inputPer1M: 1.25, outputPer1M: 10.00, costPer1K: 0.01125 },
-  { provider: 'OpenAI', name: 'GPT-5 Nano', inputPer1M: 0.05, outputPer1M: 0.40, costPer1K: 0.00045 },
-  { provider: 'OpenAI', name: 'GPT-4.1 Nano', inputPer1M: 0.10, outputPer1M: 0.40, costPer1K: 0.0005 },
-  { provider: 'OpenAI', name: 'GPT-4o Mini', inputPer1M: 0.15, outputPer1M: 0.60, costPer1K: 0.00075 },
-  { provider: 'OpenAI', name: 'GPT-5 Mini', inputPer1M: 0.25, outputPer1M: 2.00, costPer1K: 0.00225 },
-  { provider: 'OpenAI', name: 'GPT-4.1 Mini', inputPer1M: 0.40, outputPer1M: 1.60, costPer1K: 0.002 },
-  { provider: 'OpenAI', name: 'O4 Mini', inputPer1M: 1.10, outputPer1M: 4.40, costPer1K: 0.0055 },
-  { provider: 'OpenAI', name: 'O3', inputPer1M: 2.00, outputPer1M: 8.00, costPer1K: 0.01 },
-  { provider: 'OpenAI', name: 'GPT-4.1', inputPer1M: 2.00, outputPer1M: 8.00, costPer1K: 0.01 },
-  { provider: 'OpenAI', name: 'GPT-5', inputPer1M: 1.25, outputPer1M: 10.00, costPer1K: 0.01125 },
-  { provider: 'OpenAI', name: 'GPT-4o', inputPer1M: 2.50, outputPer1M: 10.00, costPer1K: 0.0125 },
-].sort((a, b) => a.costPer1K - b.costPer1K);
+// Convert MODEL_COSTS to ALL_MODELS format for compatibility
+const ALL_MODELS = MODEL_COSTS.map(m => ({
+  provider: m.provider,
+  name: m.name,
+  inputPer1M: m.inputPer1K * 1000,
+  outputPer1M: m.outputPer1K * 1000,
+  costPer1K: (m.inputPer1K + m.outputPer1K) / 2,
+})).sort((a, b) => a.costPer1K - b.costPer1K);
 
 const RANKING_BADGES = ['🥇', '🥈', '🥉'];
-
-const DEFAULT_TOKENS_BY_DEPTH: Record<string, number> = {
-  critical: 10000,
-  balanced: 15000,
-  complete: 20000
-};
 
 // System Recommendation Tab Component
 interface SystemRecommendationTabProps {
@@ -184,7 +171,7 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
   const [modeFilter, setModeFilter] = useState<string>("all");
   const [savingConfig, setSavingConfig] = useState<string | null>(null);
 
-  // Get real costs from usage or fallback to ALL_MODELS
+  // Get real costs from usage or fallback to MODEL_COSTS
   const modelsWithRealCosts = useMemo(() => {
     const realCostsByModel: Record<string, { costPer1K: number; avgTokens: number; count: number }> = {};
     
@@ -219,10 +206,10 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
     return models.sort((a, b) => a.realCostPer1K - b.realCostPer1K);
   }, [modelsWithRealCosts, providerFilter]);
 
-  // Get depth tokens (real or default)
+  // Get depth tokens (real or default) - use DEPTH_TOKEN_ESTIMATES from modelCosts
   const getDepthTokens = (depth: string) => {
     const realDepth = depthStats.find(d => d.depth === depth);
-    return realDepth?.avgTokens || DEFAULT_TOKENS_BY_DEPTH[depth] || 15000;
+    return realDepth?.avgTokens || DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000;
   };
 
   // Calculate recommendation profiles
@@ -929,7 +916,7 @@ const AdminCosts = () => {
               Voltar
             </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-              <Home className="w-4 h-4 mr-2" />
+              <BarChart3 className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
           </div>
