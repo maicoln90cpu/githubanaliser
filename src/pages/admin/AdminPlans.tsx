@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -351,12 +351,21 @@ const AdminPlans = () => {
     return modelData?.avgTokens || 0;
   }, [selectedModelId, realCosts]);
 
+  // Get real depth tokens from database or fallback to DEPTH_TOKEN_ESTIMATES
+  const getRealDepthTokens = useCallback((depth: 'critical' | 'balanced' | 'complete'): number => {
+    const realDepth = realCosts?.byDepth?.[depth];
+    if (realDepth && realDepth.avgTokens > 0) {
+      return realDepth.avgTokens;
+    }
+    return DEPTH_TOKEN_ESTIMATES[depth];
+  }, [realCosts]);
+
   const simulatedCost = useMemo(() => {
-    // Use DEPTH_TOKEN_ESTIMATES from modelCosts.ts
+    // Use real depth tokens when available, fallback to DEPTH_TOKEN_ESTIMATES
     const weightedTokens = 
-      (depthDistribution.critical / 100) * DEPTH_TOKEN_ESTIMATES.critical +
-      (depthDistribution.balanced / 100) * DEPTH_TOKEN_ESTIMATES.balanced +
-      (depthDistribution.complete / 100) * DEPTH_TOKEN_ESTIMATES.complete;
+      (depthDistribution.critical / 100) * getRealDepthTokens('critical') +
+      (depthDistribution.balanced / 100) * getRealDepthTokens('balanced') +
+      (depthDistribution.complete / 100) * getRealDepthTokens('complete');
 
     // Usar custo real por 1K tokens do modelo selecionado
     const costPerAnalysis = (weightedTokens / 1000) * realModelCostPer1K;
@@ -368,16 +377,16 @@ const AdminPlans = () => {
       (modeDistribution.economic / 100) * costPerAnalysis * economicDiscount;
 
     return modeWeightedCost * 8; // 8 análises por projeto
-  }, [depthDistribution, modeDistribution, realModelCostPer1K, selectedModel]);
+  }, [depthDistribution, modeDistribution, realModelCostPer1K, selectedModel, getRealDepthTokens]);
 
-  // Tokens simulados por projeto - use DEPTH_TOKEN_ESTIMATES
+  // Tokens simulados por projeto - use real depth tokens when available
   const simulatedTokens = useMemo(() => {
     const weightedTokens = 
-      (depthDistribution.critical / 100) * DEPTH_TOKEN_ESTIMATES.critical +
-      (depthDistribution.balanced / 100) * DEPTH_TOKEN_ESTIMATES.balanced +
-      (depthDistribution.complete / 100) * DEPTH_TOKEN_ESTIMATES.complete;
+      (depthDistribution.critical / 100) * getRealDepthTokens('critical') +
+      (depthDistribution.balanced / 100) * getRealDepthTokens('balanced') +
+      (depthDistribution.complete / 100) * getRealDepthTokens('complete');
     return weightedTokens * 8; // 8 análises por projeto
-  }, [depthDistribution]);
+  }, [depthDistribution, getRealDepthTokens]);
 
   const getMarginColor = (margin: number) => {
     if (margin >= 50) return 'text-green-500';
@@ -768,7 +777,10 @@ const AdminPlans = () => {
                         const margin = revenue > 0 ? ((revenue - maxCostBRL) / revenue) * 100 : -100;
                         const suggestedPrice = maxCostBRL / (1 - targetMargin / 100);
                         const tokensPerProject = simulatedTokens;
-                        const projectsWithLimit = tokensPerProject > 0 ? Math.floor(maxTokens / tokensPerProject) : 0;
+                        // Projetos com decimal (ex: 0.8 projetos)
+                        const projectsDecimal = tokensPerProject > 0 ? maxTokens / tokensPerProject : 0;
+                        // Análises estimadas (8 análises por projeto)
+                        const analysesEstimated = tokensPerProject > 0 ? Math.floor(maxTokens / (tokensPerProject / 8)) : 0;
                         
                         return (
                           <div key={plan.id} className="p-3 bg-background rounded border">
@@ -785,9 +797,27 @@ const AdminPlans = () => {
                                 <span>Custo máx ({(maxTokens/1000).toFixed(0)}K tokens):</span>
                                 <span>R$ {maxCostBRL.toFixed(2)}</span>
                               </div>
+                              <div className="flex justify-between items-center">
+                                <span className="flex items-center gap-1">
+                                  Projetos estimados:
+                                  {projectsDecimal < 1 && projectsDecimal > 0 && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger>
+                                          <HelpCircle className="w-3 h-3 text-muted-foreground" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs max-w-48">Com a profundidade atual, o limite de tokens não é suficiente para 1 projeto completo (8 análises). Considere aumentar o limite ou usar profundidade menor.</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
+                                </span>
+                                <span className="font-mono">{projectsDecimal.toFixed(1)}</span>
+                              </div>
                               <div className="flex justify-between">
-                                <span>Projetos estimados:</span>
-                                <span className="font-mono">{projectsWithLimit}</span>
+                                <span>Análises estimadas:</span>
+                                <span className="font-mono text-primary">{analysesEstimated}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Preço sugerido ({targetMargin}%):</span>

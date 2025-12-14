@@ -121,7 +121,7 @@ interface PlanData {
   max_tokens_monthly: number | null;
 }
 
-const COST_PER_ANALYSIS = 0.002;
+// Removed hardcoded COST_PER_ANALYSIS - using real data from analysis_usage
 
 const DEPTH_COLORS = {
   'critical': 'hsl(142, 76%, 36%)',
@@ -206,10 +206,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
     return models.sort((a, b) => a.realCostPer1K - b.realCostPer1K);
   }, [modelsWithRealCosts, providerFilter]);
 
-  // Get depth tokens (real or default) - use DEPTH_TOKEN_ESTIMATES from modelCosts
-  const getDepthTokens = (depth: string) => {
+  // Get depth tokens (real or default) - prioritize real data from depthStats
+  const getDepthTokens = (depth: string): number => {
     const realDepth = depthStats.find(d => d.depth === depth);
-    return realDepth?.avgTokens || DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000;
+    if (realDepth && realDepth.avgTokens > 0) {
+      return realDepth.avgTokens;
+    }
+    return DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000;
   };
 
   // Calculate recommendation profiles
@@ -609,10 +612,11 @@ const AdminCosts = () => {
       const hasRealUsageData = usageData && usageData.length > 0;
       setHasRealData(hasRealUsageData);
       
-      const estimatedTotalCost = hasRealUsageData ? realTotalCost : (totalAnalyses || 0) * COST_PER_ANALYSIS;
+      // Use real data when available, fallback to 0 when no data (not hardcoded estimate)
+      const estimatedTotalCost = realTotalCost;
       const avgCostPerAnalysis = totalAnalyses && totalAnalyses > 0 
         ? estimatedTotalCost / totalAnalyses 
-        : COST_PER_ANALYSIS;
+        : 0;
       const avgCostPerUser = totalUsers > 0 ? estimatedTotalCost / totalUsers : 0;
 
       setStats({
@@ -807,8 +811,9 @@ const AdminCosts = () => {
   // Criar estimativas dinâmicas por profundidade e modelo usando dados reais
   // MUST be before any early returns to avoid React hooks error
   const depthModelEstimations = useMemo(() => {
-    const depths = ['critical', 'balanced', 'complete'];
-    const defaultTokens: Record<string, number> = { critical: 10000, balanced: 15000, complete: 20000 };
+    const depths = ['critical', 'balanced', 'complete'] as const;
+    // Use DEPTH_TOKEN_ESTIMATES as default fallback
+    const defaultTokens = DEPTH_TOKEN_ESTIMATES;
     
     // Extrair modelos únicos dos dados reais
     const uniqueModels = modelUsageStats.map(m => ({
@@ -1508,7 +1513,7 @@ const AdminCosts = () => {
                 {[100, 500, 1000].map(users => {
                   const avgAnalysesPerUser = 5;
                   const avgTypesPerAnalysis = 7;
-                  const costPerUser = avgAnalysesPerUser * avgTypesPerAnalysis * (stats?.avgCostPerAnalysis || COST_PER_ANALYSIS) * USD_TO_BRL;
+                  const costPerUser = avgAnalysesPerUser * avgTypesPerAnalysis * (stats?.avgCostPerAnalysis || 0) * USD_TO_BRL;
                   const totalCost = users * costPerUser;
                   return (
                     <div key={users} className="p-4 bg-muted/30 rounded-lg">
