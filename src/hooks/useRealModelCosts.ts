@@ -31,6 +31,7 @@ export interface UseRealModelCostsResult {
   getEstimatedCostBRL: (modelId: string, tokens?: number) => string;
   getDepthCost: (depth: 'critical' | 'balanced' | 'complete', modelId: string) => number;
   getDepthCostBRL: (depth: 'critical' | 'balanced' | 'complete', modelId: string) => string;
+  getRealDepthTokens: (depth: 'critical' | 'balanced' | 'complete') => number;
   
   refresh: () => Promise<void>;
 }
@@ -155,16 +156,23 @@ export function useRealModelCosts(): UseRealModelCostsResult {
     return `R$ ${costBRL.toFixed(2)}`;
   }, [getEstimatedCost]);
 
+  // Get real depth tokens from database, fallback to DEPTH_TOKEN_ESTIMATES
+  const getRealDepthTokens = useCallback((depth: 'critical' | 'balanced' | 'complete'): number => {
+    const realDepth = depthStats.find(d => d.depth === depth);
+    if (realDepth && realDepth.avgTokens > 0) {
+      return realDepth.avgTokens;
+    }
+    return DEPTH_TOKEN_ESTIMATES[depth];
+  }, [depthStats]);
+
   // Get depth cost estimate for a model
   const getDepthCost = useCallback((
     depth: 'critical' | 'balanced' | 'complete', 
     modelId: string
   ): number => {
-    // First try to get real average tokens for this depth
-    const realDepth = depthStats.find(d => d.depth === depth);
-    const tokens = realDepth?.avgTokens || DEPTH_TOKEN_ESTIMATES[depth];
+    const tokens = getRealDepthTokens(depth);
     return getEstimatedCost(modelId, tokens);
-  }, [depthStats, getEstimatedCost]);
+  }, [getRealDepthTokens, getEstimatedCost]);
 
   // Get depth cost formatted as BRL
   const getDepthCostBRL = useCallback((
@@ -189,6 +197,7 @@ export function useRealModelCosts(): UseRealModelCostsResult {
     getEstimatedCostBRL,
     getDepthCost,
     getDepthCostBRL,
+    getRealDepthTokens,
     refresh: fetchRealCosts,
   };
 }
