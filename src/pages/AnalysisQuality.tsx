@@ -5,11 +5,13 @@ const AnalysisQuality = () => {
   return (
     <AnalysisPageLayout
       type="quality"
-      title="Qualidade de Código"
+      title="Qualidade & Ferramentas"
       icon={Activity}
       iconColor="text-emerald-500"
       iconBgColor="bg-emerald-500/10"
       prevRoute={{ path: "/prompts-otimizados", label: "Prompts Otimizados" }}
+      nextRoute={{ path: "/performance", label: "Performance & Observabilidade" }}
+      legacyTypes={["ferramentas"]}
     />
   );
 };
