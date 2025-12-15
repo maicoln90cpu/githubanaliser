@@ -43,6 +43,7 @@ const ProjectChat = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,6 +52,12 @@ const ProjectChat = () => {
       if (!id) return;
 
       try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserId(user.id);
+        }
+
         const { data, error } = await supabase
           .from("projects")
           .select("id, name, github_url, github_data")
@@ -102,6 +109,7 @@ const ProjectChat = () => {
           projectId: project.id,
           message: userMessage,
           history: messages.slice(-10), // Last 10 messages for context
+          userId: userId, // Pass userId for rate limiting
           projectContext: {
             name: project.name,
             github_url: project.github_url,
@@ -112,7 +120,34 @@ const ProjectChat = () => {
         }
       });
 
-      if (response.error) throw response.error;
+      if (response.error) {
+        // Check for rate limit error
+        const errorData = response.error as any;
+        if (errorData?.status === 429 || response.data?.rateLimit) {
+          const rateLimit = response.data?.rateLimit;
+          const retryMinutes = rateLimit?.retryAfterSeconds 
+            ? Math.ceil(rateLimit.retryAfterSeconds / 60) 
+            : 5;
+          toast.error(`Limite de mensagens excedido. Tente novamente em ${retryMinutes} minutos.`);
+          setMessages(prev => [...prev, { 
+            role: "assistant", 
+            content: `⚠️ Você atingiu o limite de mensagens por hora. Por favor, aguarde alguns minutos antes de enviar novas perguntas.\n\n💡 **Dica:** Enquanto aguarda, você pode revisar as análises existentes do projeto.` 
+          }]);
+          return;
+        }
+        throw response.error;
+      }
+
+      // Check if response contains rate limit error
+      if (response.data?.error && response.data?.rateLimit) {
+        const retryMinutes = Math.ceil(response.data.rateLimit.retryAfterSeconds / 60);
+        toast.error(`Limite de mensagens excedido. Tente novamente em ${retryMinutes} minutos.`);
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: `⚠️ Você atingiu o limite de mensagens por hora. Por favor, aguarde alguns minutos antes de enviar novas perguntas.` 
+        }]);
+        return;
+      }
 
       const assistantMessage = response.data?.response || "Desculpe, não consegui processar sua pergunta.";
       setMessages(prev => [...prev, { role: "assistant", content: assistantMessage }]);

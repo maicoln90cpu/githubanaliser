@@ -55,6 +55,11 @@ const DEFAULT_USER_PROMPT = `Analise o seguinte conteúdo e extraia TODOS os ite
 
 Retorne usando a função extract_implementation_items com os itens encontrados.`;
 
+// Rate limit configuration
+const RATE_LIMITS = {
+  'generate-implementation-plan': { maxRequests: 10, windowMinutes: 60 },
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -86,6 +91,48 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // ===== RATE LIMITING =====
+    const rateLimit = RATE_LIMITS['generate-implementation-plan'];
+    const { data: rateLimitResult, error: rateLimitError } = await supabase
+      .rpc('check_rate_limit', {
+        p_user_id: user.id,
+        p_endpoint: 'generate-implementation-plan',
+        p_max_requests: rateLimit.maxRequests,
+        p_window_minutes: rateLimit.windowMinutes
+      });
+
+    if (rateLimitError) {
+      console.error("[generate-implementation-plan] Rate limit check error:", rateLimitError);
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.log(`[generate-implementation-plan] Rate limited user ${user.id}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+      return new Response(
+        JSON.stringify({
+          error: "Limite de requisições excedido",
+          message: `Você atingiu o limite de ${rateLimit.maxRequests} planos de implementação por hora. Tente novamente em ${Math.ceil(rateLimitResult.retry_after_seconds / 60)} minutos.`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.reset_at,
+            retryAfterSeconds: rateLimitResult.retry_after_seconds
+          }
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "X-RateLimit-Limit": String(rateLimitResult.limit),
+            "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+            "X-RateLimit-Reset": rateLimitResult.reset_at,
+            "Retry-After": String(rateLimitResult.retry_after_seconds)
+          }
+        }
+      );
+    } else if (rateLimitResult) {
+      console.log(`[generate-implementation-plan] Rate limit OK for user ${user.id}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+    }
+    // ===== END RATE LIMITING =====
 
     const { projectId, analysisTypes, title }: RequestBody = await req.json();
 

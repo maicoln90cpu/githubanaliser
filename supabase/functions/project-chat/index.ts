@@ -34,13 +34,18 @@ Diretrizes:
 - Use markdown para formatar suas respostas
 - Seja amigável e prestativo`;
 
+// Rate limit configuration
+const RATE_LIMITS = {
+  'project-chat': { maxRequests: 50, windowMinutes: 60 },
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { projectId, message, history, projectContext } = await req.json();
+    const { projectId, message, history, projectContext, userId } = await req.json();
 
     if (!message || !projectContext) {
       return new Response(
@@ -58,6 +63,50 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ===== RATE LIMITING =====
+    if (userId) {
+      const rateLimit = RATE_LIMITS['project-chat'];
+      const { data: rateLimitResult, error: rateLimitError } = await supabase
+        .rpc('check_rate_limit', {
+          p_user_id: userId,
+          p_endpoint: 'project-chat',
+          p_max_requests: rateLimit.maxRequests,
+          p_window_minutes: rateLimit.windowMinutes
+        });
+
+      if (rateLimitError) {
+        console.error("[project-chat] Rate limit check error:", rateLimitError);
+      } else if (rateLimitResult && !rateLimitResult.allowed) {
+        console.log(`[project-chat] Rate limited user ${userId}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+        return new Response(
+          JSON.stringify({
+            error: "Limite de mensagens excedido",
+            message: `Você atingiu o limite de ${rateLimit.maxRequests} mensagens por hora. Tente novamente em ${Math.ceil(rateLimitResult.retry_after_seconds / 60)} minutos.`,
+            rateLimit: {
+              limit: rateLimitResult.limit,
+              remaining: rateLimitResult.remaining,
+              resetAt: rateLimitResult.reset_at,
+              retryAfterSeconds: rateLimitResult.retry_after_seconds
+            }
+          }),
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "X-RateLimit-Limit": String(rateLimitResult.limit),
+              "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+              "X-RateLimit-Reset": rateLimitResult.reset_at,
+              "Retry-After": String(rateLimitResult.retry_after_seconds)
+            }
+          }
+        );
+      } else if (rateLimitResult) {
+        console.log(`[project-chat] Rate limit OK for user ${userId}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+      }
+    }
+    // ===== END RATE LIMITING =====
 
     let systemPromptTemplate = DEFAULT_SYSTEM_PROMPT;
 

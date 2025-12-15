@@ -393,6 +393,33 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limits: {
+        Row: {
+          created_at: string
+          endpoint: string
+          id: string
+          requests_count: number
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          endpoint: string
+          id?: string
+          requests_count?: number
+          user_id: string
+          window_start?: string
+        }
+        Update: {
+          created_at?: string
+          endpoint?: string
+          id?: string
+          requests_count?: number
+          user_id?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       signup_attempts: {
         Row: {
           blocked: boolean | null
@@ -555,10 +582,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_rate_limit: {
+        Args: {
+          p_endpoint: string
+          p_max_requests?: number
+          p_user_id: string
+          p_window_minutes?: number
+        }
+        Returns: Json
+      }
       check_signup_abuse: {
         Args: { p_ip_address: string; p_max_attempts?: number }
         Returns: boolean
       }
+      cleanup_rate_limits: { Args: never; Returns: number }
       get_dashboard_data: { Args: { p_user_id: string }; Returns: Json }
       get_user_daily_usage: { Args: { p_user_id: string }; Returns: number }
       get_user_monthly_usage: { Args: { p_user_id: string }; Returns: number }
