@@ -60,24 +60,22 @@ interface Plan {
   stripe_price_id: string | null;
 }
 
-const ANALYSIS_TYPES = [
-  { key: 'prd', name: 'Análise PRD' },
-  { key: 'divulgacao', name: 'Marketing & Lançamento' },
-  { key: 'captacao', name: 'Pitch para Investidores' },
-  { key: 'seguranca', name: 'Melhorias de Segurança' },
-  { key: 'ui_theme', name: 'Melhorias UI/Theme' },
-  { key: 'ferramentas', name: 'Melhorias de Ferramentas' },
-  { key: 'features', name: 'Novas Features' },
-  { key: 'documentacao', name: 'Documentação Técnica' },
-  { key: 'prompts', name: 'Prompts Otimizados' },
-  { key: 'qualidade', name: 'Qualidade de Código' },
-];
+// Import centralized definitions
+import { 
+  getAnalysisTypesForSelect, 
+  getDepthLevelsForSelect,
+  ANALYSIS_TYPES,
+  DEPTH_LEVEL_DEFINITIONS 
+} from "@/lib/analysisTypes";
 
-const DEPTH_LEVELS = [
-  { key: 'critical', name: 'Crítico', icon: Zap, color: 'text-yellow-500' },
-  { key: 'balanced', name: 'Balanceado', icon: Scale, color: 'text-blue-500' },
-  { key: 'complete', name: 'Completo', icon: BarChart3, color: 'text-purple-500' },
-];
+const ANALYSIS_TYPES_LIST = getAnalysisTypesForSelect();
+
+const DEPTH_LEVELS = getDepthLevelsForSelect().map(d => ({
+  key: d.key,
+  name: d.name,
+  icon: d.key === 'critical' ? Zap : d.key === 'balanced' ? Scale : BarChart3,
+  color: d.color,
+}));
 
 const PLAN_FEATURES = [
   { key: 'can_export_pdf', name: 'Exportação PDF', description: 'Exportar análises em PDF' },
@@ -1063,7 +1061,7 @@ const AdminPlans = () => {
               <div className="space-y-2">
                 <Label>Tipos de Análise Permitidos</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {ANALYSIS_TYPES.map(type => (
+                  {ANALYSIS_TYPES_LIST.map(type => (
                     <label key={type.key} className="flex items-center gap-2 text-sm">
                       <Checkbox
                         checked={editingPlan.config?.allowed_analysis_types?.includes(type.key)}

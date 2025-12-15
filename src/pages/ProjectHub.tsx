@@ -7,13 +7,6 @@ import {
   Github, 
   Home, 
   Loader2, 
-  FileText, 
-  Megaphone, 
-  DollarSign, 
-  Shield, 
-  Palette, 
-  Sparkles,
-  BookOpen,
   ExternalLink,
   CheckCircle,
   Clock,
@@ -22,19 +15,23 @@ import {
   Zap,
   Scale,
   BarChart3,
-  Flame,
-  Leaf,
   Layers,
   GitCompare,
-  Terminal,
-  Activity,
   LayoutDashboard,
   MessageSquare,
   ClipboardList,
-  Gauge
+  Flame,
+  Leaf
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { 
+  ANALYSIS_TYPES, 
+  DEPTH_LEVEL_DEFINITIONS,
+  getAnalysisTypesArray,
+  type AnalysisTypeSlug,
+  type DepthLevel 
+} from "@/lib/analysisTypes";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,113 +72,22 @@ interface AnalysisVersion {
   mode: 'detailed' | 'economic';
 }
 
-const analysisTypes = [
-  { 
-    type: "prd", 
-    title: "Análise PRD", 
-    description: "Documento de requisitos do produto",
-    icon: FileText, 
-    color: "bg-blue-500",
-    textColor: "text-blue-500",
-    bgColor: "bg-blue-500/10",
-    route: "/analise-prd"
-  },
-  { 
-    type: "divulgacao", 
-    title: "Marketing & Lançamento", 
-    description: "Estratégias de marketing e comunicação",
-    icon: Megaphone, 
-    color: "bg-purple-500",
-    textColor: "text-purple-500",
-    bgColor: "bg-purple-500/10",
-    route: "/plano-divulgacao"
-  },
-  { 
-    type: "captacao", 
-    title: "Pitch para Investidores", 
-    description: "Estratégias de investimento e recursos",
-    icon: DollarSign, 
-    color: "bg-green-500",
-    textColor: "text-green-500",
-    bgColor: "bg-green-500/10",
-    route: "/plano-captacao"
-  },
-  { 
-    type: "seguranca", 
-    title: "Melhorias de Segurança", 
-    description: "Vulnerabilidades e proteção de dados",
-    icon: Shield, 
-    color: "bg-red-500",
-    textColor: "text-red-500",
-    bgColor: "bg-red-500/10",
-    route: "/melhorias-seguranca"
-  },
-  { 
-    type: "ui_theme", 
-    title: "Melhorias UI/Theme", 
-    description: "Design e experiência do usuário",
-    icon: Palette, 
-    color: "bg-pink-500",
-    textColor: "text-pink-500",
-    bgColor: "bg-pink-500/10",
-    route: "/melhorias-ui"
-  },
-  { 
-    type: "features", 
-    title: "Novas Features", 
-    description: "Sugestões de evolução do produto",
-    icon: Sparkles, 
-    color: "bg-yellow-500",
-    textColor: "text-yellow-500",
-    bgColor: "bg-yellow-500/10",
-    route: "/novas-features"
-  },
-  { 
-    type: "documentacao", 
-    title: "Documentação Técnica", 
-    description: "README, API Reference e guias",
-    icon: BookOpen, 
-    color: "bg-cyan-500",
-    textColor: "text-cyan-500",
-    bgColor: "bg-cyan-500/10",
-    route: "/documentacao-tecnica"
-  },
-  { 
-    type: "prompts", 
-    title: "Prompts Otimizados", 
-    description: "Prompts prontos para desenvolvimento",
-    icon: Terminal, 
-    color: "bg-violet-500",
-    textColor: "text-violet-500",
-    bgColor: "bg-violet-500/10",
-    route: "/prompts-otimizados"
-  },
-  { 
-    type: "quality", 
-    title: "Qualidade & Ferramentas", 
-    description: "Qualidade de código, DX e tooling",
-    icon: Activity, 
-    color: "bg-emerald-500",
-    textColor: "text-emerald-500",
-    bgColor: "bg-emerald-500/10",
-    route: "/qualidade-codigo"
-  },
-  { 
-    type: "performance", 
-    title: "Performance & Observabilidade", 
-    description: "Velocidade, logs e monitoramento",
-    icon: Gauge, 
-    color: "bg-amber-500",
-    textColor: "text-amber-500",
-    bgColor: "bg-amber-500/10",
-    route: "/performance"
-  },
-];
+// Use centralized definitions
+const analysisTypes = getAnalysisTypesArray().map(type => ({
+  type: type.slug,
+  title: type.title,
+  description: type.description,
+  icon: type.icon,
+  color: type.color,
+  textColor: type.textColor,
+  bgColor: type.bgColor,
+  route: type.route,
+}));
 
 const depthBadges: Record<string, { label: string; icon: typeof Zap; className: string }> = {
-  critical: { label: "Crítico", icon: Zap, className: "bg-orange-500/10 text-orange-500 border-orange-500/20" },
-  balanced: { label: "Balanceado", icon: Scale, className: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
-  complete: { label: "Completo", icon: BarChart3, className: "bg-green-500/10 text-green-500 border-green-500/20" },
+  critical: { label: "Crítico", icon: Zap, className: DEPTH_LEVEL_DEFINITIONS.critical.badgeClass },
+  balanced: { label: "Balanceado", icon: Scale, className: DEPTH_LEVEL_DEFINITIONS.balanced.badgeClass },
+  complete: { label: "Completo", icon: BarChart3, className: DEPTH_LEVEL_DEFINITIONS.complete.badgeClass },
 };
 
 const ProjectHub = () => {

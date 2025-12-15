@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { ANALYSIS_TYPES, ANALYSIS_TYPE_SLUGS, type AnalysisTypeSlug } from "@/lib/analysisTypes";
 
 interface Step {
   id: string;
@@ -21,21 +22,30 @@ interface QueueItem {
   error_message?: string;
 }
 
-const allSteps: Step[] = [
-  { id: "connect", label: "Conectando ao GitHub", status: "pending" },
-  { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
-  { id: "prd", label: "Gerando análise PRD", status: "pending", analysisType: "prd" },
-  { id: "divulgacao", label: "Criando plano de marketing", status: "pending", analysisType: "divulgacao" },
-  { id: "captacao", label: "Criando pitch para investidores", status: "pending", analysisType: "captacao" },
-  { id: "seguranca", label: "Analisando segurança", status: "pending", analysisType: "seguranca" },
-  { id: "ui", label: "Sugerindo melhorias visuais", status: "pending", analysisType: "ui_theme" },
-  { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
-  { id: "documentacao", label: "Gerando documentação técnica", status: "pending", analysisType: "documentacao" },
-  { id: "prompts", label: "Gerando prompts otimizados", status: "pending", analysisType: "prompts" },
-  { id: "quality", label: "Analisando qualidade do código", status: "pending", analysisType: "quality" },
-  { id: "performance", label: "Analisando performance", status: "pending", analysisType: "performance" },
-  { id: "complete", label: "Finalizando análise", status: "pending" },
-];
+// Build steps dynamically from centralized definitions
+const buildAllSteps = (): Step[] => {
+  const steps: Step[] = [
+    { id: "connect", label: "Conectando ao GitHub", status: "pending" },
+    { id: "structure", label: "Extraindo estrutura do projeto", status: "pending" },
+  ];
+  
+  // Add analysis steps from centralized definitions
+  for (const slug of ANALYSIS_TYPE_SLUGS) {
+    const type = ANALYSIS_TYPES[slug];
+    steps.push({
+      id: slug,
+      label: type.stepLabel,
+      status: "pending",
+      analysisType: slug,
+    });
+  }
+  
+  steps.push({ id: "complete", label: "Finalizando análise", status: "pending" });
+  
+  return steps;
+};
+
+const allSteps = buildAllSteps();
 
 const Analyzing = () => {
   const [searchParams] = useSearchParams();
