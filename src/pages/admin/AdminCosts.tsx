@@ -21,7 +21,8 @@ import {
   Lightbulb,
   CheckCircle2,
   Rocket,
-  Scale
+  Scale,
+  Info
 } from "lucide-react";
 import {
   Select,
@@ -207,13 +208,25 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
   }, [modelsWithRealCosts, providerFilter]);
 
   // Get depth tokens (real or default) - prioritize real data from depthStats
-  const getDepthTokens = (depth: string): number => {
+  // Returns both tokens and sample count for data quality indicator
+  const getDepthTokensWithCount = (depth: string): { tokens: number; count: number; isReal: boolean } => {
     const realDepth = depthStats.find(d => d.depth === depth);
     if (realDepth && realDepth.avgTokens > 0) {
-      return realDepth.avgTokens;
+      return { tokens: realDepth.avgTokens, count: realDepth.count, isReal: true };
     }
-    return DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000;
+    return { 
+      tokens: DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000, 
+      count: 0, 
+      isReal: false 
+    };
   };
+
+  const getDepthTokens = (depth: string): number => {
+    return getDepthTokensWithCount(depth).tokens;
+  };
+
+  // Check if depth filter is active (affects comparison mode)
+  const isDepthFilterActive = depthFilter !== "all";
 
   // Calculate recommendation profiles
   const recommendations = useMemo(() => {
@@ -241,23 +254,30 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
     if (modelsForEconomic.length === 0) modelsForEconomic = filteredModels;
     if (modelsForPerformance.length === 0) modelsForPerformance = filteredModels;
 
-    // Mais Econômico - cheapest model + critical depth
+    // CORREÇÃO: Quando filtro de depth está ativo, todos usam mesma depth MAS modelos diferentes
+    // Quando filtro de depth NÃO está ativo, cada perfil usa sua depth padrão
+    
+    // Mais Econômico - cheapest model
     const economicModel = modelsForEconomic[0];
     const economicDepth = selectedDepth || "critical";
-    const economicTokens = getDepthTokens(economicDepth);
+    const economicDepthData = getDepthTokensWithCount(economicDepth);
+    const economicTokens = economicDepthData.tokens;
     const economicCostPerAnalysis = (economicTokens / 1000) * economicModel.realCostPer1K;
 
-    // Equilibrado - balanced model + balanced depth
+    // Equilibrado - middle model
+    // CORREÇÃO: Quando depth filter ativo, usa a MESMA depth para comparar MODELOS
     const balancedIndex = Math.floor(filteredModels.length / 2);
     const balancedModel = filteredModels[balancedIndex] || filteredModels[0];
-    const balancedDepth = selectedDepth || "balanced";
-    const balancedTokens = getDepthTokens(balancedDepth);
+    const balancedDepth = selectedDepth || "balanced"; // Usa depth selecionada se filtro ativo
+    const balancedDepthData = getDepthTokensWithCount(balancedDepth);
+    const balancedTokens = balancedDepthData.tokens;
     const balancedCostPerAnalysis = (balancedTokens / 1000) * balancedModel.realCostPer1K;
 
-    // Melhor Performance - most powerful model + complete depth
+    // Melhor Performance - most powerful model
     const performanceModel = modelsForPerformance[modelsForPerformance.length - 1];
-    const performanceDepth = selectedDepth || "complete";
-    const performanceTokens = getDepthTokens(performanceDepth);
+    const performanceDepth = selectedDepth || "complete"; // Usa depth selecionada se filtro ativo
+    const performanceDepthData = getDepthTokensWithCount(performanceDepth);
+    const performanceTokens = performanceDepthData.tokens;
     const performanceCostPerAnalysis = (performanceTokens / 1000) * performanceModel.realCostPer1K;
 
     return [
@@ -270,9 +290,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
         depth: economicDepth,
         mode: "Econômico",
         tokens: economicTokens,
+        sampleCount: economicDepthData.count,
+        isRealData: economicDepthData.isReal,
         costPerAnalysis: economicCostPerAnalysis,
         costPer100: economicCostPerAnalysis * 100,
-        description: "Menor custo possível mantendo qualidade básica"
+        description: selectedDepth 
+          ? `Modelo mais barato para profundidade ${selectedDepth}` 
+          : "Menor custo possível mantendo qualidade básica"
       },
       {
         id: "balanced",
@@ -283,9 +307,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
         depth: balancedDepth,
         mode: "Balanceado",
         tokens: balancedTokens,
+        sampleCount: balancedDepthData.count,
+        isRealData: balancedDepthData.isReal,
         costPerAnalysis: balancedCostPerAnalysis,
         costPer100: balancedCostPerAnalysis * 100,
-        description: "Melhor relação custo-benefício"
+        description: selectedDepth 
+          ? `Modelo intermediário para profundidade ${selectedDepth}` 
+          : "Melhor relação custo-benefício"
       },
       {
         id: "performance",
@@ -296,9 +324,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
         depth: performanceDepth,
         mode: "Detalhado",
         tokens: performanceTokens,
+        sampleCount: performanceDepthData.count,
+        isRealData: performanceDepthData.isReal,
         costPerAnalysis: performanceCostPerAnalysis,
         costPer100: performanceCostPerAnalysis * 100,
-        description: "Máxima qualidade e profundidade"
+        description: selectedDepth 
+          ? `Modelo premium para profundidade ${selectedDepth}` 
+          : "Máxima qualidade e profundidade"
       }
     ];
   }, [filteredModels, depthFilter, modeFilter, depthStats]);
@@ -428,6 +460,14 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
               </div>
             </div>
 
+            {/* Data Quality Indicator */}
+            {rec.sampleCount > 0 && rec.sampleCount < 10 && (
+              <div className="flex items-center gap-2 p-2 mb-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <span className="text-xs text-amber-600">Poucos dados ({rec.sampleCount} amostras)</span>
+              </div>
+            )}
+
             {/* Config Details */}
             <div className="space-y-3 mb-4">
               <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
@@ -445,8 +485,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
                 <Badge variant="outline" className="text-xs capitalize">{rec.depth}</Badge>
               </div>
               <div className="flex justify-between items-center p-2 bg-background/50 rounded-lg">
-                <span className="text-sm text-muted-foreground">Modo</span>
-                <span className="text-sm">{rec.mode}</span>
+                <span className="text-sm text-muted-foreground">Tokens/Análise</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-medium">{rec.tokens.toLocaleString()}</span>
+                  {!rec.isRealData && (
+                    <span className="text-xs text-muted-foreground">(est.)</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -486,13 +531,33 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
 
       {/* Comparison Table */}
       <div className="p-6 bg-card border border-border rounded-xl">
-        <h4 className="font-semibold mb-4">Comparativo de Custos</h4>
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-semibold">Comparativo de Custos</h4>
+          {isDepthFilterActive && (
+            <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600">
+              Comparando modelos na profundidade {depthFilter}
+            </Badge>
+          )}
+        </div>
+        
+        {/* Nota explicativa quando filtro de depth está ativo */}
+        {isDepthFilterActive && (
+          <div className="flex items-start gap-2 p-3 mb-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+            <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+            <p className="text-xs text-muted-foreground">
+              Com filtro de profundidade ativo, todos os perfis usam <strong>{depthFilter}</strong> ({recommendations[0]?.tokens.toLocaleString()} tokens). 
+              A comparação foca na diferença entre <strong>modelos de IA</strong>.
+            </p>
+          </div>
+        )}
+        
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left py-2 px-2">Perfil</th>
                 <th className="text-left py-2 px-2">Modelo</th>
+                <th className="text-center py-2 px-2">Profundidade</th>
                 <th className="text-center py-2 px-2">Tokens/Análise</th>
                 <th className="text-right py-2 px-2">Custo/1K</th>
                 <th className="text-right py-2 px-2">Custo/Análise</th>
@@ -511,6 +576,11 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
                       <div className="flex items-center gap-2">
                         {rec.icon}
                         <span className="font-medium">{rec.name}</span>
+                        {rec.sampleCount > 0 && rec.sampleCount < 10 && (
+                          <span title={`${rec.sampleCount} amostras`}>
+                            <AlertTriangle className="w-3 h-3 text-amber-500" />
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-2">
@@ -518,7 +588,17 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
                         {rec.model.provider === 'Lovable AI' ? '🟢' : '🔵'} {rec.model.name}
                       </Badge>
                     </td>
-                    <td className="text-center py-3 px-2">{rec.tokens.toLocaleString()}</td>
+                    <td className="text-center py-3 px-2">
+                      <Badge variant="secondary" className="text-xs capitalize">{rec.depth}</Badge>
+                    </td>
+                    <td className="text-center py-3 px-2">
+                      <div className="flex items-center justify-center gap-1">
+                        <span>{rec.tokens.toLocaleString()}</span>
+                        {!rec.isRealData && (
+                          <span className="text-xs text-muted-foreground">(est.)</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="text-right py-3 px-2">R$ {(rec.model.realCostPer1K * USD_TO_BRL).toFixed(4)}</td>
                     <td className="text-right py-3 px-2 font-medium">
                       R$ {(rec.costPerAnalysis * USD_TO_BRL).toFixed(4)}
