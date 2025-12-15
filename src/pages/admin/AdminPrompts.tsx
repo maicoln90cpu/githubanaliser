@@ -93,6 +93,56 @@ const ACTIVE_ANALYSIS_TYPES = [
 // Deprecated types (still shown if exist in DB, but marked as legacy)
 const DEPRECATED_ANALYSIS_TYPES = ['ferramentas'];
 
+// Token estimation (approx 4 chars per token)
+const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+
+// Ideal ranges for prompts
+const PROMPT_IDEAL_RANGES = {
+  system_prompt: { minChars: 800, maxChars: 2000, label: '800-2.000 chars' },
+  user_prompt: { minChars: 500, maxChars: 1500, label: '500-1.500 chars' }
+};
+
+// Get status indicator based on char count vs ideal
+const getPromptStatus = (chars: number, type: 'system_prompt' | 'user_prompt'): { 
+  emoji: string; 
+  label: string; 
+  color: string 
+} => {
+  const range = PROMPT_IDEAL_RANGES[type];
+  if (chars === 0) return { emoji: '⚪', label: 'Vazio', color: 'text-muted-foreground' };
+  if (chars < range.minChars * 0.5) return { emoji: '🔴', label: 'Muito curto', color: 'text-red-500' };
+  if (chars < range.minChars) return { emoji: '🟡', label: 'Curto', color: 'text-yellow-500' };
+  if (chars > range.maxChars * 1.5) return { emoji: '🔴', label: 'Muito longo', color: 'text-red-500' };
+  if (chars > range.maxChars) return { emoji: '🟡', label: 'Longo', color: 'text-yellow-500' };
+  return { emoji: '🟢', label: 'Na média', color: 'text-green-500' };
+};
+
+// Prompt Metrics Component
+const PromptMetrics = ({ text, type, label }: { 
+  text: string; 
+  type: 'system_prompt' | 'user_prompt'; 
+  label: string 
+}) => {
+  const chars = text.length;
+  const tokens = estimateTokens(text);
+  const status = getPromptStatus(chars, type);
+  const ideal = PROMPT_IDEAL_RANGES[type];
+
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <p className="text-sm font-medium">
+        {chars.toLocaleString()} chars <span className="text-muted-foreground">(~{tokens.toLocaleString()} tokens)</span>
+      </p>
+      <div className="flex items-center gap-1.5 text-xs">
+        <span>{status.emoji}</span>
+        <span className={status.color}>{status.label}</span>
+        <span className="text-muted-foreground">• ideal: {ideal.label}</span>
+      </div>
+    </div>
+  );
+};
+
 const ANALYSIS_ICONS: Record<string, React.ReactNode> = {
   prd: <FileText className="w-5 h-5" />,
   divulgacao: <Target className="w-5 h-5" />,
@@ -423,24 +473,29 @@ const AdminPrompts = () => {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <Label className="text-xs text-muted-foreground">System Prompt</Label>
-                            <p className="text-sm text-muted-foreground truncate">
-                              {prompt.system_prompt.substring(0, 100)}...
-                            </p>
-                            <span className="text-xs text-muted-foreground">
-                              {prompt.system_prompt.length.toLocaleString()} chars
-                            </span>
-                          </div>
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <PromptMetrics 
+                            text={prompt.system_prompt} 
+                            type="system_prompt" 
+                            label="System Prompt" 
+                          />
+                          <PromptMetrics 
+                            text={prompt.user_prompt_template} 
+                            type="user_prompt" 
+                            label="User Prompt Template" 
+                          />
                           <div>
                             <Label className="text-xs text-muted-foreground">Variáveis</Label>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {prompt.variables_hint.map((v, i) => (
-                                <Badge key={i} variant="secondary" className="text-xs">
-                                  {`{{${v}}}`}
-                                </Badge>
-                              ))}
+                              {prompt.variables_hint.length > 0 ? (
+                                prompt.variables_hint.map((v, i) => (
+                                  <Badge key={i} variant="secondary" className="text-xs">
+                                    {`{{${v}}}`}
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Nenhuma</span>
+                              )}
                             </div>
                           </div>
                         </div>
