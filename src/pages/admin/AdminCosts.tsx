@@ -399,10 +399,13 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
         <div className="flex items-center gap-3 mb-2">
           <Lightbulb className="w-5 h-5 text-amber-500" />
           <h3 className="font-semibold">Recomendações Inteligentes</h3>
+          <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+            Usa Mediana
+          </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
           O sistema analisa seus dados de uso e sugere configurações otimizadas para diferentes objetivos.
-          {hasRealData ? " Cálculos baseados em dados reais do sistema." : " Usando estimativas - execute análises para dados mais precisos."}
+          {hasRealData ? " Cálculos baseados em dados reais do sistema usando mediana (proteção contra outliers)." : " Usando estimativas - execute análises para dados mais precisos."}
         </p>
       </div>
 
@@ -809,27 +812,47 @@ const AdminCosts = () => {
         .sort((a, b) => b.totalCost - a.totalCost);
       setModelUsageStats(modelUsageData);
 
-      // Depth statistics
-      const depthMap = new Map<string, { count: number; tokens: number; cost: number }>();
+      // Depth statistics - using MEDIAN instead of MEAN to protect against outliers
+      const depthTokenArrays = new Map<string, number[]>();
+      const depthCostArrays = new Map<string, number[]>();
+      
       usageData?.forEach(u => {
         const depth = u.depth_level || 'complete';
-        const existing = depthMap.get(depth) || { count: 0, tokens: 0, cost: 0 };
-        depthMap.set(depth, {
-          count: existing.count + 1,
-          tokens: existing.tokens + (u.tokens_estimated || 0),
-          cost: existing.cost + Number(u.cost_estimated || 0),
-        });
+        const tokens = u.tokens_estimated || 0;
+        const cost = Number(u.cost_estimated || 0);
+        
+        if (!depthTokenArrays.has(depth)) {
+          depthTokenArrays.set(depth, []);
+          depthCostArrays.set(depth, []);
+        }
+        
+        if (tokens > 0) {
+          depthTokenArrays.get(depth)!.push(tokens);
+          depthCostArrays.get(depth)!.push(cost);
+        }
       });
 
+      // Function to calculate median
+      const calculateMedian = (arr: number[]): number => {
+        if (arr.length === 0) return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0
+          ? sorted[mid]
+          : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+      };
+
       const depthStatsData: DepthStats[] = ['critical', 'balanced', 'complete'].map(d => {
-        const data = depthMap.get(d);
-        if (data && data.count > 0) {
+        const tokenArr = depthTokenArrays.get(d) || [];
+        const costArr = depthCostArrays.get(d) || [];
+        
+        if (tokenArr.length > 0) {
           return {
             depth: d,
-            count: data.count,
-            avgTokens: Math.round(data.tokens / data.count),
-            avgCost: data.cost / data.count,
-            totalCost: data.cost,
+            count: tokenArr.length,
+            avgTokens: calculateMedian(tokenArr), // Using MEDIAN instead of mean
+            avgCost: calculateMedian(costArr),
+            totalCost: costArr.reduce((sum, c) => sum + c, 0),
           };
         }
         return { depth: d, count: 0, avgTokens: 0, avgCost: 0, totalCost: 0 };
