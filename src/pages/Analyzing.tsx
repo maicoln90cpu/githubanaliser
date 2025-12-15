@@ -64,6 +64,12 @@ const Analyzing = () => {
   const hasCompletedRef = useRef(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Stale detection refs
+  const staleStartTimeRef = useRef<number | null>(null);
+  const lastProgressRef = useRef<number>(0);
+  const pollFailCountRef = useRef<number>(0);
+  const globalTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const githubUrl = searchParams.get("url");
   const existingProjectId = searchParams.get("projectId");
   const analysisTypesParam = searchParams.get("analysisTypes");
@@ -115,9 +121,24 @@ const Analyzing = () => {
     return `~${Math.ceil(remainingMs / 60000)}min`;
   }, [startTime]);
 
-  // Process next item in queue
+  // Process next item in queue with stale detection
   const processNextQueueItem = useCallback(async (projId: string) => {
-    if (isProcessingRef.current || hasCompletedRef.current) return;
+    if (hasCompletedRef.current) return;
+
+    // If processing for too long, reset the flag
+    if (isProcessingRef.current) {
+      pollFailCountRef.current += 1;
+      console.log(`[Polling] Processing flag still true, fail count: ${pollFailCountRef.current}`);
+      
+      // After 3 consecutive fails (6 seconds), force reset
+      if (pollFailCountRef.current >= 3) {
+        console.log("[Polling] Forcing isProcessingRef reset after consecutive fails");
+        isProcessingRef.current = false;
+        pollFailCountRef.current = 0;
+      } else {
+        return;
+      }
+    }
 
     try {
       // Get pending queue items
@@ -129,18 +150,44 @@ const Analyzing = () => {
 
       if (queueError) {
         console.error("[Queue] Erro ao buscar fila:", queueError);
+        pollFailCountRef.current += 1;
         return;
       }
+
+      // Reset fail count on successful query
+      pollFailCountRef.current = 0;
 
       const pendingItems = queueItems?.filter(item => item.status === "pending") || [];
       const completedItems = queueItems?.filter(item => item.status === "completed") || [];
       const processingItems = queueItems?.filter(item => item.status === "processing") || [];
-      const errorItems = queueItems?.filter(item => item.status === "error") || [];
       const totalItems = queueItems?.length || 0;
 
       // Update progress
       const completedCount = completedItems.length;
-      const progressPercent = Math.round(((completedCount + 2) / (totalItems + 3)) * 100); // +2 for connect/structure, +3 for total
+      const progressPercent = Math.round(((completedCount + 2) / (totalItems + 3)) * 100);
+      
+      // Stale detection: check if progress hasn't changed
+      if (progressPercent === lastProgressRef.current && progressPercent < 100) {
+        if (!staleStartTimeRef.current) {
+          staleStartTimeRef.current = Date.now();
+          console.log(`[Polling] Progress stale at ${progressPercent}%, starting timer`);
+        } else {
+          const staleTime = Date.now() - staleStartTimeRef.current;
+          if (staleTime > 30000) {
+            console.log(`[Polling] Progress stale for ${staleTime}ms, forcing refresh`);
+            staleStartTimeRef.current = null;
+            isProcessingRef.current = false;
+          }
+        }
+      } else {
+        // Progress changed, reset stale timer
+        if (staleStartTimeRef.current) {
+          console.log(`[Polling] Progress changed to ${progressPercent}%, resetting stale timer`);
+        }
+        staleStartTimeRef.current = null;
+        lastProgressRef.current = progressPercent;
+      }
+      
       setProgress(progressPercent);
       setEstimatedTimeRemaining(calculateTimeRemaining(completedCount, totalItems));
 
@@ -170,6 +217,7 @@ const Analyzing = () => {
       if (pendingItems.length === 0 && processingItems.length === 0) {
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true;
+          console.log("[Polling] All items completed, navigating to project");
           
           // Update project status
           await supabase
@@ -187,13 +235,14 @@ const Analyzing = () => {
         return;
       }
 
-      // If something is already processing, wait
+      // If something is already processing in the database, just wait
       if (processingItems.length > 0) {
         setCurrentAnalysisType(processingItems[0].analysis_type);
+        console.log(`[Polling] Item ${processingItems[0].analysis_type} still processing in DB`);
         return;
       }
 
-      // Process next pending item
+      // Process next pending item with timeout
       if (pendingItems.length > 0) {
         isProcessingRef.current = true;
         const nextItem = pendingItems[0];
@@ -202,13 +251,18 @@ const Analyzing = () => {
         console.log(`[Queue] Processando: ${nextItem.analysis_type}`);
         
         try {
+          // Create AbortController for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+          
           const { data, error } = await supabase.functions.invoke("process-single-analysis", {
             body: { queueItemId: nextItem.id }
           });
+          
+          clearTimeout(timeoutId);
 
           if (error) {
             console.error(`[Queue] Erro ao processar ${nextItem.analysis_type}:`, error);
-            // Continue to next item even if this one fails
           } else {
             console.log(`[Queue] Concluído: ${nextItem.analysis_type}`);
           }
@@ -221,14 +275,23 @@ const Analyzing = () => {
     } catch (error) {
       console.error("[Queue] Erro geral:", error);
       isProcessingRef.current = false;
+      pollFailCountRef.current += 1;
     }
   }, [calculateTimeRemaining, navigate]);
 
-  // Poll and process queue
+  // Poll and process queue with global timeout
   useEffect(() => {
     if (!projectId || hasCompletedRef.current) return;
 
-    // Initial check
+    console.log(`[Polling] Starting polling for project ${projectId}`);
+    
+    // Reset refs when starting new polling session
+    staleStartTimeRef.current = null;
+    lastProgressRef.current = 0;
+    pollFailCountRef.current = 0;
+    isProcessingRef.current = false;
+
+    // Initial check immediately
     processNextQueueItem(projectId);
 
     // Poll every 2 seconds
@@ -236,12 +299,25 @@ const Analyzing = () => {
       processNextQueueItem(projectId);
     }, 2000);
 
+    // Global timeout: 10 minutes max for entire analysis
+    globalTimeoutRef.current = setTimeout(() => {
+      console.log("[Polling] Global timeout reached (10 minutes)");
+      if (!hasCompletedRef.current) {
+        toast.error("Análise demorou muito tempo. Verifique o status no projeto.");
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        navigate(`/projeto/${projectId}`);
+      }
+    }, 600000); // 10 minutes
+
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
+      if (globalTimeoutRef.current) {
+        clearTimeout(globalTimeoutRef.current);
+      }
     };
-  }, [projectId, processNextQueueItem]);
+  }, [projectId, processNextQueueItem, navigate]);
 
   // Start analysis - handles both new analysis and ProjectHub flow
   useEffect(() => {
