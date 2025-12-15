@@ -214,8 +214,14 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
     if (realDepth && realDepth.avgTokens > 0) {
       return { tokens: realDepth.avgTokens, count: realDepth.count, isReal: true };
     }
+    // Fallback para estimativas padrão por profundidade
+    const defaultTokens: Record<string, number> = {
+      critical: DEPTH_TOKEN_ESTIMATES.critical,    // ~8K tokens
+      balanced: DEPTH_TOKEN_ESTIMATES.balanced,    // ~15K tokens
+      complete: DEPTH_TOKEN_ESTIMATES.complete     // ~25K tokens
+    };
     return { 
-      tokens: DEPTH_TOKEN_ESTIMATES[depth as keyof typeof DEPTH_TOKEN_ESTIMATES] || 15000, 
+      tokens: defaultTokens[depth] || 15000, 
       count: 0, 
       isReal: false 
     };
@@ -227,6 +233,12 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
 
   // Check if depth filter is active (affects comparison mode)
   const isDepthFilterActive = depthFilter !== "all";
+
+  // Verificar se tokens são iguais para todos os perfis (quando filtro está ativo)
+  const allTokensEqual = (recs: typeof recommendations) => {
+    if (recs.length < 2) return false;
+    return recs.every(r => r.tokens === recs[0].tokens);
+  };
 
   // Calculate recommendation profiles
   const recommendations = useMemo(() => {
@@ -533,20 +545,34 @@ const SystemRecommendationTab = ({ modelUsageStats, depthStats, hasRealData }: S
       <div className="p-6 bg-card border border-border rounded-xl">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold">Comparativo de Custos</h4>
-          {isDepthFilterActive && (
+          {isDepthFilterActive ? (
             <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600">
               Comparando modelos na profundidade {depthFilter}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600">
+              Comparando profundidades + modelos
             </Badge>
           )}
         </div>
         
-        {/* Nota explicativa quando filtro de depth está ativo */}
-        {isDepthFilterActive && (
+        {/* Nota explicativa baseada no estado do filtro */}
+        {isDepthFilterActive ? (
           <div className="flex items-start gap-2 p-3 mb-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
-            <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+            <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-muted-foreground">
-              Com filtro de profundidade ativo, todos os perfis usam <strong>{depthFilter}</strong> ({recommendations[0]?.tokens.toLocaleString()} tokens). 
-              A comparação foca na diferença entre <strong>modelos de IA</strong>.
+              <strong>Filtrando por profundidade:</strong> Todos os perfis usam <strong>{depthFilter}</strong> ({recommendations[0]?.tokens.toLocaleString()} tokens). 
+              A diferença de custo é exclusivamente pela escolha do <strong>modelo de IA</strong>.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 p-3 mb-4 bg-green-500/5 border border-green-500/20 rounded-lg">
+            <Info className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              <strong>Comparação completa:</strong> Cada perfil usa profundidade diferente — 
+              Econômico: <strong>critical</strong> (~{getDepthTokens("critical").toLocaleString()} tokens), 
+              Equilibrado: <strong>balanced</strong> (~{getDepthTokens("balanced").toLocaleString()} tokens), 
+              Performance: <strong>complete</strong> (~{getDepthTokens("complete").toLocaleString()} tokens).
             </p>
           </div>
         )}
