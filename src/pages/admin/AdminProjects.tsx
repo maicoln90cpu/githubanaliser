@@ -48,6 +48,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { isEconomicModel } from "@/lib/modelCategories";
 
 interface ProjectAnalysis {
   type: string;
@@ -153,8 +154,7 @@ const AdminProjects = () => {
           };
           
           const type = u.analysis_type || 'unknown';
-          const isEconomic = u.model_used?.includes('lite');
-          const mode = isEconomic ? 'economic' : 'detailed';
+          const mode = isEconomicModel(u.model_used) ? 'economic' : 'detailed';
           const detailKey = `${type}-${mode}-${u.depth_level || 'complete'}`;
           
           const detail = existing.details.get(detailKey) || { 
