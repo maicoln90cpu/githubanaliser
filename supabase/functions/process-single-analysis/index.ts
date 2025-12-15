@@ -70,7 +70,8 @@ const DEFAULT_PROMPTS: Record<string, { system: string; user: string }> = {
   features: { system: "Você é um product manager visionário especializado em inovação de produtos.", user: "Analise o projeto e sugira novas funcionalidades inovadoras em português." },
   documentacao: { system: "Você é um technical writer sênior especializado em documentação de software open source e profissional.", user: "Analise o projeto e gere uma documentação técnica completa e profissional em português." },
   prompts: { system: "Você é um especialista em Prompt Engineering e AI-Assisted Development.", user: "Analise o projeto e gere prompts otimizados prontos para usar em ferramentas de IA para desenvolvimento." },
-  quality: { system: "Você é um arquiteto de software sênior especializado em análise de qualidade de código.", user: "Analise o projeto e gere métricas de qualidade de código estimadas." }
+  quality: { system: "Você é um arquiteto de software sênior especializado em análise de qualidade de código e ferramentas de desenvolvimento.", user: "Analise o projeto e gere métricas de qualidade de código estimadas, incluindo recomendações de ferramentas." },
+  performance: { system: "Você é um especialista em performance de software, otimização de aplicações web e observabilidade.", user: "Analise o projeto e identifique oportunidades de melhoria de performance (frontend, backend, banco de dados) e observabilidade (logs, métricas, alertas) em português. Inclua: Core Web Vitals, bundle size, otimização de queries, caching, e estratégias de monitoramento." }
 };
 
 interface AIProviderSettings {
