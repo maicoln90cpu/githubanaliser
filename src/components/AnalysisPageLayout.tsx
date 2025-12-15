@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, Lock, Info } from "lucide-react";
+import { Github, Home, Loader2, Download, Grid3X3, ChevronLeft, ChevronRight, LucideIcon, RefreshCw, AlertCircle, Lock, Info, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import html2pdf from "html2pdf.js";
 import { CheckableMarkdown } from "./CheckableMarkdown";
@@ -22,6 +22,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 interface AnalysisPageLayoutProps {
   type: string;
@@ -31,6 +36,7 @@ interface AnalysisPageLayoutProps {
   iconBgColor: string;
   prevRoute?: { path: string; label: string };
   nextRoute?: { path: string; label: string };
+  legacyTypes?: string[];
 }
 
 interface Project {
@@ -46,6 +52,16 @@ interface Analysis {
   type: string;
 }
 
+interface LegacyAnalysis {
+  type: string;
+  content: string;
+  created_at: string;
+}
+
+const LEGACY_TYPE_LABELS: Record<string, string> = {
+  ferramentas: "Melhorias de Ferramentas",
+};
+
 const AnalysisPageLayout = ({
   type,
   title,
@@ -54,15 +70,18 @@ const AnalysisPageLayout = ({
   iconBgColor,
   prevRoute,
   nextRoute,
+  legacyTypes = [],
 }: AnalysisPageLayoutProps) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { plan } = useUserPlan();
   const [project, setProject] = useState<Project | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [legacyAnalyses, setLegacyAnalyses] = useState<LegacyAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [analysisNotFound, setAnalysisNotFound] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [legacyOpen, setLegacyOpen] = useState(false);
   
   const canExportPDF = plan?.canExportPDF || plan?.isAdmin;
 
@@ -97,6 +116,20 @@ const AnalysisPageLayout = ({
         } else {
           setAnalysis(analysisData);
         }
+
+        // Load legacy analyses if legacyTypes are specified
+        if (legacyTypes.length > 0) {
+          const { data: legacyData } = await supabase
+            .from("analyses")
+            .select("type, content, created_at")
+            .eq("project_id", id)
+            .in("type", legacyTypes)
+            .order("created_at", { ascending: false });
+
+          if (legacyData && legacyData.length > 0) {
+            setLegacyAnalyses(legacyData);
+          }
+        }
       } catch (error) {
         console.error("Erro ao carregar dados:", error);
         toast.error("Erro ao carregar análise");
@@ -107,7 +140,7 @@ const AnalysisPageLayout = ({
     };
 
     loadData();
-  }, [id, type, navigate]);
+  }, [id, type, navigate, legacyTypes]);
 
   const handleRegenerateAnalysis = async () => {
     if (!project) return;
@@ -328,6 +361,42 @@ const AnalysisPageLayout = ({
         >
           <CheckableMarkdown content={analysis?.content || "Nenhuma análise disponível."} />
         </div>
+
+        {/* Legacy Analyses Section */}
+        {legacyAnalyses.length > 0 && (
+          <div className="mt-6 animate-slide-up">
+            {legacyAnalyses.map((legacy) => (
+              <Collapsible
+                key={legacy.type}
+                open={legacyOpen}
+                onOpenChange={setLegacyOpen}
+                className="border border-border rounded-xl overflow-hidden bg-card"
+              >
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                      <AlertCircle className="w-4 h-4 text-orange-500" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-medium text-sm">
+                        Análise Legada: {LEGACY_TYPE_LABELS[legacy.type] || legacy.type}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Gerada em {new Date(legacy.created_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${legacyOpen ? "rotate-180" : ""}`} />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t border-border p-6 prose prose-slate dark:prose-invert max-w-none markdown-content">
+                    <CheckableMarkdown content={legacy.content} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </div>
+        )}
 
         {/* Navigation */}
         <div className="flex justify-between items-center mt-8">
