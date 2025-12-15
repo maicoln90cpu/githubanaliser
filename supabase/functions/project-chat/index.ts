@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +19,21 @@ interface ProjectContext {
   dependencies?: string;
 }
 
+// Default prompt if not found in database
+const DEFAULT_SYSTEM_PROMPT = `Você é um assistente AI especializado em análise de código e desenvolvimento de software. Você está ajudando um desenvolvedor com o projeto "{{projectName}}".
+
+Você tem acesso às seguintes informações do projeto:
+{{projectContext}}
+
+Diretrizes:
+- Responda sempre em português brasileiro
+- Seja conciso mas completo
+- Forneça exemplos de código quando relevante
+- Se não tiver certeza sobre algo específico do projeto, diga claramente
+- Sugira boas práticas e melhorias quando apropriado
+- Use markdown para formatar suas respostas
+- Seja amigável e prestativo`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -36,6 +52,31 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
+    }
+
+    // Load prompt from database
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    let systemPromptTemplate = DEFAULT_SYSTEM_PROMPT;
+
+    try {
+      const { data: promptData, error: promptError } = await supabase
+        .from('analysis_prompts')
+        .select('system_prompt')
+        .eq('analysis_type', 'project_chat')
+        .eq('is_active', true)
+        .single();
+
+      if (!promptError && promptData?.system_prompt) {
+        systemPromptTemplate = promptData.system_prompt;
+        console.log('[project-chat] Loaded prompt from database');
+      } else {
+        console.log('[project-chat] Using default prompt (not found in DB or error:', promptError?.message, ')');
+      }
+    } catch (e) {
+      console.log('[project-chat] Error loading prompt, using default:', e);
     }
 
     // Build context from project data
@@ -58,23 +99,16 @@ serve(async (req) => {
 
     const projectInfo = contextParts.join("\n");
 
+    // Replace template variables
+    const systemPrompt = systemPromptTemplate
+      .replace(/\{\{projectName\}\}/g, projectContext.name)
+      .replace(/\{\{projectContext\}\}/g, projectInfo);
+
     // Build messages array
     const messages = [
       {
         role: "system",
-        content: `Você é um assistente AI especializado em análise de código e desenvolvimento de software. Você está ajudando um desenvolvedor com o projeto "${projectContext.name}".
-
-Você tem acesso às seguintes informações do projeto:
-${projectInfo}
-
-Diretrizes:
-- Responda sempre em português brasileiro
-- Seja conciso mas completo
-- Forneça exemplos de código quando relevante
-- Se não tiver certeza sobre algo específico do projeto, diga claramente
-- Sugira boas práticas e melhorias quando apropriado
-- Use markdown para formatar suas respostas
-- Seja amigável e prestativo`
+        content: systemPrompt
       },
       ...((history || []) as Message[]).map((msg: Message) => ({
         role: msg.role,
