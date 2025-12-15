@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { GitHubImportModal } from "@/components/GitHubImportModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { canUserAnalyze, suggestDepthBasedOnLimits } from "@/components/SpendingAlert";
+import { ReadmeInstructionModal, shouldShowReadmeModal, DEFAULT_README_PROMPT } from "@/components/ReadmeInstructionModal";
 import {
   Dialog,
   DialogContent,
@@ -175,6 +176,8 @@ const Home = () => {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [showGitHubHelpDialog, setShowGitHubHelpDialog] = useState(false);
   const [repoValidationError, setRepoValidationError] = useState<string | null>(null);
+  const [showReadmeModal, setShowReadmeModal] = useState(false);
+  const [readmePrompt, setReadmePrompt] = useState(DEFAULT_README_PROMPT);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -218,6 +221,26 @@ const Home = () => {
       }
     };
     loadPlans();
+  }, []);
+
+  // Load README instruction prompt from database
+  useEffect(() => {
+    const loadReadmePrompt = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("analysis_prompts")
+          .select("user_prompt_template")
+          .eq("analysis_type", "readme_instruction")
+          .single();
+        
+        if (!error && data?.user_prompt_template) {
+          setReadmePrompt(data.user_prompt_template);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar prompt de README:", error);
+      }
+    };
+    loadReadmePrompt();
   }, []);
 
   // Handle Stripe checkout
@@ -353,11 +376,12 @@ const Home = () => {
     }
   };
 
-  const handleAnalyze = async () => {
+  // Pre-analysis validation
+  const validateBeforeAnalyze = (): boolean => {
     if (!user) {
       toast.error("Você precisa estar logado para analisar projetos");
       navigate("/auth");
-      return;
+      return false;
     }
 
     // Check token-based limits
@@ -366,7 +390,7 @@ const Home = () => {
       if (!canAnalyze) {
         toast.error(reason);
         setShowUpgradeModal(true);
-        return;
+        return false;
       }
       
       // Check if selected analysis would exceed remaining tokens
@@ -382,14 +406,14 @@ const Home = () => {
             setSelectedDepth(suggestedDepth);
             toast.info(`Profundidade alterada para "${suggestedDepth === 'critical' ? 'Crítica' : 'Balanceada'}" automaticamente.`);
           }
-          return;
+          return false;
         }
       }
     }
 
     if (selectedAnalyses.length === 0) {
       toast.error("Selecione pelo menos uma análise");
-      return;
+      return false;
     }
 
     // Filter selected analyses by allowed types from plan config
@@ -399,24 +423,39 @@ const Home = () => {
       if (disallowedSelected.length > 0) {
         toast.error(`Seu plano ${plan.planName} não permite algumas análises selecionadas. Faça upgrade para mais análises.`);
         setSelectedAnalyses(selectedAnalyses.filter(a => allowedTypes.includes(a)));
-        return;
+        return false;
       }
     }
     
     // Validate depth is allowed
     if (!plan?.isAdmin && plan?.allowedDepths && !plan.allowedDepths.includes(selectedDepth)) {
       toast.error(`Seu plano ${plan.planName} não permite a profundidade "${selectedDepth}". Selecione outra opção.`);
-      return;
+      return false;
     }
 
+    return true;
+  };
+
+  // Execute the actual analysis
+  const executeAnalysis = () => {
     setIsValidating(true);
-    
     try {
       const analysisTypes = selectedAnalyses.join(",");
       navigate(`/analisando?url=${encodeURIComponent(githubUrl)}&analysisTypes=${analysisTypes}&depth=${selectedDepth}`);
     } catch (error) {
       toast.error("Erro ao iniciar análise");
       setIsValidating(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!validateBeforeAnalyze()) return;
+
+    // Show README instruction modal if not dismissed
+    if (shouldShowReadmeModal()) {
+      setShowReadmeModal(true);
+    } else {
+      executeAnalysis();
     }
   };
 
@@ -1154,6 +1193,21 @@ const Home = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* README Instruction Modal */}
+      <ReadmeInstructionModal
+        open={showReadmeModal}
+        onOpenChange={setShowReadmeModal}
+        promptContent={readmePrompt}
+        onSkip={() => {
+          setShowReadmeModal(false);
+          executeAnalysis();
+        }}
+        onConfirm={() => {
+          setShowReadmeModal(false);
+          toast.success("Ótimo! Atualize seu README e volte para analisar.");
+        }}
+      />
     </div>
   );
 };

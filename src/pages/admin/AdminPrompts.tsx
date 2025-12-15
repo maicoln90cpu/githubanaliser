@@ -106,7 +106,10 @@ const ANALYSIS_ICONS: Record<string, React.ReactNode> = {
   quality: <Activity className="w-5 h-5" />,
   performance: <Gauge className="w-5 h-5" />,
   chat: <MessageSquare className="w-5 h-5" />,
+  project_chat: <MessageSquare className="w-5 h-5" />,
   implementation: <ListChecks className="w-5 h-5" />,
+  implementation_plan: <ListChecks className="w-5 h-5" />,
+  readme_instruction: <FileText className="w-5 h-5" />,
 };
 
 const ANALYSIS_COLORS: Record<string, string> = {
@@ -122,7 +125,10 @@ const ANALYSIS_COLORS: Record<string, string> = {
   quality: "text-emerald-500 bg-emerald-500/10",
   performance: "text-teal-500 bg-teal-500/10",
   chat: "text-indigo-500 bg-indigo-500/10",
+  project_chat: "text-indigo-500 bg-indigo-500/10",
   implementation: "text-amber-500 bg-amber-500/10",
+  implementation_plan: "text-amber-500 bg-amber-500/10",
+  readme_instruction: "text-slate-500 bg-slate-500/10",
 };
 
 // Get category for a prompt type
@@ -136,6 +142,7 @@ const getPromptCategory = (type: string): PromptCategory => {
   if (type === 'implementation' || type === 'implementation_plan') {
     return 'implementation';
   }
+  // readme_instruction goes to system category
   return 'system';
 };
 
