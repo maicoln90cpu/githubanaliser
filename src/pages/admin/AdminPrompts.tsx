@@ -30,6 +30,7 @@ import {
   BookOpen,
   Terminal,
   Activity,
+  Gauge,
   Save,
   Eye,
   RotateCcw,
@@ -52,6 +53,15 @@ interface AnalysisPrompt {
   updated_at: string;
 }
 
+// Active analysis types (current)
+const ACTIVE_ANALYSIS_TYPES = [
+  'prd', 'divulgacao', 'captacao', 'seguranca', 'ui_theme', 
+  'features', 'documentacao', 'prompts', 'quality', 'performance'
+];
+
+// Deprecated types (still shown if exist in DB, but marked as legacy)
+const DEPRECATED_ANALYSIS_TYPES = ['ferramentas'];
+
 const ANALYSIS_ICONS: Record<string, React.ReactNode> = {
   prd: <FileText className="w-5 h-5" />,
   divulgacao: <Target className="w-5 h-5" />,
@@ -63,6 +73,7 @@ const ANALYSIS_ICONS: Record<string, React.ReactNode> = {
   documentacao: <BookOpen className="w-5 h-5" />,
   prompts: <Terminal className="w-5 h-5" />,
   quality: <Activity className="w-5 h-5" />,
+  performance: <Gauge className="w-5 h-5" />,
 };
 
 const ANALYSIS_COLORS: Record<string, string> = {
@@ -76,6 +87,7 @@ const ANALYSIS_COLORS: Record<string, string> = {
   documentacao: "text-cyan-500 bg-cyan-500/10",
   prompts: "text-violet-500 bg-violet-500/10",
   quality: "text-emerald-500 bg-emerald-500/10",
+  performance: "text-teal-500 bg-teal-500/10",
 };
 
 const AdminPrompts = () => {
@@ -223,23 +235,39 @@ const AdminPrompts = () => {
 
         {/* Prompts Grid */}
         <div className="grid gap-4">
-          {prompts.map((prompt) => (
-            <Card 
-              key={prompt.id} 
-              className={`transition-all ${!prompt.is_active ? 'opacity-60' : ''}`}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${ANALYSIS_COLORS[prompt.analysis_type] || 'bg-muted'}`}>
-                      {ANALYSIS_ICONS[prompt.analysis_type] || <FileText className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        {prompt.name}
-                        {!prompt.is_active && (
-                          <Badge variant="secondary" className="text-xs">Desativado</Badge>
-                        )}
+          {/* Active prompts first, then deprecated */}
+          {[...prompts]
+            .sort((a, b) => {
+              const aDeprecated = DEPRECATED_ANALYSIS_TYPES.includes(a.analysis_type);
+              const bDeprecated = DEPRECATED_ANALYSIS_TYPES.includes(b.analysis_type);
+              if (aDeprecated && !bDeprecated) return 1;
+              if (!aDeprecated && bDeprecated) return -1;
+              return 0;
+            })
+            .map((prompt) => {
+              const isDeprecated = DEPRECATED_ANALYSIS_TYPES.includes(prompt.analysis_type);
+              return (
+                <Card 
+                  key={prompt.id} 
+                  className={`transition-all ${!prompt.is_active ? 'opacity-60' : ''} ${isDeprecated ? 'border-orange-500/30 bg-orange-500/5' : ''}`}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${ANALYSIS_COLORS[prompt.analysis_type] || 'bg-muted'}`}>
+                          {ANALYSIS_ICONS[prompt.analysis_type] || <FileText className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            {prompt.name}
+                            {isDeprecated && (
+                              <Badge variant="outline" className="text-xs text-orange-500 border-orange-500/50">
+                                Legado
+                              </Badge>
+                            )}
+                            {!prompt.is_active && (
+                              <Badge variant="secondary" className="text-xs">Desativado</Badge>
+                            )}
                       </CardTitle>
                       <CardDescription>{prompt.description}</CardDescription>
                     </div>
@@ -289,7 +317,8 @@ const AdminPrompts = () => {
                 </div>
               </CardContent>
             </Card>
-          ))}
+              );
+            })}
         </div>
 
         {/* Edit Dialog */}
