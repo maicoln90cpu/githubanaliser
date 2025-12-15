@@ -763,17 +763,35 @@ const AdminCosts = () => {
 
       setDailyUsage(dailyData);
 
-      // Model usage statistics - group by actual model_used
-      const modelMap = new Map<string, { count: number; tokens: number; cost: number }>();
+      // Model usage statistics - using MEDIAN for tokens to protect against outliers
+      const modelTokenArrays = new Map<string, number[]>();
+      const modelCostArrays = new Map<string, number[]>();
+      
       usageData?.forEach(u => {
         const modelKey = u.model_used || 'unknown';
-        const existing = modelMap.get(modelKey) || { count: 0, tokens: 0, cost: 0 };
-        modelMap.set(modelKey, {
-          count: existing.count + 1,
-          tokens: existing.tokens + (u.tokens_estimated || 0),
-          cost: existing.cost + Number(u.cost_estimated || 0),
-        });
+        const tokens = u.tokens_estimated || 0;
+        const cost = Number(u.cost_estimated || 0);
+        
+        if (!modelTokenArrays.has(modelKey)) {
+          modelTokenArrays.set(modelKey, []);
+          modelCostArrays.set(modelKey, []);
+        }
+        
+        if (tokens > 0) {
+          modelTokenArrays.get(modelKey)!.push(tokens);
+          modelCostArrays.get(modelKey)!.push(cost);
+        }
       });
+
+      // Function to calculate median (reusable)
+      const calculateMedian = (arr: number[]): number => {
+        if (arr.length === 0) return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0
+          ? sorted[mid]
+          : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+      };
 
       // Map model keys to display names and providers
       const getModelInfo = (modelKey: string): { provider: string; displayName: string; isEconomic: boolean } => {
@@ -794,18 +812,19 @@ const AdminCosts = () => {
         return { provider: 'Unknown', displayName: modelKey, isEconomic: false };
       };
 
-      const modelUsageData: ModelUsageStats[] = Array.from(modelMap.entries())
-        .filter(([_, data]) => data.count > 0)
-        .map(([modelKey, data]) => {
+      const modelUsageData: ModelUsageStats[] = Array.from(modelTokenArrays.entries())
+        .filter(([_, tokenArr]) => tokenArr.length > 0)
+        .map(([modelKey, tokenArr]) => {
+          const costArr = modelCostArrays.get(modelKey) || [];
           const info = getModelInfo(modelKey);
           return {
             provider: info.provider,
             modelName: info.displayName,
             modelKey,
-            count: data.count,
-            avgTokens: Math.round(data.tokens / data.count),
-            avgCost: data.cost / data.count,
-            totalCost: data.cost,
+            count: tokenArr.length,
+            avgTokens: calculateMedian(tokenArr), // Using MEDIAN
+            avgCost: calculateMedian(costArr),
+            totalCost: costArr.reduce((sum, c) => sum + c, 0),
             isEconomic: info.isEconomic,
           };
         })
@@ -832,15 +851,7 @@ const AdminCosts = () => {
         }
       });
 
-      // Function to calculate median
-      const calculateMedian = (arr: number[]): number => {
-        if (arr.length === 0) return 0;
-        const sorted = [...arr].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 !== 0
-          ? sorted[mid]
-          : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-      };
+      // Reusing calculateMedian function defined above for model stats
 
       const depthStatsData: DepthStats[] = ['critical', 'balanced', 'complete'].map(d => {
         const tokenArr = depthTokenArrays.get(d) || [];
