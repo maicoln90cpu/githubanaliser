@@ -37,12 +37,15 @@ export interface UserPlan {
   limitations: string[];
 }
 
-// All valid analysis types
+// All valid analysis types (ferramentas is legacy, replaced by performance)
 export const ALL_ANALYSIS_TYPES = [
   'prd', 'divulgacao', 'captacao', 'seguranca', 
-  'ui_theme', 'ferramentas', 'features', 'documentacao', 
-  'prompts', 'quality'
+  'ui_theme', 'features', 'documentacao', 
+  'prompts', 'quality', 'performance'
 ] as const;
+
+// Legacy analysis types (still readable but not selectable for new analyses)
+export const LEGACY_ANALYSIS_TYPES = ['ferramentas'] as const;
 
 // All valid depth levels
 export const ALL_DEPTH_LEVELS = ['critical', 'balanced', 'complete'] as const;
