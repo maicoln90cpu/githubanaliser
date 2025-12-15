@@ -29,11 +29,11 @@ const allSteps: Step[] = [
   { id: "captacao", label: "Criando pitch para investidores", status: "pending", analysisType: "captacao" },
   { id: "seguranca", label: "Analisando segurança", status: "pending", analysisType: "seguranca" },
   { id: "ui", label: "Sugerindo melhorias visuais", status: "pending", analysisType: "ui_theme" },
-  { id: "ferramentas", label: "Analisando ferramentas", status: "pending", analysisType: "ferramentas" },
   { id: "features", label: "Sugerindo novas features", status: "pending", analysisType: "features" },
   { id: "documentacao", label: "Gerando documentação técnica", status: "pending", analysisType: "documentacao" },
   { id: "prompts", label: "Gerando prompts otimizados", status: "pending", analysisType: "prompts" },
   { id: "quality", label: "Analisando qualidade do código", status: "pending", analysisType: "quality" },
+  { id: "performance", label: "Analisando performance", status: "pending", analysisType: "performance" },
   { id: "complete", label: "Finalizando análise", status: "pending" },
 ];
 
@@ -233,7 +233,7 @@ const Analyzing = () => {
     };
   }, [projectId, processNextQueueItem]);
 
-  // Start analysis
+  // Start analysis - handles both new analysis and ProjectHub flow
   useEffect(() => {
     if (authLoading) return;
 
@@ -243,16 +243,7 @@ const Analyzing = () => {
       return;
     }
 
-    if (existingProjectId) {
-      setProjectId(existingProjectId);
-      setSteps(prev => prev.map((step, i) => 
-        i <= 1 ? { ...step, status: "complete" } : step
-      ));
-      setProgress(15);
-      return;
-    }
-
-    if (!githubUrl) {
+    if (!githubUrl && !existingProjectId) {
       toast.error("URL do GitHub não encontrada");
       navigate("/dashboard");
       return;
@@ -266,6 +257,27 @@ const Analyzing = () => {
       analysisStartedRef.current = true;
       
       try {
+        // Check if analysis already in progress for this project
+        if (existingProjectId) {
+          const { data: existingProject } = await supabase
+            .from("projects")
+            .select("analysis_status")
+            .eq("id", existingProjectId)
+            .single();
+
+          // If queue is already ready or processing, just poll
+          if (existingProject?.analysis_status === "queue_ready" || 
+              existingProject?.analysis_status?.startsWith("generating_")) {
+            console.log("✓ Análise já em andamento, acompanhando...");
+            setSteps(prev => prev.map((step, i) => 
+              i <= 1 ? { ...step, status: "complete" } : step
+            ));
+            setProgress(15);
+            setProjectId(existingProjectId);
+            return;
+          }
+        }
+
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "loading" } : step
         ));
@@ -273,11 +285,12 @@ const Analyzing = () => {
 
         const { data, error } = await supabase.functions.invoke("analyze-github", {
           body: { 
-            githubUrl, 
+            githubUrl: githubUrl || "", 
             userId: user.id,
             analysisTypes: selectedAnalysisTypes,
             useCache: useCacheParam,
-            depth: depthParam
+            depth: depthParam,
+            existingProjectId: existingProjectId || undefined
           }
         });
 
@@ -314,7 +327,9 @@ const Analyzing = () => {
             .eq("id", data.projectId)
             .single();
 
-          if (project?.analysis_status === "queue_ready" || project?.analysis_status === "error") {
+          if (project?.analysis_status === "queue_ready" || 
+              project?.analysis_status?.startsWith("generating_") ||
+              project?.analysis_status === "completed") {
             setSteps(prev => prev.map((step, i) => 
               i <= 1 ? { ...step, status: "complete" } : step
             ));
@@ -330,9 +345,15 @@ const Analyzing = () => {
 
         // Wait for extraction to complete
         let ready = await checkQueueReady();
-        while (!ready) {
+        let attempts = 0;
+        while (!ready && attempts < 60) { // Max 60 seconds waiting
           await new Promise(resolve => setTimeout(resolve, 1000));
           ready = await checkQueueReady();
+          attempts++;
+        }
+
+        if (!ready) {
+          setErrorMessage("Timeout aguardando preparação da análise");
         }
 
       } catch (error) {

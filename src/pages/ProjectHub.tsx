@@ -192,8 +192,6 @@ const ProjectHub = () => {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [analysisVersions, setAnalysisVersions] = useState<AnalysisVersion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reanalyzing, setReanalyzing] = useState<string | null>(null);
-  const [generating, setGenerating] = useState<string | null>(null);
   const [selectedDepth, setSelectedDepth] = useState<"critical" | "balanced" | "complete">("balanced");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: string; title: string; isGenerate: boolean }>({
     open: false,
@@ -304,43 +302,26 @@ const ProjectHub = () => {
     return project?.github_data !== null && project?.github_data !== undefined;
   };
 
-  const handleGenerateOrReanalyze = async (type: string, isReanalyze: boolean) => {
+  const handleGenerateOrReanalyze = (type: string, isReanalyze: boolean) => {
     if (!project || !user) return;
 
-    if (isReanalyze) {
-      setReanalyzing(type);
-    } else {
-      setGenerating(type);
-    }
     setConfirmDialog({ open: false, type: "", title: "", isGenerate: false });
 
-    try {
-      const { error } = await supabase.functions.invoke("analyze-github", {
-        body: {
-          githubUrl: project.github_url,
-          userId: user.id,
-          analysisTypes: [type],
-          useCache: hasCachedData(),
-          depth: selectedDepth
-        }
-      });
+    // Build URL params - let Analyzing page handle the edge function call
+    const params = new URLSearchParams({
+      projectId: project.id,
+      url: project.github_url,
+      analysisTypes: type,
+      useCache: hasCachedData() ? "true" : "false",
+      depth: selectedDepth
+    });
 
-      if (error) throw error;
+    toast.info(isReanalyze ? "Iniciando re-análise..." : "Iniciando análise...", {
+      description: `Profundidade: ${depthBadges[selectedDepth].label}${hasCachedData() ? " • Usando cache" : ""}`
+    });
 
-      toast.success(isReanalyze ? "Re-análise iniciada!" : "Análise iniciada!", {
-        description: `Profundidade: ${depthBadges[selectedDepth].label}${hasCachedData() ? " • Usando cache" : ""}`
-      });
-
-      // Navigate to analyzing page
-      navigate(`/analisando?projectId=${project.id}&analysisTypes=${type}`);
-
-    } catch (error) {
-      console.error("Erro ao analisar:", error);
-      toast.error("Erro ao iniciar análise");
-    } finally {
-      setReanalyzing(null);
-      setGenerating(null);
-    }
+    // Navigate to analyzing page - it will handle the edge function call
+    navigate(`/analisando?${params.toString()}`);
   };
 
   const openConfirmDialog = (type: string, title: string, isGenerate: boolean, e: React.MouseEvent) => {
@@ -438,8 +419,6 @@ const ProjectHub = () => {
           {analysisTypes.map((analysis, index) => {
             const Icon = analysis.icon;
             const available = hasAnalysis(analysis.type);
-            const isReanalyzing = reanalyzing === analysis.type;
-            const isGenerating = generating === analysis.type;
             const depthLevel = getDepthLevel(analysis.type);
             const depthBadge = depthLevel ? depthBadges[depthLevel] : null;
             const uniqueVersions = getUniqueVersions(analysis.type);
@@ -479,13 +458,8 @@ const ProjectHub = () => {
                       onClick={(e) => openConfirmDialog(analysis.type, analysis.title, false, e)}
                       className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                       title="Refazer análise"
-                      disabled={isReanalyzing}
                     >
-                      {isReanalyzing ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4 text-muted-foreground hover:text-primary" />
-                      )}
+                      <RefreshCw className="w-4 h-4 text-muted-foreground hover:text-primary" />
                     </button>
                   )}
                   {available ? (
@@ -544,19 +518,9 @@ const ProjectHub = () => {
                       variant="outline"
                       className="h-7 text-xs"
                       onClick={(e) => openConfirmDialog(analysis.type, analysis.title, true, e)}
-                      disabled={isGenerating}
                     >
-                      {isGenerating ? (
-                        <>
-                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          Gerando...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3 mr-1" />
-                          Gerar Análise
-                        </>
-                      )}
+                      <Play className="w-3 h-3 mr-1" />
+                      Gerar Análise
                     </Button>
                   )}
                 </div>
