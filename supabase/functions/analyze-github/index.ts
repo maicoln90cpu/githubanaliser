@@ -960,6 +960,11 @@ async function extractAndPrepareAnalysis(
   }
 }
 
+// Rate limit configuration
+const RATE_LIMITS = {
+  'analyze-github': { maxRequests: 10, windowMinutes: 60 },
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -986,6 +991,48 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ===== RATE LIMITING =====
+    const rateLimit = RATE_LIMITS['analyze-github'];
+    const { data: rateLimitResult, error: rateLimitError } = await supabase
+      .rpc('check_rate_limit', {
+        p_user_id: userId,
+        p_endpoint: 'analyze-github',
+        p_max_requests: rateLimit.maxRequests,
+        p_window_minutes: rateLimit.windowMinutes
+      });
+
+    if (rateLimitError) {
+      console.error("[analyze-github] Rate limit check error:", rateLimitError);
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.log(`[analyze-github] Rate limited user ${userId}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+      return new Response(
+        JSON.stringify({
+          error: "Limite de requisições excedido",
+          message: `Você atingiu o limite de ${rateLimit.maxRequests} análises por hora. Tente novamente em ${Math.ceil(rateLimitResult.retry_after_seconds / 60)} minutos.`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.reset_at,
+            retryAfterSeconds: rateLimitResult.retry_after_seconds
+          }
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "X-RateLimit-Limit": String(rateLimitResult.limit),
+            "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+            "X-RateLimit-Reset": rateLimitResult.reset_at,
+            "Retry-After": String(rateLimitResult.retry_after_seconds)
+          }
+        }
+      );
+    } else if (rateLimitResult) {
+      console.log(`[analyze-github] Rate limit OK for user ${userId}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+    }
+    // ===== END RATE LIMITING =====
 
     let owner: string;
     let repo: string;
