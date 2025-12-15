@@ -18,6 +18,7 @@ import NewFeatures from "./pages/NewFeatures";
 import TechnicalDocumentation from "./pages/TechnicalDocumentation";
 import AnalysisPrompts from "./pages/AnalysisPrompts";
 import AnalysisQuality from "./pages/AnalysisQuality";
+import AnalysisPerformance from "./pages/AnalysisPerformance";
 import ProjectOverview from "./pages/ProjectOverview";
 import ProjectChat from "./pages/ProjectChat";
 import ImplementationPlan from "./pages/ImplementationPlan";
@@ -56,6 +57,7 @@ const App = () => (
           <Route path="/melhorias-seguranca/:id" element={<SecurityImprovements />} />
           <Route path="/melhorias-ui/:id" element={<UIImprovements />} />
           <Route path="/melhorias-ferramentas/:id" element={<ToolsImprovements />} />
+          <Route path="/performance/:id" element={<AnalysisPerformance />} />
           <Route path="/novas-features/:id" element={<NewFeatures />} />
           <Route path="/documentacao-tecnica/:id" element={<TechnicalDocumentation />} />
           <Route path="/prompts-otimizados/:id" element={<AnalysisPrompts />} />

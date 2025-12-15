@@ -1,18 +1,16 @@
-import AnalysisPageLayout from "@/components/AnalysisPageLayout";
-import { Wrench } from "lucide-react";
+import { useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 const ToolsImprovements = () => {
-  return (
-    <AnalysisPageLayout
-      type="ferramentas"
-      title="Melhorias de Ferramentas"
-      icon={Wrench}
-      iconColor="text-orange-500"
-      iconBgColor="bg-orange-500/10"
-      prevRoute={{ path: "/melhorias-ui", label: "Melhorias UI" }}
-      nextRoute={{ path: "/novas-features", label: "Novas Features" }}
-    />
-  );
+  const navigate = useNavigate();
+  const { id } = useParams();
+
+  useEffect(() => {
+    // Redirect legacy ferramentas route to quality page
+    navigate(`/qualidade-codigo/${id}`, { replace: true });
+  }, [navigate, id]);
+
+  return null;
 };
 
 export default ToolsImprovements;
