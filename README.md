@@ -31,26 +31,29 @@ Sistema SaaS completo para análise de repositórios GitHub usando IA, gerando 1
 
 GitAnalyzer analisa repositórios GitHub públicos e gera análises detalhadas usando IA. O sistema suporta:
 
-### Tipos de Análise (10 tipos)
-| Tipo | Slug BD | Descrição |
-|------|---------|-----------|
-| PRD | `prd` | Product Requirements Document completo |
-| Marketing & Lançamento | `divulgacao` | Estratégia de marketing e go-to-market |
-| Pitch para Investidores | `captacao` | Pitch deck e estratégia de funding |
-| Segurança | `seguranca` | Análise de vulnerabilidades e recomendações |
-| UI/Theme | `ui_theme` | Melhorias visuais e UX |
-| Ferramentas | `ferramentas` | Otimizações de código e dependências |
-| Novas Features | `features` | Sugestões de funcionalidades |
-| Documentação | `documentacao` | README profissional e docs técnicos |
-| Prompts Otimizados | `prompts` | Prompts para Cursor/Lovable/Copilot |
-| Qualidade de Código | `quality` | Métricas de complexidade e manutenibilidade |
+### Tipos de Análise (10 tipos ativos)
+| Tipo | Slug BD | Descrição | Status |
+|------|---------|-----------|--------|
+| PRD | `prd` | Product Requirements Document completo | ✅ Ativo |
+| Marketing & Lançamento | `divulgacao` | Estratégia de marketing e go-to-market | ✅ Ativo |
+| Pitch para Investidores | `captacao` | Pitch deck e estratégia de funding | ✅ Ativo |
+| Segurança | `seguranca` | Análise de vulnerabilidades e recomendações | ✅ Ativo |
+| UI/Theme | `ui_theme` | Melhorias visuais e UX | ✅ Ativo |
+| Novas Features | `features` | Sugestões de funcionalidades | ✅ Ativo |
+| Documentação | `documentacao` | README profissional e docs técnicos | ✅ Ativo |
+| Prompts Otimizados | `prompts` | Prompts para Cursor/Lovable/Copilot | ✅ Ativo |
+| Qualidade & Ferramentas | `quality` | Métricas de qualidade + otimização de ferramentas | ✅ Ativo |
+| Performance & Observabilidade | `performance` | Core Web Vitals, bundle size, logs, monitoring | ✅ Ativo |
+| Ferramentas (Legado) | `ferramentas` | ⚠️ Incorporado em `quality` - só leitura histórica | 🔶 Legado |
 
 ### Níveis de Profundidade
-| Nível | Contexto | Tokens Estimados | Custo Relativo |
-|-------|----------|------------------|----------------|
+| Nível | Contexto | Tokens Estimados (Mediana) | Custo Relativo |
+|-------|----------|----------------------------|----------------|
 | Critical | ~8KB | ~8K tokens/análise | Mais barato |
 | Balanced | ~20KB | ~15K tokens/análise | Moderado |
 | Complete | ~40KB | ~25K tokens/análise | Mais caro |
+
+> ⚠️ **Importante:** Tokens são calculados usando **mediana** (não média) para proteção contra outliers.
 
 ---
 
@@ -153,6 +156,7 @@ GitAnalyzer analisa repositórios GitHub públicos e gera análises detalhadas u
 │   │   └── useChecklistState.ts   # Estado de checklists
 │   │
 │   ├── lib/
+│   │   ├── analysisTypes.ts       # Definições centralizadas dos 10 tipos
 │   │   ├── modelCosts.ts          # Custos centralizados dos modelos AI
 │   │   └── utils.ts               # Funções utilitárias (cn, etc)
 │   │
@@ -161,8 +165,8 @@ GitAnalyzer analisa repositórios GitHub públicos e gera análises detalhadas u
 │   │   │   ├── AdminDashboard.tsx # Dashboard principal
 │   │   │   ├── AdminUsers.tsx     # Gestão de usuários
 │   │   │   ├── AdminProjects.tsx  # Gestão de projetos
-│   │   │   ├── AdminCosts.tsx     # Análise de custos
-│   │   │   ├── AdminPlans.tsx     # Gestão de planos
+│   │   │   ├── AdminCosts.tsx     # Análise de custos (3 sub-tabs)
+│   │   │   ├── AdminPlans.tsx     # Gestão de planos e simulador
 │   │   │   ├── AdminSettings.tsx  # Configurações do sistema
 │   │   │   └── AdminPrompts.tsx   # Gestão de prompts
 │   │   │
@@ -175,8 +179,10 @@ GitAnalyzer analisa repositórios GitHub públicos e gera análises detalhadas u
 │   │   ├── ProjectChat.tsx        # Chat contextual com IA
 │   │   ├── ImplementationPlan.tsx # Plano de implementação
 │   │   ├── AnalysisComparison.tsx # Comparação de versões
+│   │   ├── AnalysisPerformance.tsx # Performance & Observabilidade
+│   │   ├── AnalysisQuality.tsx    # Qualidade & Ferramentas (+ legado)
 │   │   │
-│   │   └── [Analysis Pages]       # 10 páginas de análise
+│   │   └── [Analysis Pages]       # Demais páginas de análise
 │   │
 │   └── integrations/supabase/
 │       ├── client.ts              # Cliente Supabase (AUTO-GERADO)
@@ -224,7 +230,7 @@ created_at TIMESTAMP
 ```sql
 id UUID PRIMARY KEY
 project_id UUID REFERENCES projects
-type TEXT NOT NULL   -- 'prd', 'divulgacao', etc (10 tipos)
+type TEXT NOT NULL   -- 'prd', 'divulgacao', etc (10 tipos ativos + 1 legado)
 content TEXT         -- Markdown gerado pela IA
 created_at TIMESTAMP
 -- Sem UNIQUE constraint para permitir múltiplas versões
@@ -371,13 +377,18 @@ Sincroniza planos do banco → Stripe.
 
 Acessível em `/admin` para usuários com role `admin`.
 
-- **AdminDashboard** - Overview de métricas
-- **AdminUsers** - Gestão de usuários
-- **AdminProjects** - Gestão de projetos
-- **AdminCosts** - Análise de custos (3 sub-tabs)
-- **AdminPlans** - Gestão de planos e simulador
-- **AdminSettings** - Configurações do sistema
-- **AdminPrompts** - Editor de prompts
+### AdminCosts (3 sub-tabs)
+- **Custos Reais** - Executive summary, custo por modelo, evolução diária
+- **Indicadores** - Rankings de modelos mais baratos, distribuições, top usuários
+- **Comparativos** - ROI por plano, análise por tipo, projeções
+
+### AdminPlans (3 sub-tabs)
+- **Gestão de Planos** - Edição de preços, features toggles, sync Stripe
+- **Simulador** - Simulação de cenários com diferentes depths/modes/margins
+- **Viabilidade & ROI** - Análise de sustentabilidade por tokens
+
+### Proteção contra Outliers
+> ⚠️ **AdminCosts usa mediana** (não média) para calcular tokens por profundidade e por modelo, protegendo contra distorções de dados anômalos.
 
 ---
 
@@ -388,6 +399,19 @@ Contém `MODEL_COSTS`, `DEPTH_TOKEN_ESTIMATES`, funções de cálculo.
 
 ### Hook: `useRealModelCosts`
 Busca custos REAIS do banco e faz fallback para valores de referência.
+
+### Cálculo com Mediana (AdminCosts)
+```typescript
+// Função de cálculo de mediana para proteção contra outliers
+const calculateMedian = (arr: number[]): number => {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0
+    ? sorted[mid]
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+};
+```
 
 ### Cálculo Real (Edge Functions)
 Tokens vêm da resposta da API (não estimativas). Custo = tokens × preço/token.
@@ -440,6 +464,7 @@ STRIPE_WEBHOOK_SECRET
 | Plano não aplicando | Verificar `plans.config` e `useUserPlan` |
 | Stripe não sincroniza | Verificar webhook secret e logs |
 | Repo não encontrado | Repo deve ser público |
+| Balanced > Complete em custos | Poucos dados - sistema usa mediana para proteção |
 
 ---
 
@@ -450,17 +475,18 @@ STRIPE_WEBHOOK_SECRET
 - **Cache github_data:** Evita re-fetch ao re-analisar.
 - **Múltiplas versões:** Permite comparar análises em diferentes profundidades.
 - **Custos centralizados:** `modelCosts.ts` evita duplicação.
+- **Mediana vs Média:** Proteção contra outliers em cálculos de custos.
+- **Tipo legado (ferramentas):** Mantido para compatibilidade, incorporado em `quality`.
 
 ---
 
 ## 🚀 Para Continuar o Desenvolvimento
 
 ### Adicionar novo tipo de análise:
-1. Adicionar slug em `ALL_ANALYSIS_TYPES` (useUserPlan.ts)
-2. Adicionar em `analysisOptions` (Home.tsx)
-3. Criar prompt em `analysis_prompts`
-4. Criar página em `/pages/`
-5. Adicionar rota em `App.tsx`
+1. Adicionar em `src/lib/analysisTypes.ts` (fonte única de verdade)
+2. Criar prompt em `analysis_prompts` (via AdminPrompts)
+3. Criar página em `/pages/`
+4. Adicionar rota em `App.tsx`
 
 ### Adicionar novo modelo AI:
 1. Adicionar em `MODEL_COSTS` (modelCosts.ts)
