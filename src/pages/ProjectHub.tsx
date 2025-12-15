@@ -12,7 +12,6 @@ import {
   DollarSign, 
   Shield, 
   Palette, 
-  Wrench, 
   Sparkles,
   BookOpen,
   ExternalLink,
@@ -31,7 +30,8 @@ import {
   Activity,
   LayoutDashboard,
   MessageSquare,
-  ClipboardList
+  ClipboardList,
+  Gauge
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -127,16 +127,6 @@ const analysisTypes = [
     route: "/melhorias-ui"
   },
   { 
-    type: "ferramentas", 
-    title: "Melhorias de Ferramentas", 
-    description: "Otimização das funcionalidades existentes",
-    icon: Wrench, 
-    color: "bg-orange-500",
-    textColor: "text-orange-500",
-    bgColor: "bg-orange-500/10",
-    route: "/melhorias-ferramentas"
-  },
-  { 
     type: "features", 
     title: "Novas Features", 
     description: "Sugestões de evolução do produto",
@@ -168,13 +158,23 @@ const analysisTypes = [
   },
   { 
     type: "quality", 
-    title: "Qualidade de Código", 
-    description: "Métricas e análise de qualidade",
+    title: "Qualidade & Ferramentas", 
+    description: "Qualidade de código, DX e tooling",
     icon: Activity, 
     color: "bg-emerald-500",
     textColor: "text-emerald-500",
     bgColor: "bg-emerald-500/10",
     route: "/qualidade-codigo"
+  },
+  { 
+    type: "performance", 
+    title: "Performance & Observabilidade", 
+    description: "Velocidade, logs e monitoramento",
+    icon: Gauge, 
+    color: "bg-amber-500",
+    textColor: "text-amber-500",
+    bgColor: "bg-amber-500/10",
+    route: "/performance"
   },
 ];
 
