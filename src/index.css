@@ -206,117 +206,300 @@ All colors MUST be HSL.
   }
 }
 
-/* Estilos para markdown */
+/* ============================================
+   ESTILOS APRIMORADOS PARA MARKDOWN/ANÁLISES
+   ============================================ */
+
 @layer components {
+  /* Container principal */
   .markdown-content {
-    @apply text-foreground;
+    @apply text-foreground leading-relaxed;
   }
 
+  /* ===== HEADINGS COM CARDS VISUAIS ===== */
   .markdown-content h1 {
-    @apply text-3xl font-bold mt-8 mb-4;
+    @apply text-2xl font-bold mb-6 mt-10 text-foreground;
+    @apply bg-gradient-to-r from-primary/10 to-transparent;
+    @apply border-l-4 border-primary pl-4 py-3 rounded-r-lg;
+    @apply first:mt-0;
   }
 
   .markdown-content h2 {
-    @apply text-2xl font-bold mt-6 mb-3;
+    @apply text-xl font-bold mb-4 mt-8 text-foreground;
+    @apply bg-muted/50 px-4 py-2.5 rounded-lg;
+    @apply border border-border/50;
+    @apply flex items-center gap-2;
+  }
+
+  .markdown-content h2::before {
+    content: "◆";
+    @apply text-primary text-sm;
   }
 
   .markdown-content h3 {
-    @apply text-xl font-semibold mt-4 mb-2;
+    @apply text-lg font-semibold mb-3 mt-6 text-foreground;
+    @apply border-b border-border/50 pb-2;
   }
 
+  .markdown-content h4 {
+    @apply text-base font-semibold mb-2 mt-4 text-foreground;
+  }
+
+  /* ===== PARÁGRAFOS E TEXTO ===== */
   .markdown-content p {
-    @apply mb-4 leading-relaxed;
-  }
-
-  .markdown-content ul {
-    @apply list-disc list-inside mb-4 space-y-2;
-  }
-
-  .markdown-content ol {
-    @apply list-decimal list-inside mb-4 space-y-2;
-  }
-
-  .markdown-content code {
-    @apply bg-muted px-1.5 py-0.5 rounded text-sm;
-  }
-
-  .markdown-content pre {
-    @apply bg-muted p-4 rounded-lg overflow-x-auto mb-4;
-  }
-
-  .markdown-content blockquote {
-    @apply border-l-4 border-primary pl-4 italic my-4;
-  }
-
-  .markdown-content strong {
-    @apply font-semibold;
-  }
-
-  .markdown-content em {
-    @apply italic;
-  }
-
-  .markdown-content table {
-    @apply w-full border-collapse mb-6 text-sm rounded-lg overflow-hidden;
-  }
-
-  .markdown-content thead {
-    @apply bg-primary/10;
-  }
-
-  .markdown-content th {
-    @apply border border-border px-4 py-3 text-left font-semibold text-primary;
-  }
-
-  .markdown-content td {
-    @apply border border-border px-4 py-3;
-  }
-
-  .markdown-content tr:nth-child(even) {
-    @apply bg-muted/30;
-  }
-
-  .markdown-content tr:hover {
-    @apply bg-muted/50 transition-colors;
-  }
-
-  .markdown-content blockquote {
-    @apply border-l-4 border-primary/50 pl-4 py-2 my-4 bg-primary/5 rounded-r-lg italic;
-  }
-
-  .markdown-content hr {
-    @apply my-8 border-border;
+    @apply mb-4 text-muted-foreground leading-7;
   }
 
   .markdown-content strong {
     @apply font-bold text-foreground;
   }
 
-  .markdown-content h1 {
-    @apply text-3xl font-bold mb-6 mt-8 text-foreground border-b border-border pb-2;
+  .markdown-content em {
+    @apply italic text-muted-foreground;
   }
 
-  .markdown-content h2 {
-    @apply text-2xl font-bold mb-4 mt-6 text-foreground;
-  }
-
-  .markdown-content h3 {
-    @apply text-xl font-semibold mb-3 mt-4 text-foreground;
-  }
-
+  /* ===== LISTAS ESTILIZADAS ===== */
   .markdown-content ul {
-    @apply list-disc pl-6 mb-4 space-y-1;
+    @apply pl-0 mb-5 space-y-2 list-none;
   }
 
   .markdown-content ol {
-    @apply list-decimal pl-6 mb-4 space-y-1;
+    @apply pl-0 mb-5 space-y-2 list-none;
+    counter-reset: item;
   }
 
-  .markdown-content li {
+  .markdown-content ul > li {
+    @apply text-muted-foreground pl-6 relative;
+  }
+
+  .markdown-content ul > li::before {
+    content: "▸";
+    @apply absolute left-0 text-primary font-bold;
+  }
+
+  .markdown-content ol > li {
+    @apply text-muted-foreground pl-8 relative;
+    counter-increment: item;
+  }
+
+  .markdown-content ol > li::before {
+    content: counter(item);
+    @apply absolute left-0 w-6 h-6 bg-primary/10 text-primary text-sm font-bold;
+    @apply rounded-full flex items-center justify-center;
+  }
+
+  /* Nested lists */
+  .markdown-content ul ul,
+  .markdown-content ol ul {
+    @apply mt-2 mb-0 ml-4;
+  }
+
+  .markdown-content ul ul > li::before {
+    content: "•";
     @apply text-muted-foreground;
   }
 
-  .markdown-content p {
-    @apply mb-4 text-muted-foreground leading-relaxed;
+  /* ===== TABELAS COM ESTILO PREMIUM ===== */
+  .markdown-content table {
+    @apply w-full mb-6 text-sm;
+    @apply bg-card rounded-xl overflow-hidden;
+    @apply shadow-md border border-border/50;
+  }
+
+  .markdown-content thead {
+    @apply bg-gradient-to-r from-primary/15 to-primary/5;
+  }
+
+  .markdown-content th {
+    @apply px-4 py-3.5 text-left font-semibold text-foreground;
+    @apply border-b-2 border-primary/20;
+    @apply text-sm uppercase tracking-wide;
+  }
+
+  .markdown-content tbody tr {
+    @apply border-b border-border/30 transition-all duration-200;
+  }
+
+  .markdown-content tbody tr:last-child {
+    @apply border-b-0;
+  }
+
+  .markdown-content tbody tr:hover {
+    @apply bg-primary/5;
+  }
+
+  .markdown-content td {
+    @apply px-4 py-3 text-muted-foreground;
+  }
+
+  .markdown-content tbody tr:nth-child(even) {
+    @apply bg-muted/20;
+  }
+
+  .markdown-content tbody tr:nth-child(even):hover {
+    @apply bg-primary/5;
+  }
+
+  /* ===== CÓDIGO COM SYNTAX HIGHLIGHTING BÁSICO ===== */
+  .markdown-content code {
+    @apply bg-muted/80 px-2 py-1 rounded-md text-sm;
+    @apply text-primary font-mono;
+    @apply border border-border/50;
+  }
+
+  .markdown-content pre {
+    @apply bg-[hsl(222_47%_8%)] p-5 rounded-xl overflow-x-auto mb-5;
+    @apply border border-border/30 shadow-lg;
+    @apply relative;
+  }
+
+  .markdown-content pre code {
+    @apply bg-transparent border-0 p-0 text-[hsl(210_40%_90%)];
+    @apply text-sm leading-6 block;
+  }
+
+  /* Syntax colors básicos */
+  .markdown-content pre .keyword {
+    @apply text-[hsl(280_70%_70%)];
+  }
+
+  .markdown-content pre .string {
+    @apply text-[hsl(100_50%_60%)];
+  }
+
+  .markdown-content pre .comment {
+    @apply text-[hsl(0_0%_50%)] italic;
+  }
+
+  .markdown-content pre .function {
+    @apply text-[hsl(200_80%_70%)];
+  }
+
+  .markdown-content pre .number {
+    @apply text-[hsl(30_80%_65%)];
+  }
+
+  /* ===== BLOCKQUOTES / CALLOUTS COLORIDOS ===== */
+  .markdown-content blockquote {
+    @apply border-l-4 border-primary pl-5 py-4 my-5;
+    @apply bg-primary/5 rounded-r-xl;
+    @apply relative overflow-hidden;
+  }
+
+  .markdown-content blockquote::before {
+    content: "\201C";
+    @apply absolute -top-2 left-2 text-6xl text-primary/10 font-serif leading-none;
+  }
+
+  .markdown-content blockquote p {
+    @apply text-foreground/80 italic mb-0 relative z-10;
+  }
+
+  /* Callout de aviso */
+  .markdown-content blockquote.warning {
+    @apply border-l-destructive bg-destructive/5;
+  }
+
+  /* Callout de sucesso */
+  .markdown-content blockquote.success {
+    @apply border-l-accent bg-accent/5;
+  }
+
+  /* Callout de info */
+  .markdown-content blockquote.info {
+    @apply border-l-[hsl(200,80%,50%)] bg-[hsl(200,80%,50%,0.05)];
+  }
+
+  /* Callout de dica */
+  .markdown-content blockquote.tip {
+    @apply border-l-[hsl(45,90%,50%)] bg-[hsl(45,90%,50%,0.05)];
+  }
+
+  /* ===== SEPARADORES ELEGANTES ===== */
+  .markdown-content hr {
+    @apply my-10 border-0 h-px;
+    @apply bg-gradient-to-r from-transparent via-border to-transparent;
+  }
+
+  /* ===== LINKS ESTILIZADOS ===== */
+  .markdown-content a {
+    @apply text-primary font-medium;
+    @apply underline decoration-primary/30 underline-offset-2;
+    @apply transition-all duration-200;
+  }
+
+  .markdown-content a:hover {
+    @apply decoration-primary;
+  }
+
+  /* ===== BADGES/TAGS INLINE ===== */
+  .markdown-content mark {
+    @apply bg-accent/20 text-accent-foreground px-2 py-0.5 rounded-md;
+  }
+
+  /* ===== IMAGENS ===== */
+  .markdown-content img {
+    @apply rounded-xl shadow-lg my-6 max-w-full h-auto;
+    @apply border border-border/30;
+  }
+
+  /* ===== TASK LISTS (CHECKBOXES) ===== */
+  .markdown-content input[type=checkbox] {
+    @apply w-4 h-4 rounded border-2 border-primary/50;
+    @apply accent-primary mr-2;
+  }
+
+  /* ===== DEFINIÇÕES ===== */
+  .markdown-content dl {
+    @apply mb-5 space-y-3;
+  }
+
+  .markdown-content dt {
+    @apply font-semibold text-foreground;
+  }
+
+  .markdown-content dd {
+    @apply ml-4 text-muted-foreground;
+  }
+
+  /* ===== CARDS DE SEÇÃO (classes especiais) ===== */
+  .markdown-section-card {
+    @apply bg-card p-6 rounded-xl border border-border/50;
+    @apply shadow-sm hover:shadow-md transition-shadow duration-300;
+    @apply mb-6;
+  }
+
+  .markdown-highlight-box {
+    @apply bg-gradient-to-r from-primary/10 to-accent/5;
+    @apply p-5 rounded-xl border border-primary/20;
+    @apply mb-5;
+  }
+
+  .markdown-warning-box {
+    @apply bg-destructive/5 p-5 rounded-xl border border-destructive/20;
+    @apply mb-5;
+  }
+
+  .markdown-success-box {
+    @apply bg-accent/5 p-5 rounded-xl border border-accent/20;
+    @apply mb-5;
+  }
+
+  .markdown-info-box {
+    @apply bg-[hsl(200_80%_50%_/_0.05)] p-5 rounded-xl border border-[hsl(200_80%_50%_/_0.2)];
+    @apply mb-5;
+  }
+
+  /* ===== ANIMAÇÕES PARA ELEMENTOS ===== */
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3 {
+    @apply transition-colors duration-200;
+  }
+
+  .markdown-content h1:hover,
+  .markdown-content h2:hover,
+  .markdown-content h3:hover {
+    @apply text-primary;
   }
 }
