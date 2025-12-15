@@ -91,6 +91,9 @@ interface DepthStats {
   avgTokens: number;
   avgCost: number;
   totalCost: number;
+  hasOutliers?: boolean;
+  outlierCount?: number;
+  dataQuality?: { label: string; color: string; icon: string } | null;
 }
 
 interface ModelUsageStats {
@@ -102,6 +105,9 @@ interface ModelUsageStats {
   avgCost: number;
   totalCost: number;
   isEconomic: boolean;
+  hasOutliers?: boolean;
+  outlierCount?: number;
+  dataQuality?: { label: string; color: string; icon: string } | null;
 }
 
 interface AnalysisTypeStats {
@@ -793,6 +799,40 @@ const AdminCosts = () => {
           : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
       };
 
+      // Function to calculate trimmed median (removes top 15% and bottom 15% outliers)
+      const calculateTrimmedMedian = (arr: number[]): number => {
+        if (arr.length === 0) return 0;
+        if (arr.length < 7) return calculateMedian(arr); // Too few items, use regular median
+        
+        const sorted = [...arr].sort((a, b) => a - b);
+        const trimPercent = 0.15;
+        const trimCount = Math.floor(sorted.length * trimPercent);
+        const trimmed = sorted.slice(trimCount, sorted.length - trimCount);
+        
+        if (trimmed.length === 0) return calculateMedian(arr); // Fallback if over-trimmed
+        
+        const mid = Math.floor(trimmed.length / 2);
+        return trimmed.length % 2 !== 0
+          ? trimmed[mid]
+          : Math.round((trimmed[mid - 1] + trimmed[mid]) / 2);
+      };
+
+      // Function to detect outliers (values > 2.5x the median)
+      const detectOutliers = (arr: number[]): { hasOutliers: boolean; outlierCount: number; medianValue: number } => {
+        if (arr.length < 5) return { hasOutliers: false, outlierCount: 0, medianValue: 0 };
+        const median = calculateMedian(arr);
+        const threshold = median * 2.5;
+        const outliers = arr.filter(v => v > threshold);
+        return { hasOutliers: outliers.length > 0, outlierCount: outliers.length, medianValue: median };
+      };
+
+      // Function to get data quality indicator
+      const getDataQualityLabel = (count: number): { label: string; color: string; icon: string } | null => {
+        if (count < 5) return { label: '⚠️ Amostra muito pequena', color: 'text-red-500', icon: '⚠️' };
+        if (count < 10) return { label: '(dados limitados)', color: 'text-amber-500', icon: '📊' };
+        return null;
+      };
+
       // Map model keys to display names and providers
       const getModelInfo = (modelKey: string): { provider: string; displayName: string; isEconomic: boolean } => {
         const lowerKey = modelKey.toLowerCase();
@@ -817,15 +857,20 @@ const AdminCosts = () => {
         .map(([modelKey, tokenArr]) => {
           const costArr = modelCostArrays.get(modelKey) || [];
           const info = getModelInfo(modelKey);
+          const outlierInfo = detectOutliers(tokenArr);
+          const dataQuality = getDataQualityLabel(tokenArr.length);
           return {
             provider: info.provider,
             modelName: info.displayName,
             modelKey,
             count: tokenArr.length,
-            avgTokens: calculateMedian(tokenArr), // Using MEDIAN
-            avgCost: calculateMedian(costArr),
+            avgTokens: calculateTrimmedMedian(tokenArr), // Using TRIMMED MEDIAN
+            avgCost: calculateTrimmedMedian(costArr),
             totalCost: costArr.reduce((sum, c) => sum + c, 0),
             isEconomic: info.isEconomic,
+            hasOutliers: outlierInfo.hasOutliers,
+            outlierCount: outlierInfo.outlierCount,
+            dataQuality,
           };
         })
         .sort((a, b) => b.totalCost - a.totalCost);
@@ -851,19 +896,24 @@ const AdminCosts = () => {
         }
       });
 
-      // Reusing calculateMedian function defined above for model stats
+      // Depth statistics - using TRIMMED MEDIAN to protect against outliers
 
       const depthStatsData: DepthStats[] = ['critical', 'balanced', 'complete'].map(d => {
         const tokenArr = depthTokenArrays.get(d) || [];
         const costArr = depthCostArrays.get(d) || [];
         
         if (tokenArr.length > 0) {
+          const outlierInfo = detectOutliers(tokenArr);
+          const dataQuality = getDataQualityLabel(tokenArr.length);
           return {
             depth: d,
             count: tokenArr.length,
-            avgTokens: calculateMedian(tokenArr), // Using MEDIAN instead of mean
-            avgCost: calculateMedian(costArr),
+            avgTokens: calculateTrimmedMedian(tokenArr), // Using TRIMMED MEDIAN
+            avgCost: calculateTrimmedMedian(costArr),
             totalCost: costArr.reduce((sum, c) => sum + c, 0),
+            hasOutliers: outlierInfo.hasOutliers,
+            outlierCount: outlierInfo.outlierCount,
+            dataQuality,
           };
         }
         return { depth: d, count: 0, avgTokens: 0, avgCost: 0, totalCost: 0 };
@@ -1172,6 +1222,9 @@ const AdminCosts = () => {
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                 <Flame className="w-5 h-5 text-orange-500" />
                 Custo por Modelo de IA (Dados Reais)
+                <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30 ml-2">
+                  Mediana Aparada (±15%)
+                </Badge>
               </h3>
               {modelUsageStats.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Nenhum dado de uso encontrado. Execute análises para ver dados reais.</p>
@@ -1187,6 +1240,7 @@ const AdminCosts = () => {
                         <th className="text-right py-3 px-2">Tokens Médios</th>
                         <th className="text-right py-3 px-2">Custo Médio</th>
                         <th className="text-right py-3 px-2">Custo Total</th>
+                        <th className="text-center py-3 px-2">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1207,6 +1261,25 @@ const AdminCosts = () => {
                           <td className="text-right py-3 px-2 font-mono">{m.avgTokens.toLocaleString()}</td>
                           <td className="text-right py-3 px-2">R$ {(m.avgCost * USD_TO_BRL).toFixed(4)}</td>
                           <td className="text-right py-3 px-2 font-medium">R$ {(m.totalCost * USD_TO_BRL).toFixed(2)}</td>
+                          <td className="text-center py-3 px-2">
+                            <div className="flex items-center justify-center gap-1">
+                              {m.hasOutliers && (
+                                <span title={`${m.outlierCount} outlier(s) filtrado(s)`} className="cursor-help">
+                                  <Badge className="bg-amber-500/10 text-amber-500 text-xs">
+                                    ⚠️ {m.outlierCount}
+                                  </Badge>
+                                </span>
+                              )}
+                              {m.dataQuality && (
+                                <span title={m.dataQuality.label} className={`text-xs ${m.dataQuality.color} cursor-help`}>
+                                  {m.dataQuality.icon}
+                                </span>
+                              )}
+                              {!m.hasOutliers && !m.dataQuality && m.count >= 10 && (
+                                <Badge className="bg-green-500/10 text-green-500 text-xs">✓</Badge>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                       {/* Total row */}
@@ -1220,6 +1293,7 @@ const AdminCosts = () => {
                           R$ {((modelUsageStats.reduce((sum, m) => sum + m.totalCost, 0) / modelUsageStats.reduce((sum, m) => sum + m.count, 0) || 0) * USD_TO_BRL).toFixed(4)}
                         </td>
                         <td className="text-right py-3 px-2">R$ {(modelUsageStats.reduce((sum, m) => sum + m.totalCost, 0) * USD_TO_BRL).toFixed(2)}</td>
+                        <td></td>
                       </tr>
                     </tbody>
                   </table>
@@ -1232,10 +1306,42 @@ const AdminCosts = () => {
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                 <Calculator className="w-5 h-5 text-blue-500" />
                 Estimativa por Profundidade (Todos os Modelos)
+                <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30 ml-2">
+                  Mediana Aparada
+                </Badge>
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Baseado em dados reais de uso. Modelos sem dados: estimativas teóricas.
+                Baseado em dados reais de uso com proteção contra outliers (±15% removidos).
               </p>
+              
+              {/* Depth Stats Quality Indicators */}
+              {depthStats.some(d => d.hasOutliers || d.dataQuality) && (
+                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-amber-600 font-medium">Alertas de Qualidade de Dados:</span>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                    {depthStats.map(d => {
+                      if (!d.hasOutliers && !d.dataQuality) return null;
+                      return (
+                        <li key={d.depth} className="flex items-center gap-2">
+                          <Badge className={d.depth === 'critical' ? 'bg-green-500/10 text-green-500 text-xs' : d.depth === 'balanced' ? 'bg-blue-500/10 text-blue-500 text-xs' : 'bg-purple-500/10 text-purple-500 text-xs'}>
+                            {d.depth}
+                          </Badge>
+                          {d.hasOutliers && (
+                            <span className="text-amber-500">⚠️ {d.outlierCount} outlier(s) filtrado(s)</span>
+                          )}
+                          {d.dataQuality && (
+                            <span className={d.dataQuality.color}>{d.dataQuality.label}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
               {depthModelEstimations.models.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Execute análises para ver estimativas por modelo.</p>
               ) : (
@@ -1245,6 +1351,7 @@ const AdminCosts = () => {
                       <tr className="border-b border-border">
                         <th className="text-left py-3 px-2">Profundidade</th>
                         <th className="text-right py-3 px-2">Tokens</th>
+                        <th className="text-center py-3 px-2">Status</th>
                         {depthModelEstimations.models.map(model => (
                           <th key={model.key} className="text-right py-3 px-2">
                             <div className="flex items-center justify-end gap-1">
@@ -1260,6 +1367,7 @@ const AdminCosts = () => {
                     <tbody>
                       {depthModelEstimations.data.map((row) => {
                         const depthInfo = depthModelEstimations.depths.find(d => d.depth === row.depth);
+                        const depthStat = depthStats.find(d => d.depth === row.depth);
                         return (
                           <tr key={row.depth} className="border-b border-border/50">
                             <td className="py-3 px-2">
@@ -1268,6 +1376,26 @@ const AdminCosts = () => {
                               </Badge>
                             </td>
                             <td className="text-right py-3 px-2 font-mono text-xs">{row.tokens.toLocaleString()}</td>
+                            <td className="text-center py-3 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                {depthStat?.hasOutliers && (
+                                  <span title={`${depthStat.outlierCount} outlier(s)`} className="cursor-help">
+                                    <Badge className="bg-amber-500/10 text-amber-500 text-xs">⚠️</Badge>
+                                  </span>
+                                )}
+                                {depthStat?.dataQuality && (
+                                  <span title={depthStat.dataQuality.label} className={`text-xs ${depthStat.dataQuality.color} cursor-help`}>
+                                    {depthStat.dataQuality.icon}
+                                  </span>
+                                )}
+                                {!depthStat?.hasOutliers && !depthStat?.dataQuality && depthStat && depthStat.count >= 10 && (
+                                  <Badge className="bg-green-500/10 text-green-500 text-xs">✓</Badge>
+                                )}
+                                {(!depthStat || depthStat.count === 0) && (
+                                  <span className="text-xs text-muted-foreground">(est.)</span>
+                                )}
+                              </div>
+                            </td>
                             {depthModelEstimations.models.map(model => (
                               <td key={model.key} className={`text-right py-3 px-2 font-medium ${model.isEconomic ? 'text-green-500' : 'text-orange-500'}`}>
                                 R$ {(row.costs[model.key] || 0).toFixed(4)}
@@ -1279,7 +1407,7 @@ const AdminCosts = () => {
                       {/* Economia row */}
                       {depthModelEstimations.models.length > 1 && (
                         <tr className="border-t-2 border-border bg-muted/20">
-                          <td colSpan={2} className="py-3 px-2 font-medium">Economia vs mais caro</td>
+                          <td colSpan={3} className="py-3 px-2 font-medium">Economia vs mais caro</td>
                           {depthModelEstimations.models.map((model, idx) => {
                             if (depthModelEstimations.data.length === 0) return <td key={model.key}>-</td>;
                             const avgCost = depthModelEstimations.data.reduce((sum, row) => sum + (row.costs[model.key] || 0), 0) / depthModelEstimations.data.length;
