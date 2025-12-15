@@ -30,7 +30,30 @@ const ANALYSIS_TYPE_LABELS: Record<string, string> = {
   documentacao: 'Documentação',
   prompts: 'Prompts Otimizados',
   quality: 'Qualidade de Código',
+  performance: 'Performance',
 };
+
+// Default prompts if not found in database
+const DEFAULT_SYSTEM_PROMPT = `Você é um especialista em análise de projetos de software. Sua tarefa é extrair TODOS os itens ACIONÁVEIS das análises fornecidas e criar um checklist estruturado de implementação.
+
+REGRAS CRÍTICAS:
+1. Extraia APENAS itens que requerem AÇÃO CONCRETA (implementar, corrigir, adicionar, configurar, etc.)
+2. NÃO inclua itens que são apenas métricas, estatísticas ou informações descritivas
+3. Cada item deve ser uma tarefa clara e específica
+4. Mantenha títulos concisos (máx 100 caracteres) e descrições detalhadas quando necessário
+
+CATEGORIZAÇÃO AUTOMÁTICA:
+- "critical": Itens urgentes, bugs graves, vulnerabilidades de segurança, problemas que bloqueiam funcionalidades
+- "implementation": Novas funcionalidades, features a implementar, integrações necessárias
+- "improvement": Otimizações, melhorias de código, refatorações, melhorias de UX/performance
+
+Analise TODO o conteúdo e extraia TODOS os itens acionáveis, categorizando-os automaticamente.`;
+
+const DEFAULT_USER_PROMPT = `Analise o seguinte conteúdo e extraia TODOS os itens acionáveis para criar um plano de implementação:
+
+{{analysesContent}}
+
+Retorne usando a função extract_implementation_items com os itens encontrados.`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -74,6 +97,29 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Load prompts from database
+    let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    let userPromptTemplate = DEFAULT_USER_PROMPT;
+
+    try {
+      const { data: promptData, error: promptError } = await supabase
+        .from('analysis_prompts')
+        .select('system_prompt, user_prompt_template')
+        .eq('analysis_type', 'implementation_plan')
+        .eq('is_active', true)
+        .single();
+
+      if (!promptError && promptData) {
+        if (promptData.system_prompt) systemPrompt = promptData.system_prompt;
+        if (promptData.user_prompt_template) userPromptTemplate = promptData.user_prompt_template;
+        console.log('[generate-implementation-plan] Loaded prompts from database');
+      } else {
+        console.log('[generate-implementation-plan] Using default prompts (not found in DB)');
+      }
+    } catch (e) {
+      console.log('[generate-implementation-plan] Error loading prompts, using defaults:', e);
     }
 
     // Verify project belongs to user
@@ -146,26 +192,8 @@ serve(async (req) => {
       .map(a => `### ${ANALYSIS_TYPE_LABELS[a.type] || a.type}\n${a.content.slice(0, 15000)}`)
       .join('\n\n---\n\n');
 
-    const systemPrompt = `Você é um especialista em análise de projetos de software. Sua tarefa é extrair TODOS os itens ACIONÁVEIS das análises fornecidas e criar um checklist estruturado de implementação.
-
-REGRAS CRÍTICAS:
-1. Extraia APENAS itens que requerem AÇÃO CONCRETA (implementar, corrigir, adicionar, configurar, etc.)
-2. NÃO inclua itens que são apenas métricas, estatísticas ou informações descritivas
-3. Cada item deve ser uma tarefa clara e específica
-4. Mantenha títulos concisos (máx 100 caracteres) e descrições detalhadas quando necessário
-
-CATEGORIZAÇÃO AUTOMÁTICA:
-- "critical": Itens urgentes, bugs graves, vulnerabilidades de segurança, problemas que bloqueiam funcionalidades
-- "implementation": Novas funcionalidades, features a implementar, integrações necessárias
-- "improvement": Otimizações, melhorias de código, refatorações, melhorias de UX/performance
-
-Analise TODO o conteúdo e extraia TODOS os itens acionáveis, categorizando-os automaticamente.`;
-
-    const userPrompt = `Analise o seguinte conteúdo e extraia TODOS os itens acionáveis para criar um plano de implementação:
-
-${analysesContext}
-
-Retorne usando a função extract_implementation_items com os itens encontrados.`;
+    // Replace template variables in user prompt
+    const userPrompt = userPromptTemplate.replace(/\{\{analysesContent\}\}/g, analysesContext);
 
     console.log('[generate-implementation-plan] Calling Lovable AI...');
 
