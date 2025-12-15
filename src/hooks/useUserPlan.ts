@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { 
+  ANALYSIS_TYPE_SLUGS, 
+  LEGACY_ANALYSIS_TYPES, 
+  DEPTH_LEVELS,
+  type AnalysisTypeSlug,
+  type DepthLevel 
+} from "@/lib/analysisTypes";
 
 interface PlanConfig {
   allowed_depths?: string[];
@@ -37,18 +44,10 @@ export interface UserPlan {
   limitations: string[];
 }
 
-// All valid analysis types (ferramentas is legacy, replaced by performance)
-export const ALL_ANALYSIS_TYPES = [
-  'prd', 'divulgacao', 'captacao', 'seguranca', 
-  'ui_theme', 'features', 'documentacao', 
-  'prompts', 'quality', 'performance'
-] as const;
-
-// Legacy analysis types (still readable but not selectable for new analyses)
-export const LEGACY_ANALYSIS_TYPES = ['ferramentas'] as const;
-
-// All valid depth levels
-export const ALL_DEPTH_LEVELS = ['critical', 'balanced', 'complete'] as const;
+// Re-export from centralized definitions
+export const ALL_ANALYSIS_TYPES = ANALYSIS_TYPE_SLUGS;
+export const ALL_DEPTH_LEVELS = DEPTH_LEVELS;
+export { LEGACY_ANALYSIS_TYPES };
 
 // Token estimates per analysis based on depth (for 8 analysis types)
 export const TOKEN_ESTIMATES = {
