@@ -966,41 +966,71 @@ serve(async (req) => {
   }
 
   try {
-    const { githubUrl, userId, analysisTypes, useCache, depth } = await req.json();
+    const { githubUrl, userId, analysisTypes, useCache, depth, existingProjectId } = await req.json();
     console.log("=== INICIANDO ANÁLISE ===");
     console.log("URL:", githubUrl);
     console.log("User ID:", userId);
     console.log("Tipos de análise:", analysisTypes);
     console.log("Usar cache:", useCache);
     console.log("Profundidade:", depth || "complete");
+    console.log("Project ID existente:", existingProjectId || "nenhum");
 
-    if (!githubUrl) {
-      throw new Error("URL do GitHub não fornecida");
+    if (!githubUrl && !existingProjectId) {
+      throw new Error("URL do GitHub ou Project ID não fornecido");
     }
 
     if (!userId) {
       throw new Error("Usuário não autenticado");
     }
 
-    const urlParts = githubUrl.replace(/\/$/, "").split("/");
-    const owner = urlParts[urlParts.length - 2];
-    let repo = urlParts[urlParts.length - 1];
-    repo = repo.replace(/\.git$/, "");
-    const projectName = repo;
-
-    console.log(`Owner: ${owner}, Repo: ${repo}`);
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    let owner: string;
+    let repo: string;
+    let projectName: string;
+    let effectiveGithubUrl = githubUrl;
+
+    // If existingProjectId is provided, fetch the project directly
     let project;
-    const { data: existingProject } = await supabase
-      .from("projects")
-      .select()
-      .eq("github_url", githubUrl)
-      .eq("user_id", userId)
-      .maybeSingle();
+    let existingProject;
+    
+    if (existingProjectId) {
+      const { data: projectById } = await supabase
+        .from("projects")
+        .select()
+        .eq("id", existingProjectId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      
+      if (projectById) {
+        existingProject = projectById;
+        effectiveGithubUrl = projectById.github_url;
+        console.log("✓ Projeto encontrado por ID:", existingProjectId);
+      }
+    }
+    
+    // If not found by ID, try by URL
+    if (!existingProject && effectiveGithubUrl) {
+      const { data: projectByUrl } = await supabase
+        .from("projects")
+        .select()
+        .eq("github_url", effectiveGithubUrl)
+        .eq("user_id", userId)
+        .maybeSingle();
+      
+      existingProject = projectByUrl;
+    }
+
+    // Parse GitHub URL to extract owner/repo
+    const urlParts = effectiveGithubUrl.replace(/\/$/, "").split("/");
+    owner = urlParts[urlParts.length - 2];
+    repo = urlParts[urlParts.length - 1];
+    repo = repo.replace(/\.git$/, "");
+    projectName = repo;
+
+    console.log(`Owner: ${owner}, Repo: ${repo}`);
 
     // Parse analysis types - if it's a single type for re-analysis, don't delete other analyses
     const typesArray = Array.isArray(analysisTypes) ? analysisTypes : [];
@@ -1013,10 +1043,11 @@ serve(async (req) => {
       // VERIFICAÇÃO ANTI-DUPLICAÇÃO: Se análise já está em andamento, retornar sem duplicar
       const currentStatus = existingProject.analysis_status;
       const inProgressStatuses = [
-        "pending", "extracting", 
+        "pending", "extracting", "queue_ready",
         "generating_prd", "generating_divulgacao", "generating_captacao",
         "generating_seguranca", "generating_ui", "generating_ferramentas",
-        "generating_features", "generating_documentacao", "generating_prompts", "generating_quality"
+        "generating_features", "generating_documentacao", "generating_prompts", 
+        "generating_quality", "generating_performance"
       ];
       
       if (inProgressStatuses.includes(currentStatus)) {
@@ -1056,7 +1087,7 @@ serve(async (req) => {
         .from("projects")
         .upsert({
           name: projectName,
-          github_url: githubUrl,
+          github_url: effectiveGithubUrl,
           analysis_status: "pending",
           user_id: userId,
         }, {
@@ -1072,7 +1103,7 @@ serve(async (req) => {
         const { data: fallbackProject } = await supabase
           .from("projects")
           .select()
-          .eq("github_url", githubUrl)
+          .eq("github_url", effectiveGithubUrl)
           .eq("user_id", userId)
           .maybeSingle();
         
@@ -1105,7 +1136,7 @@ serve(async (req) => {
     EdgeRuntime.waitUntil(
       extractAndPrepareAnalysis(
         project.id, 
-        githubUrl, 
+        effectiveGithubUrl, 
         owner, 
         repo, 
         projectName, 
