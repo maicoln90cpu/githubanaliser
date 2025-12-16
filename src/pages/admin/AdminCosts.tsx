@@ -34,7 +34,7 @@ import {
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useRealModelCosts, isValidCostData } from "@/hooks/useRealModelCosts";
-import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostBRL } from "@/lib/modelCosts";
+import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostBRL, formatCostPer1M, formatCostPer1MBRL } from "@/lib/modelCosts";
 import { isEconomicModel } from "@/lib/modelCategories";
 import {
   Table,
@@ -1151,7 +1151,7 @@ const AdminCosts = () => {
           {hasRealData ? (
             <>
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-sm text-green-600">Dados reais do sistema (R$ {realCostPer1K.toFixed(4)}/1K tokens)</span>
+              <span className="text-sm text-green-600">Dados reais do sistema ($ {(realCostPer1K * 1000).toFixed(2)}/1M tokens)</span>
             </>
           ) : (
             <>
@@ -1338,9 +1338,9 @@ const AdminCosts = () => {
                 <div className="flex items-start gap-2">
                   <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p><strong>Como é calculado:</strong> Custo = (Tokens da Profundidade ÷ 1000) × Custo/1K do Modelo</p>
+                    <p><strong>Como é calculado:</strong> Custo = (Tokens da Profundidade ÷ 1M) × Custo/1M do Modelo</p>
                     <p><strong>Tokens por profundidade:</strong> Mediana real de todas as análises dessa profundidade (independente do modelo usado)</p>
-                    <p><strong>Custo/1K por modelo:</strong> Custo médio real do modelo no sistema (ou referência se sem dados)</p>
+                    <p><strong>Custo/1M por modelo:</strong> Custo médio real do modelo no sistema (ou referência se sem dados)</p>
                   </div>
                 </div>
               </div>
@@ -1580,7 +1580,7 @@ const AdminCosts = () => {
                       <th className="text-left py-3 px-2">#</th>
                       <th className="text-left py-3 px-2">Provider</th>
                       <th className="text-left py-3 px-2">Modelo</th>
-                      <th className="text-right py-3 px-2">Custo/1K</th>
+                      <th className="text-right py-3 px-2">Custo/1M</th>
                       <th className="text-right py-3 px-2">10 Análises</th>
                       <th className="text-right py-3 px-2">100 Análises</th>
                       <th className="text-right py-3 px-2">Economia</th>
@@ -1593,6 +1593,7 @@ const AdminCosts = () => {
                       const costPer100 = (tokensPerAnalysis * 100 / 1000) * model.costPer1K;
                       const maxCost = ALL_MODELS[ALL_MODELS.length - 1].costPer1K;
                       const savings = ((maxCost - model.costPer1K) / maxCost) * 100;
+                      const costPer1M = model.costPer1K * 1000;
                       
                       return (
                         <tr key={`${model.provider}-${model.name}`} className={`border-b border-border/50 ${index < 3 ? 'bg-yellow-500/5' : ''}`}>
@@ -1605,7 +1606,7 @@ const AdminCosts = () => {
                             </Badge>
                           </td>
                           <td className="py-3 px-2 font-medium">{model.name}</td>
-                          <td className="text-right py-3 px-2 font-mono">${model.costPer1K.toFixed(5)}</td>
+                          <td className="text-right py-3 px-2 font-mono">${costPer1M.toFixed(2)}</td>
                           <td className="text-right py-3 px-2">
                             <div className="flex flex-col items-end">
                               <span className="font-medium">${costPer10.toFixed(3)}</span>
@@ -1645,7 +1646,7 @@ const AdminCosts = () => {
                         <span className="text-xs text-muted-foreground">Mais Econômico</span>
                       </div>
                       <p className="font-bold text-sm">{ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name || 'N/A'}</p>
-                      <p className="text-xs text-green-500">${ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5) || '0'}/1K</p>
+                      <p className="text-xs text-green-500">${((ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K || 0) * 1000).toFixed(2)}/1M</p>
                     </div>
                     <div className="p-3 bg-background/50 rounded-lg">
                       <div className="flex items-center gap-1 mb-1">
@@ -1659,7 +1660,7 @@ const AdminCosts = () => {
                         return bestCB ? (
                           <>
                             <p className="font-bold text-sm">{bestCB.name}</p>
-                            <p className="text-xs text-purple-500">${bestCB.costPer1K.toFixed(5)}/1K</p>
+                            <p className="text-xs text-purple-500">${(bestCB.costPer1K * 1000).toFixed(2)}/1M</p>
                           </>
                         ) : <p className="text-sm text-muted-foreground">N/A</p>;
                       })()}
@@ -1680,7 +1681,7 @@ const AdminCosts = () => {
                         <span className="text-xs text-muted-foreground">Mais Econômico</span>
                       </div>
                       <p className="font-bold text-sm">{ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name || 'N/A'}</p>
-                      <p className="text-xs text-green-500">${ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5) || '0'}/1K</p>
+                      <p className="text-xs text-green-500">${((ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K || 0) * 1000).toFixed(2)}/1M</p>
                     </div>
                     <div className="p-3 bg-background/50 rounded-lg">
                       <div className="flex items-center gap-1 mb-1">
@@ -1694,7 +1695,7 @@ const AdminCosts = () => {
                         return bestCB ? (
                           <>
                             <p className="font-bold text-sm">{bestCB.name}</p>
-                            <p className="text-xs text-purple-500">${bestCB.costPer1K.toFixed(5)}/1K</p>
+                            <p className="text-xs text-purple-500">${(bestCB.costPer1K * 1000).toFixed(2)}/1M</p>
                           </>
                         ) : <p className="text-sm text-muted-foreground">N/A</p>;
                       })()}

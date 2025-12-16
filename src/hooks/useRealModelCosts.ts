@@ -39,6 +39,7 @@ export interface UseRealModelCostsResult {
   
   // Helper functions
   getRealCostPer1K: (modelId: string) => number;
+  getRealCostPer1M: (modelId: string) => number;
   getEstimatedCost: (modelId: string, tokens?: number) => number;
   getEstimatedCostBRL: (modelId: string, tokens?: number) => string;
   getDepthCost: (depth: 'critical' | 'balanced' | 'complete', modelId: string) => number;
@@ -165,6 +166,11 @@ export function useRealModelCosts(): UseRealModelCostsResult {
     return 0.001; // Default fallback
   }, [modelStats]);
 
+  // Get real cost per 1M tokens (standardized for display)
+  const getRealCostPer1M = useCallback((modelId: string): number => {
+    return getRealCostPer1K(modelId) * 1000;
+  }, [getRealCostPer1K]);
+
   // Estimate cost for given tokens
   const getEstimatedCost = useCallback((modelId: string, tokens: number = 4000): number => {
     const costPer1K = getRealCostPer1K(modelId);
@@ -218,6 +224,7 @@ export function useRealModelCosts(): UseRealModelCostsResult {
     loading,
     hasRealData,
     getRealCostPer1K,
+    getRealCostPer1M,
     getEstimatedCost,
     getEstimatedCostBRL,
     getDepthCost,
