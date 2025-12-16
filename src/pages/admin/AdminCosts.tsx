@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
-import { useRealModelCosts } from "@/hooks/useRealModelCosts";
+import { useRealModelCosts, isValidCostData } from "@/hooks/useRealModelCosts";
 import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostBRL } from "@/lib/modelCosts";
 import { isEconomicModel } from "@/lib/modelCategories";
 import {
@@ -700,13 +700,20 @@ const AdminCosts = () => {
       }));
       setPlans(parsedPlans);
 
-      // Get real usage data
-      const { data: usageData } = await supabase
+      // Get real usage data and filter corrupted records
+      const { data: rawUsageData } = await supabase
         .from("analysis_usage")
         .select("*");
 
-      const realTotalCost = usageData?.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0) || 0;
-      const realTotalTokens = usageData?.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0) || 0;
+      // Filter out corrupted historical data (before Dec 13 bug fix)
+      const usageData = rawUsageData?.filter(u => 
+        isValidCostData(u.cost_estimated, u.tokens_estimated)
+      ) || [];
+      
+      console.log(`[AdminCosts] Dados filtrados: ${usageData.length}/${rawUsageData?.length || 0} registros válidos`);
+
+      const realTotalCost = usageData.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0);
+      const realTotalTokens = usageData.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0);
 
       if (realTotalTokens > 0 && realTotalCost > 0) {
         const costPer1K = (realTotalCost * USD_TO_BRL) / (realTotalTokens / 1000);
@@ -725,7 +732,7 @@ const AdminCosts = () => {
       const uniqueUsers = new Set(projects?.map(p => p.user_id) || []);
       const totalUsers = uniqueUsers.size;
 
-      const hasRealUsageData = usageData && usageData.length > 0;
+      const hasRealUsageData = usageData.length > 0;
       setHasRealData(hasRealUsageData);
       
       // Use real data when available, fallback to 0 when no data (not hardcoded estimate)

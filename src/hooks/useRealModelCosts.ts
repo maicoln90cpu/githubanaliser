@@ -2,6 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES } from '@/lib/modelCosts';
 
+/**
+ * Validates if cost data is realistic (not corrupted by old bug)
+ * Returns false if cost per 1M tokens > $0.50 (unrealistic for any model)
+ */
+export function isValidCostData(cost: number | null, tokens: number | null): boolean {
+  if (!cost || !tokens || tokens === 0) return false;
+  const costPer1M = (cost / tokens) * 1_000_000;
+  // Max realistic cost is ~$0.50/1M tokens (GPT-5 output is ~$0.015/1K = $15/1M)
+  // But our corrupted data shows $18+/1M which is clearly wrong
+  return costPer1M < 0.50;
+}
+
 export interface RealModelStats {
   modelId: string;
   modelName: string;
@@ -39,6 +51,7 @@ export interface UseRealModelCostsResult {
 /**
  * Hook to fetch real model costs from analysis_usage data
  * Falls back to reference costs when no real data available
+ * Filters out corrupted historical data automatically
  */
 export function useRealModelCosts(): UseRealModelCostsResult {
   const [modelStats, setModelStats] = useState<RealModelStats[]>([]);
@@ -55,38 +68,45 @@ export function useRealModelCosts(): UseRealModelCostsResult {
         .select('model_used, cost_estimated, tokens_estimated');
       
       if (modelData && modelData.length > 0) {
-        setHasRealData(true);
+        // Filter out corrupted data
+        const validData = modelData.filter(row => 
+          isValidCostData(row.cost_estimated, row.tokens_estimated)
+        );
         
-        // Aggregate by model
-        const byModel: Record<string, { cost: number; tokens: number; count: number }> = {};
-        modelData.forEach(row => {
-          const model = row.model_used || 'unknown';
-          if (!byModel[model]) {
-            byModel[model] = { cost: 0, tokens: 0, count: 0 };
-          }
-          byModel[model].cost += row.cost_estimated || 0;
-          byModel[model].tokens += row.tokens_estimated || 0;
-          byModel[model].count += 1;
-        });
-
-        const stats: RealModelStats[] = Object.entries(byModel).map(([modelId, data]) => {
-          const refModel = MODEL_COSTS.find(m => m.id === modelId);
-          const avgCost = data.count > 0 ? data.cost / data.count : 0;
-          const avgTokens = data.count > 0 ? data.tokens / data.count : 0;
-          const costPer1K = data.tokens > 0 ? (data.cost / data.tokens) * 1000 : 0;
+        if (validData.length > 0) {
+          setHasRealData(true);
           
-          return {
-            modelId,
-            modelName: refModel?.name || modelId.split('/').pop() || modelId,
-            provider: refModel?.provider || (modelId.includes('openai') ? 'OpenAI' : 'Lovable AI'),
-            avgCost,
-            avgTokens,
-            count: data.count,
-            costPer1K,
-          };
-        });
+          // Aggregate by model
+          const byModel: Record<string, { cost: number; tokens: number; count: number }> = {};
+          validData.forEach(row => {
+            const model = row.model_used || 'unknown';
+            if (!byModel[model]) {
+              byModel[model] = { cost: 0, tokens: 0, count: 0 };
+            }
+            byModel[model].cost += row.cost_estimated || 0;
+            byModel[model].tokens += row.tokens_estimated || 0;
+            byModel[model].count += 1;
+          });
 
-        setModelStats(stats.sort((a, b) => a.costPer1K - b.costPer1K));
+          const stats: RealModelStats[] = Object.entries(byModel).map(([modelId, data]) => {
+            const refModel = MODEL_COSTS.find(m => m.id === modelId);
+            const avgCost = data.count > 0 ? data.cost / data.count : 0;
+            const avgTokens = data.count > 0 ? data.tokens / data.count : 0;
+            const costPer1K = data.tokens > 0 ? (data.cost / data.tokens) * 1000 : 0;
+            
+            return {
+              modelId,
+              modelName: refModel?.name || modelId.split('/').pop() || modelId,
+              provider: refModel?.provider || (modelId.includes('openai') ? 'OpenAI' : 'Lovable AI'),
+              avgCost,
+              avgTokens,
+              count: data.count,
+              costPer1K,
+            };
+          });
+
+          setModelStats(stats.sort((a, b) => a.costPer1K - b.costPer1K));
+        }
       }
 
       // Fetch depth stats
@@ -95,8 +115,13 @@ export function useRealModelCosts(): UseRealModelCostsResult {
         .select('depth_level, cost_estimated, tokens_estimated');
 
       if (depthData && depthData.length > 0) {
+        // Filter out corrupted data
+        const validDepthData = depthData.filter(row => 
+          isValidCostData(row.cost_estimated, row.tokens_estimated)
+        );
+        
         const byDepth: Record<string, { cost: number; tokens: number; count: number }> = {};
-        depthData.forEach(row => {
+        validDepthData.forEach(row => {
           const depth = row.depth_level || 'balanced';
           if (!byDepth[depth]) {
             byDepth[depth] = { cost: 0, tokens: 0, count: 0 };
@@ -132,10 +157,10 @@ export function useRealModelCosts(): UseRealModelCostsResult {
     if (realStats && realStats.costPer1K > 0) {
       return realStats.costPer1K;
     }
-    // Fallback to reference cost
+    // Fallback to reference cost (inputPer1K + outputPer1K already in $/1K)
     const refModel = MODEL_COSTS.find(m => m.id === modelId);
     if (refModel) {
-      return (refModel.inputPer1K + refModel.outputPer1K) / 2 * 1000;
+      return (refModel.inputPer1K + refModel.outputPer1K) / 2;
     }
     return 0.001; // Default fallback
   }, [modelStats]);
