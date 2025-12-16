@@ -148,6 +148,7 @@ export type Database = {
           created_at: string | null
           depth_level: string | null
           id: string
+          is_legacy_cost: boolean | null
           model_used: string | null
           project_id: string | null
           tokens_estimated: number | null
@@ -159,6 +160,7 @@ export type Database = {
           created_at?: string | null
           depth_level?: string | null
           id?: string
+          is_legacy_cost?: boolean | null
           model_used?: string | null
           project_id?: string | null
           tokens_estimated?: number | null
@@ -170,6 +172,7 @@ export type Database = {
           created_at?: string | null
           depth_level?: string | null
           id?: string
+          is_legacy_cost?: boolean | null
           model_used?: string | null
           project_id?: string | null
           tokens_estimated?: number | null

@@ -166,14 +166,15 @@ const AdminPlans = () => {
       
       if (settingData) setGlobalEconomicMode(settingData.value);
 
-      // Load real costs grouped by depth AND model (filter corrupted data)
+      // Load real costs grouped by depth AND model (filter legacy corrupted data)
       const { data: rawUsageData } = await supabase
         .from("analysis_usage")
-        .select("depth_level, model_used, tokens_estimated, cost_estimated");
+        .select("depth_level, model_used, tokens_estimated, cost_estimated, is_legacy_cost")
+        .or('is_legacy_cost.is.null,is_legacy_cost.eq.false');
 
-      // Filter out corrupted historical data
+      // Additional filter for any data not yet marked as legacy
       const usageData = rawUsageData?.filter(u => 
-        isValidCostData(u.cost_estimated, u.tokens_estimated)
+        !u.is_legacy_cost && isValidCostData(u.cost_estimated, u.tokens_estimated)
       ) || [];
 
       if (usageData.length > 0) {

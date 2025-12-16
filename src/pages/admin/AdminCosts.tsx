@@ -700,17 +700,18 @@ const AdminCosts = () => {
       }));
       setPlans(parsedPlans);
 
-      // Get real usage data and filter corrupted records
+      // Get real usage data, excluding legacy corrupted records
       const { data: rawUsageData } = await supabase
         .from("analysis_usage")
-        .select("*");
+        .select("*")
+        .or('is_legacy_cost.is.null,is_legacy_cost.eq.false');
 
-      // Filter out corrupted historical data (before Dec 13 bug fix)
+      // Additional filter for any data not yet marked as legacy
       const usageData = rawUsageData?.filter(u => 
-        isValidCostData(u.cost_estimated, u.tokens_estimated)
+        !u.is_legacy_cost && isValidCostData(u.cost_estimated, u.tokens_estimated)
       ) || [];
       
-      console.log(`[AdminCosts] Dados filtrados: ${usageData.length}/${rawUsageData?.length || 0} registros válidos`);
+      console.log(`[AdminCosts] Dados filtrados: ${usageData.length}/${rawUsageData?.length || 0} registros válidos (excluindo is_legacy_cost=true)`);
 
       const realTotalCost = usageData.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0);
       const realTotalTokens = usageData.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0);
