@@ -6,6 +6,39 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Structured logging helper
+interface LogEntry {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  endpoint: string;
+  userId?: string;
+  projectId?: string;
+  queueItemId?: string;
+  analysisType?: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+function log(
+  level: LogEntry['level'], 
+  message: string, 
+  data?: Record<string, unknown>, 
+  context?: { userId?: string; projectId?: string; queueItemId?: string; analysisType?: string }
+) {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    endpoint: 'process-single-analysis',
+    userId: context?.userId,
+    projectId: context?.projectId,
+    queueItemId: context?.queueItemId,
+    analysisType: context?.analysisType,
+    message,
+    data
+  };
+  console.log(JSON.stringify(entry));
+}
+
 // Delay helper
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -135,8 +168,8 @@ function replacePromptVariables(template: string, variables: Record<string, stri
   return result;
 }
 
-async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string, model: string): Promise<AIResponse> {
-  console.log(`🤖 Chamando Lovable AI (${model})...`);
+async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPrompt: string, model: string, logContext?: { userId?: string; projectId?: string; queueItemId?: string; analysisType?: string }): Promise<AIResponse> {
+  log('info', `Chamando Lovable AI (${model})`, { model, promptLength: systemPrompt.length + userPrompt.length }, logContext);
   const startTime = Date.now();
   const maxRetries = 3;
   let lastError: Error | null = null;
@@ -151,14 +184,14 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
 
       if (response.status === 429) {
         const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
-        console.log(`⚠️ Rate limit. Aguardando ${waitTime/1000}s...`);
+        log('warn', `Rate limit Lovable AI. Aguardando ${waitTime/1000}s`, { attempt, waitTime }, logContext);
         await delay(waitTime);
         continue;
       }
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ Erro API Lovable: ${response.status} - ${errorText}`);
+        log('error', `Erro API Lovable: ${response.status}`, { status: response.status, errorText }, logContext);
         throw new Error(`Erro na API Lovable: ${response.status}`);
       }
 
@@ -166,7 +199,7 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
       const inputTokens = data.usage?.prompt_tokens || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
       const outputTokens = data.usage?.completion_tokens || Math.ceil((data.choices[0].message.content?.length || 0) / 4);
       
-      console.log(`✅ Resposta em ${Date.now() - startTime}ms`);
+      log('info', `Resposta Lovable AI em ${Date.now() - startTime}ms`, { responseTimeMs: Date.now() - startTime, inputTokens, outputTokens, totalTokens: inputTokens + outputTokens }, logContext);
       return { content: data.choices[0].message.content, tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, model, provider: 'lovable' };
     } catch (error) {
       lastError = error as Error;
@@ -178,9 +211,9 @@ async function callLovableAI(lovableApiKey: string, systemPrompt: string, userPr
   throw lastError || new Error("Falha após múltiplas tentativas");
 }
 
-async function callOpenAI(openaiApiKey: string, systemPrompt: string, userPrompt: string, modelKey: string): Promise<AIResponse> {
+async function callOpenAI(openaiApiKey: string, systemPrompt: string, userPrompt: string, modelKey: string, logContext?: { userId?: string; projectId?: string; queueItemId?: string; analysisType?: string }): Promise<AIResponse> {
   const modelConfig = OPENAI_MODELS[modelKey] || OPENAI_MODELS['gpt-5-mini'];
-  console.log(`🤖 Chamando OpenAI (${modelConfig.apiName})...`);
+  log('info', `Chamando OpenAI (${modelConfig.apiName})`, { model: modelConfig.apiName, promptLength: systemPrompt.length + userPrompt.length }, logContext);
   const startTime = Date.now();
   const maxRetries = 3;
   let lastError: Error | null = null;
@@ -195,14 +228,14 @@ async function callOpenAI(openaiApiKey: string, systemPrompt: string, userPrompt
 
       if (response.status === 429) {
         const waitTime = Math.min(1000 * Math.pow(2, attempt), 30000);
-        console.log(`⚠️ Rate limit. Aguardando ${waitTime/1000}s...`);
+        log('warn', `Rate limit OpenAI. Aguardando ${waitTime/1000}s`, { attempt, waitTime }, logContext);
         await delay(waitTime);
         continue;
       }
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ Erro API OpenAI: ${response.status} - ${errorText}`);
+        log('error', `Erro API OpenAI: ${response.status}`, { status: response.status, errorText }, logContext);
         throw new Error(`Erro na API OpenAI: ${response.status}`);
       }
 
@@ -210,7 +243,7 @@ async function callOpenAI(openaiApiKey: string, systemPrompt: string, userPrompt
       const inputTokens = data.usage?.prompt_tokens || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
       const outputTokens = data.usage?.completion_tokens || Math.ceil((data.choices[0].message.content?.length || 0) / 4);
       
-      console.log(`✅ Resposta em ${Date.now() - startTime}ms`);
+      log('info', `Resposta OpenAI em ${Date.now() - startTime}ms`, { responseTimeMs: Date.now() - startTime, inputTokens, outputTokens, totalTokens: inputTokens + outputTokens }, logContext);
       return { content: data.choices[0].message.content, tokensUsed: inputTokens + outputTokens, inputTokens, outputTokens, model: modelKey, provider: 'openai' };
     } catch (error) {
       lastError = error as Error;
@@ -243,10 +276,11 @@ serve(async (req) => {
 
   try {
     const { queueItemId } = await req.json();
-    console.log("=== PROCESSANDO ITEM DA FILA ===");
-    console.log("Queue Item ID:", queueItemId);
+    
+    log('info', 'Iniciando processamento de item da fila', { queueItemId });
 
     if (!queueItemId) {
+      log('error', 'queueItemId não fornecido');
       throw new Error("queueItemId não fornecido");
     }
 
@@ -258,14 +292,17 @@ serve(async (req) => {
       .single();
 
     if (queueError || !queueItem) {
+      log('error', 'Item da fila não encontrado', { queueItemId, queueError: queueError?.message });
       throw new Error("Item da fila não encontrado");
     }
 
     // Check if already processing or completed
     if (queueItem.status === 'processing') {
+      log('info', 'Item já está sendo processado', { queueItemId, status: 'processing' });
       return new Response(JSON.stringify({ success: true, status: 'already_processing' }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (queueItem.status === 'completed') {
+      log('info', 'Item já foi completado', { queueItemId, status: 'completed' });
       return new Response(JSON.stringify({ success: true, status: 'already_completed' }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -276,8 +313,15 @@ serve(async (req) => {
     const analysisType = queueItem.analysis_type;
     const depth = queueItem.depth_level as DepthLevel;
     const userId = queueItem.user_id;
+    
+    // Create log context for consistent logging
+    const logContext = { userId, projectId: project.id, queueItemId, analysisType };
 
-    console.log(`📝 Processando: ${analysisType} para projeto ${project.name}`);
+    log('info', `Processando análise`, { 
+      projectName: project.name, 
+      depth, 
+      previousStatus: queueItem.status 
+    }, logContext);
 
     // Update project status
     const statusKey = `generating_${analysisType === 'ui_theme' ? 'ui' : analysisType}`;
@@ -287,6 +331,12 @@ serve(async (req) => {
     const aiProviderSettings = await loadAIProviderSettings(supabase);
     const depthConfig = await loadDepthSettings(supabase, depth);
     const dbPrompts = await loadPromptsFromDB(supabase);
+    
+    log('info', 'Configurações carregadas', { 
+      provider: aiProviderSettings.provider, 
+      model: aiProviderSettings.provider === 'openai' ? aiProviderSettings.openaiModel : depthConfig.model,
+      maxContext: depthConfig.maxContext 
+    }, logContext);
 
     // Get API keys
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
@@ -380,11 +430,17 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
     }
 
     // Call AI
+    log('info', 'Iniciando chamada à IA', { 
+      provider: aiProviderSettings.provider, 
+      contextLength: projectContext.length,
+      promptSource: dbPrompt ? 'database' : 'fallback'
+    }, logContext);
+    
     let result: AIResponse;
     if (aiProviderSettings.provider === 'openai' && openaiApiKey) {
-      result = await callOpenAI(openaiApiKey, systemPrompt, userPrompt, aiProviderSettings.openaiModel);
+      result = await callOpenAI(openaiApiKey, systemPrompt, userPrompt, aiProviderSettings.openaiModel, logContext);
     } else {
-      result = await callLovableAI(lovableApiKey!, systemPrompt, userPrompt, depthConfig.model);
+      result = await callLovableAI(lovableApiKey!, systemPrompt, userPrompt, depthConfig.model, logContext);
     }
 
     // Save analysis
@@ -395,7 +451,7 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
     });
 
     if (saveError) {
-      console.error(`❌ Erro ao salvar análise:`, saveError);
+      log('error', 'Erro ao salvar análise no banco', { saveError: saveError.message }, logContext);
       throw new Error(`Erro ao salvar análise: ${saveError.message}`);
     }
 
@@ -417,7 +473,13 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
       completed_at: new Date().toISOString()
     }).eq("id", queueItemId);
 
-    console.log(`✅ Análise ${analysisType} concluída!`);
+    log('info', 'Análise concluída com sucesso', { 
+      tokensUsed: result.tokensUsed,
+      costEstimated,
+      model: result.model,
+      provider: result.provider,
+      contentLength: result.content.length
+    }, logContext);
 
     return new Response(
       JSON.stringify({ success: true, status: 'completed', analysisType }),
@@ -425,7 +487,7 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
     );
 
   } catch (error) {
-    console.error("❌ Erro ao processar análise:", error);
+    log('error', 'Erro ao processar análise', { error: error instanceof Error ? error.message : String(error) });
     
     // Try to update queue item with error
     try {
@@ -440,7 +502,7 @@ IMPORTANTE: Formate sua resposta usando markdown rico e estruturado:
         }).eq("id", queueItemId);
       }
     } catch (e) {
-      console.error("Erro ao atualizar status de erro:", e);
+      log('error', 'Erro ao atualizar status de erro na fila', { innerError: e instanceof Error ? e.message : String(e) });
     }
 
     return new Response(
