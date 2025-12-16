@@ -63,15 +63,16 @@ export function useRealModelCosts(): UseRealModelCostsResult {
   const fetchRealCosts = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch model stats
+      // Fetch model stats, excluding legacy corrupted data
       const { data: modelData } = await supabase
         .from('analysis_usage')
-        .select('model_used, cost_estimated, tokens_estimated');
+        .select('model_used, cost_estimated, tokens_estimated, is_legacy_cost')
+        .or('is_legacy_cost.is.null,is_legacy_cost.eq.false');
       
       if (modelData && modelData.length > 0) {
-        // Filter out corrupted data
+        // Additional filter for any data not yet marked as legacy
         const validData = modelData.filter(row => 
-          isValidCostData(row.cost_estimated, row.tokens_estimated)
+          !row.is_legacy_cost && isValidCostData(row.cost_estimated, row.tokens_estimated)
         );
         
         if (validData.length > 0) {
@@ -110,15 +111,16 @@ export function useRealModelCosts(): UseRealModelCostsResult {
         }
       }
 
-      // Fetch depth stats
+      // Fetch depth stats, excluding legacy corrupted data
       const { data: depthData } = await supabase
         .from('analysis_usage')
-        .select('depth_level, cost_estimated, tokens_estimated');
+        .select('depth_level, cost_estimated, tokens_estimated, is_legacy_cost')
+        .or('is_legacy_cost.is.null,is_legacy_cost.eq.false');
 
       if (depthData && depthData.length > 0) {
-        // Filter out corrupted data
+        // Additional filter for any data not yet marked as legacy
         const validDepthData = depthData.filter(row => 
-          isValidCostData(row.cost_estimated, row.tokens_estimated)
+          !row.is_legacy_cost && isValidCostData(row.cost_estimated, row.tokens_estimated)
         );
         
         const byDepth: Record<string, { cost: number; tokens: number; count: number }> = {};
