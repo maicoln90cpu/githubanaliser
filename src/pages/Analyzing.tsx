@@ -337,24 +337,43 @@ const Analyzing = () => {
 
     const startAnalysis = async () => {
       if (analysisStartedRef.current) {
-        console.log("⚠️ Análise já iniciada, ignorando chamada duplicada");
+        console.log("[Analyzing] ⚠️ Análise já iniciada, ignorando chamada duplicada");
         return;
       }
       analysisStartedRef.current = true;
       
       try {
-        // Check if analysis already in progress for this project
+        // CORREÇÃO: Verificar analysis_queue ANTES de chamar edge function
         if (existingProjectId) {
+          console.log("[Analyzing] Verificando fila existente para projeto:", existingProjectId);
+          
+          // Verificar itens na fila
+          const { data: queueItems } = await supabase
+            .from("analysis_queue")
+            .select("id, status, analysis_type")
+            .eq("project_id", existingProjectId)
+            .in("status", ["pending", "processing"]);
+          
+          if (queueItems && queueItems.length > 0) {
+            console.log(`[Analyzing] ✓ Já existem ${queueItems.length} itens na fila. Iniciando polling sem chamar edge function.`);
+            setSteps(prev => prev.map((step, i) => 
+              i <= 1 ? { ...step, status: "complete" } : step
+            ));
+            setProgress(15);
+            setProjectId(existingProjectId);
+            return; // NÃO chamar analyze-github
+          }
+          
+          // Verificar status do projeto também
           const { data: existingProject } = await supabase
             .from("projects")
             .select("analysis_status")
             .eq("id", existingProjectId)
             .single();
 
-          // If queue is already ready or processing, just poll
           if (existingProject?.analysis_status === "queue_ready" || 
               existingProject?.analysis_status?.startsWith("generating_")) {
-            console.log("✓ Análise já em andamento, acompanhando...");
+            console.log("[Analyzing] ✓ Projeto já em andamento (status), acompanhando...");
             setSteps(prev => prev.map((step, i) => 
               i <= 1 ? { ...step, status: "complete" } : step
             ));
@@ -364,6 +383,7 @@ const Analyzing = () => {
           }
         }
 
+        console.log("[Analyzing] Iniciando nova análise via edge function...");
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "loading" } : step
         ));

@@ -208,10 +208,26 @@ const ProjectHub = () => {
     return project?.github_data !== null && project?.github_data !== undefined;
   };
 
-  const handleGenerateOrReanalyze = (type: string, isReanalyze: boolean) => {
+  const handleGenerateOrReanalyze = async (type: string, isReanalyze: boolean) => {
     if (!project || !user) return;
 
     setConfirmDialog({ open: false, type: "", title: "", isGenerate: false });
+
+    // CORREÇÃO: Verificar se já há análises em andamento antes de navegar
+    const { data: queueItems } = await supabase
+      .from("analysis_queue")
+      .select("id, status")
+      .eq("project_id", project.id)
+      .in("status", ["pending", "processing"]);
+    
+    if (queueItems && queueItems.length > 0) {
+      toast.warning("Análise já em andamento", {
+        description: `${queueItems.length} item(s) na fila. Acompanhando progresso...`
+      });
+      // Navegar para página de progresso sem criar nova análise
+      navigate(`/analisando?projectId=${project.id}&url=${encodeURIComponent(project.github_url)}`);
+      return;
+    }
 
     // Build URL params - let Analyzing page handle the edge function call
     const params = new URLSearchParams({
