@@ -944,7 +944,20 @@ async function extractAndPrepareAnalysis(
     // Create queue items for each analysis type
     console.log("📋 Criando itens na fila de análise...");
     
-    // Clear any existing pending queue items for this project
+    // CORREÇÃO: Verificar se já existem itens em processamento antes de criar novos
+    const { data: processingItems } = await supabase
+      .from("analysis_queue")
+      .select("id, analysis_type, status")
+      .eq("project_id", projectId)
+      .eq("status", "processing");
+
+    if (processingItems && processingItems.length > 0) {
+      console.log(`⚠️ Já existem ${processingItems.length} itens em processamento. Abortando criação de novos.`);
+      await updateProjectStatus(supabase, projectId, "queue_ready");
+      return; // NÃO criar novos itens - deixar os existentes processarem
+    }
+
+    // Clear any existing pending queue items for this project (não processing!)
     await supabase
       .from("analysis_queue")
       .delete()
@@ -1111,7 +1124,28 @@ serve(async (req) => {
       console.log("✓ Projeto já existe:", existingProject.id);
       project = existingProject;
       
-      // VERIFICAÇÃO ANTI-DUPLICAÇÃO: Se análise já está em andamento, retornar sem duplicar
+      // CORREÇÃO: Verificação robusta usando analysis_queue (não só status do projeto)
+      const { data: queueInProgress } = await supabase
+        .from("analysis_queue")
+        .select("id, status, analysis_type")
+        .eq("project_id", existingProject.id)
+        .in("status", ["pending", "processing"]);
+
+      if (queueInProgress && queueInProgress.length > 0) {
+        console.log(`⚠️ Análise já em andamento com ${queueInProgress.length} itens na fila. Retornando sem duplicar.`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            projectId: existingProject.id,
+            alreadyInProgress: true,
+            queueItems: queueInProgress.length,
+            message: "Análise já em andamento" 
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // Verificação secundária pelo status do projeto
       const currentStatus = existingProject.analysis_status;
       const inProgressStatuses = [
         "pending", "extracting", "queue_ready",
