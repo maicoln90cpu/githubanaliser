@@ -6,6 +6,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Structured logging helper
+interface LogEntry {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  endpoint: string;
+  userId?: string;
+  projectId?: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+function log(level: LogEntry['level'], message: string, data?: Record<string, unknown>, context?: { userId?: string; projectId?: string }) {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    endpoint: 'generate-implementation-plan',
+    userId: context?.userId,
+    projectId: context?.projectId,
+    message,
+    data
+  };
+  console.log(JSON.stringify(entry));
+}
+
 interface RequestBody {
   projectId: string;
   analysisTypes: string[];
@@ -85,7 +109,7 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
     if (userError || !user) {
-      console.error('[generate-implementation-plan] User auth error:', userError);
+      log('error', 'User auth error', { error: String(userError) });
       return new Response(JSON.stringify({ error: 'Usuário não autenticado' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

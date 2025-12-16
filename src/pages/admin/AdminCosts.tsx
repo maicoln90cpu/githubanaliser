@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useRealModelCosts } from "@/hooks/useRealModelCosts";
 import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostBRL } from "@/lib/modelCosts";
+import { isEconomicModel } from "@/lib/modelCategories";
 import {
   Table,
   TableBody,
@@ -833,23 +834,29 @@ const AdminCosts = () => {
         return null;
       };
 
-      // Map model keys to display names and providers
+      // Map model keys to display names and providers - using centralized isEconomicModel
       const getModelInfo = (modelKey: string): { provider: string; displayName: string; isEconomic: boolean } => {
         const lowerKey = modelKey.toLowerCase();
-        if (lowerKey.includes('gpt-5-mini')) return { provider: 'OpenAI', displayName: 'GPT-5 Mini', isEconomic: true };
-        if (lowerKey.includes('gpt-5-nano')) return { provider: 'OpenAI', displayName: 'GPT-5 Nano', isEconomic: true };
-        if (lowerKey.includes('gpt-5')) return { provider: 'OpenAI', displayName: 'GPT-5', isEconomic: false };
-        if (lowerKey.includes('gpt-4.1-mini')) return { provider: 'OpenAI', displayName: 'GPT-4.1 Mini', isEconomic: true };
-        if (lowerKey.includes('gpt-4.1-nano')) return { provider: 'OpenAI', displayName: 'GPT-4.1 Nano', isEconomic: true };
-        if (lowerKey.includes('gpt-4.1')) return { provider: 'OpenAI', displayName: 'GPT-4.1', isEconomic: false };
-        if (lowerKey.includes('gpt-4o-mini')) return { provider: 'OpenAI', displayName: 'GPT-4o Mini', isEconomic: true };
-        if (lowerKey.includes('gpt-4o')) return { provider: 'OpenAI', displayName: 'GPT-4o', isEconomic: false };
-        if (lowerKey.includes('o4-mini')) return { provider: 'OpenAI', displayName: 'O4 Mini', isEconomic: true };
-        if (lowerKey.includes('o3')) return { provider: 'OpenAI', displayName: 'O3', isEconomic: false };
-        if (lowerKey.includes('flash-lite') || lowerKey.includes('flash_lite')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Flash Lite', isEconomic: true };
-        if (lowerKey.includes('flash')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Flash', isEconomic: false };
-        if (lowerKey.includes('gemini') && lowerKey.includes('pro')) return { provider: 'Lovable AI', displayName: 'Gemini 2.5 Pro', isEconomic: false };
-        return { provider: 'Unknown', displayName: modelKey, isEconomic: false };
+        let provider = 'Unknown';
+        let displayName = modelKey;
+        
+        // Determine provider and display name
+        if (lowerKey.includes('gpt-5-mini')) { provider = 'OpenAI'; displayName = 'GPT-5 Mini'; }
+        else if (lowerKey.includes('gpt-5-nano')) { provider = 'OpenAI'; displayName = 'GPT-5 Nano'; }
+        else if (lowerKey.includes('gpt-5')) { provider = 'OpenAI'; displayName = 'GPT-5'; }
+        else if (lowerKey.includes('gpt-4.1-mini')) { provider = 'OpenAI'; displayName = 'GPT-4.1 Mini'; }
+        else if (lowerKey.includes('gpt-4.1-nano')) { provider = 'OpenAI'; displayName = 'GPT-4.1 Nano'; }
+        else if (lowerKey.includes('gpt-4.1')) { provider = 'OpenAI'; displayName = 'GPT-4.1'; }
+        else if (lowerKey.includes('gpt-4o-mini')) { provider = 'OpenAI'; displayName = 'GPT-4o Mini'; }
+        else if (lowerKey.includes('gpt-4o')) { provider = 'OpenAI'; displayName = 'GPT-4o'; }
+        else if (lowerKey.includes('o4-mini')) { provider = 'OpenAI'; displayName = 'O4 Mini'; }
+        else if (lowerKey.includes('o3')) { provider = 'OpenAI'; displayName = 'O3'; }
+        else if (lowerKey.includes('flash-lite') || lowerKey.includes('flash_lite')) { provider = 'Lovable AI'; displayName = 'Gemini 2.5 Flash Lite'; }
+        else if (lowerKey.includes('flash')) { provider = 'Lovable AI'; displayName = 'Gemini 2.5 Flash'; }
+        else if (lowerKey.includes('gemini') && lowerKey.includes('pro')) { provider = 'Lovable AI'; displayName = 'Gemini 2.5 Pro'; }
+        
+        // Use centralized function for economic classification
+        return { provider, displayName, isEconomic: isEconomicModel(modelKey) };
       };
 
       const modelUsageData: ModelUsageStats[] = Array.from(modelTokenArrays.entries())
