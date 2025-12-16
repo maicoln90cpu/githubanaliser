@@ -1026,26 +1026,29 @@ const AdminCosts = () => {
       return {
         depths: depths.map(d => ({ 
           depth: d, 
-          tokens: defaultTokens[d], 
+          tokens: defaultTokens[d],
+          sampleCount: 0,
           label: d.charAt(0).toUpperCase() + d.slice(1) 
         })),
         models: [
           { key: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Lovable AI', isEconomic: false, realCostPer1K: 0.00075 },
           { key: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'Lovable AI', isEconomic: true, realCostPer1K: 0.000375 },
         ],
-        data: [] as { depth: string; tokens: number; costs: Record<string, number> }[],
+        data: [] as { depth: string; tokens: number; sampleCount: number; costs: Record<string, number> }[],
       };
     }
 
-    // Calcular tokens médios reais por profundidade
-    const realTokensByDepth: Record<string, number> = {};
+    // Calcular tokens médios reais por profundidade (independente do modelo)
+    const realTokensByDepth: Record<string, { tokens: number; count: number }> = {};
     depthStats.forEach(d => {
-      if (d.count > 0) realTokensByDepth[d.depth] = d.avgTokens;
+      if (d.count > 0) realTokensByDepth[d.depth] = { tokens: d.avgTokens, count: d.count };
     });
     
     // Gerar dados por profundidade
     const data = depths.map(depth => {
-      const tokens = realTokensByDepth[depth] || defaultTokens[depth];
+      const depthData = realTokensByDepth[depth];
+      const tokens = depthData?.tokens || defaultTokens[depth];
+      const sampleCount = depthData?.count || 0;
       const costs: Record<string, number> = {};
       
       uniqueModels.forEach(model => {
@@ -1053,13 +1056,14 @@ const AdminCosts = () => {
         costs[model.key] = (tokens / 1000) * costPer1K * USD_TO_BRL;
       });
       
-      return { depth, tokens, costs };
+      return { depth, tokens, sampleCount, costs };
     });
     
     return { 
       depths: depths.map(d => ({ 
         depth: d, 
-        tokens: realTokensByDepth[d] || defaultTokens[d],
+        tokens: realTokensByDepth[d]?.tokens || defaultTokens[d],
+        sampleCount: realTokensByDepth[d]?.count || 0,
         label: d.charAt(0).toUpperCase() + d.slice(1) 
       })),
       models: uniqueModels, 
@@ -1316,10 +1320,34 @@ const AdminCosts = () => {
                 <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30 ml-2">
                   Mediana Aparada
                 </Badge>
+                <span className="ml-auto text-xs text-muted-foreground flex items-center gap-1 cursor-help" title="Custo estimado POR ANÁLISE baseado na mediana de tokens reais × custo/1K do modelo específico">
+                  <Info className="w-3 h-3" />
+                  por análise
+                </span>
               </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Baseado em dados reais de uso com proteção contra outliers (±15% removidos).
-              </p>
+              
+              {/* Explicação detalhada do cálculo */}
+              <div className="p-3 mb-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p><strong>Como é calculado:</strong> Custo = (Tokens da Profundidade ÷ 1000) × Custo/1K do Modelo</p>
+                    <p><strong>Tokens por profundidade:</strong> Mediana real de todas as análises dessa profundidade (independente do modelo usado)</p>
+                    <p><strong>Custo/1K por modelo:</strong> Custo médio real do modelo no sistema (ou referência se sem dados)</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Nota sobre diferença de custos entre providers */}
+              <div className="p-3 mb-4 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-muted-foreground">
+                    <p><strong>Por que OpenAI nano/mini são mais baratos?</strong></p>
+                    <p>Modelos como GPT-5 Nano ($0.05/1M input) e GPT-4o Mini ($0.15/1M input) são 7-50x mais baratos que modelos padrão como GPT-5 ($1.25/1M) ou Gemini 2.5 Pro. A qualidade varia proporcionalmente - escolha baseado no caso de uso.</p>
+                  </div>
+                </div>
+              </div>
               
               {/* Depth Stats Quality Indicators */}
               {depthStats.some(d => d.hasOutliers || d.dataQuality) && (
@@ -1357,7 +1385,12 @@ const AdminCosts = () => {
                     <thead>
                       <tr className="border-b border-border">
                         <th className="text-left py-3 px-2">Profundidade</th>
-                        <th className="text-right py-3 px-2">Tokens</th>
+                        <th className="text-right py-3 px-2">
+                          <span className="flex items-center justify-end gap-1 cursor-help" title="Mediana de tokens reais para esta profundidade (independente do modelo)">
+                            Tokens <Info className="w-3 h-3 text-muted-foreground" />
+                          </span>
+                        </th>
+                        <th className="text-center py-3 px-2">Amostras</th>
                         <th className="text-center py-3 px-2">Status</th>
                         {depthModelEstimations.models.map(model => (
                           <th key={model.key} className="text-right py-3 px-2">
@@ -1375,6 +1408,7 @@ const AdminCosts = () => {
                       {depthModelEstimations.data.map((row) => {
                         const depthInfo = depthModelEstimations.depths.find(d => d.depth === row.depth);
                         const depthStat = depthStats.find(d => d.depth === row.depth);
+                        const sampleCount = depthStat?.count || 0;
                         return (
                           <tr key={row.depth} className="border-b border-border/50">
                             <td className="py-3 px-2">
@@ -1383,6 +1417,11 @@ const AdminCosts = () => {
                               </Badge>
                             </td>
                             <td className="text-right py-3 px-2 font-mono text-xs">{row.tokens.toLocaleString()}</td>
+                            <td className="text-center py-3 px-2">
+                              <span className={`text-xs ${sampleCount < 5 ? 'text-red-500' : sampleCount < 10 ? 'text-amber-500' : 'text-green-500'}`}>
+                                {sampleCount > 0 ? sampleCount : '-'}
+                              </span>
+                            </td>
                             <td className="text-center py-3 px-2">
                               <div className="flex items-center justify-center gap-1">
                                 {depthStat?.hasOutliers && (
@@ -1414,7 +1453,7 @@ const AdminCosts = () => {
                       {/* Economia row */}
                       {depthModelEstimations.models.length > 1 && (
                         <tr className="border-t-2 border-border bg-muted/20">
-                          <td colSpan={3} className="py-3 px-2 font-medium">Economia vs mais caro</td>
+                          <td colSpan={4} className="py-3 px-2 font-medium">Economia vs mais caro</td>
                           {depthModelEstimations.models.map((model, idx) => {
                             if (depthModelEstimations.data.length === 0) return <td key={model.key}>-</td>;
                             const avgCost = depthModelEstimations.data.reduce((sum, row) => sum + (row.costs[model.key] || 0), 0) / depthModelEstimations.data.length;
