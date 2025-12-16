@@ -72,6 +72,8 @@ interface Project {
   estimatedCostBRL: number;
   analysesDetails: ProjectAnalysis[];
   totalAnalysesCount: number;
+  predominantModel: string;
+  predominantProvider: 'Lovable AI' | 'OpenAI' | 'Desconhecido';
 }
 
 const USD_TO_BRL = 5.5;
@@ -185,6 +187,7 @@ const AdminProjects = () => {
         // Convert details map to array
         const analysesDetails: ProjectAnalysis[] = [];
         let totalCount = 0;
+        const modelCounts = new Map<string, number>();
         
         usage.details.forEach((detail, key) => {
           const [type] = key.split('-');
@@ -198,10 +201,35 @@ const AdminProjects = () => {
             cost: detail.cost,
           });
           totalCount += detail.count;
+          
+          // Track model usage
+          const currentCount = modelCounts.get(detail.model) || 0;
+          modelCounts.set(detail.model, currentCount + detail.count);
         });
         
         // Sort by count descending
         analysesDetails.sort((a, b) => b.count - a.count);
+        
+        // Find predominant model
+        let predominantModel = 'Desconhecido';
+        let maxCount = 0;
+        modelCounts.forEach((count, model) => {
+          if (count > maxCount) {
+            maxCount = count;
+            predominantModel = model;
+          }
+        });
+        
+        // Determine provider from model name
+        const getProvider = (model: string): 'Lovable AI' | 'OpenAI' | 'Desconhecido' => {
+          const lowerModel = model.toLowerCase();
+          if (lowerModel.includes('gpt') || lowerModel.includes('o3') || lowerModel.includes('o4')) {
+            return 'OpenAI';
+          } else if (lowerModel.includes('gemini') || lowerModel.includes('google')) {
+            return 'Lovable AI';
+          }
+          return 'Desconhecido';
+        };
         
         return {
           ...p,
@@ -210,6 +238,8 @@ const AdminProjects = () => {
           estimatedCostBRL: usage.cost * USD_TO_BRL,
           analysesDetails,
           totalAnalysesCount: totalCount,
+          predominantModel,
+          predominantProvider: getProvider(predominantModel),
         };
       });
 
@@ -458,6 +488,7 @@ const AdminProjects = () => {
                 <TableHead>Projeto</TableHead>
                 <TableHead>Usuário</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Modelo</TableHead>
                 <TableHead className="text-center">Análises</TableHead>
                 <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Custo (R$)</TableHead>
@@ -468,7 +499,7 @@ const AdminProjects = () => {
             <TableBody>
               {filteredProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Nenhum projeto encontrado
                   </TableCell>
                 </TableRow>
@@ -513,6 +544,20 @@ const AdminProjects = () => {
                             {getStatusIcon(project.analysis_status)}
                             {getStatusBadge(project.analysis_status)}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {project.totalAnalysesCount > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <Badge className={project.predominantProvider === 'OpenAI' ? 'bg-blue-500/10 text-blue-500 text-xs' : project.predominantProvider === 'Lovable AI' ? 'bg-green-500/10 text-green-500 text-xs' : 'bg-muted text-muted-foreground text-xs'}>
+                                {project.predominantProvider === 'OpenAI' ? '🔵' : project.predominantProvider === 'Lovable AI' ? '🟢' : '⚪'} {project.predominantProvider}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={project.predominantModel}>
+                                {project.predominantModel.replace('google/', '').replace('openai/', '')}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center gap-1">

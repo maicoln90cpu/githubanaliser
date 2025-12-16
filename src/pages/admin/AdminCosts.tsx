@@ -1584,20 +1584,76 @@ const AdminCosts = () => {
                 </table>
               </div>
               
-              {/* Best Models Summary */}
-              <div className="grid md:grid-cols-3 gap-4 mt-6">
-                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2"><span className="text-lg">🥇</span><span className="font-medium text-green-600">Mais Econômico</span></div>
-                  <p className="text-lg font-bold">{ALL_MODELS[0].name}</p>
-                  <p className="text-sm text-muted-foreground">{ALL_MODELS[0].provider}</p>
+              {/* Best Models Summary - Separated by Provider */}
+              <div className="grid md:grid-cols-2 gap-6 mt-6">
+                {/* Lovable AI */}
+                <div className="p-4 bg-gradient-to-br from-green-500/10 to-emerald-500/5 border border-green-500/20 rounded-xl">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-lg">🟢</span>
+                    <span className="font-semibold text-green-600">Lovable AI</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-background/50 rounded-lg">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Leaf className="w-3 h-3 text-green-500" />
+                        <span className="text-xs text-muted-foreground">Mais Econômico</span>
+                      </div>
+                      <p className="font-bold text-sm">{ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name || 'N/A'}</p>
+                      <p className="text-xs text-green-500">${ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5) || '0'}/1K</p>
+                    </div>
+                    <div className="p-3 bg-background/50 rounded-lg">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Scale className="w-3 h-3 text-purple-500" />
+                        <span className="text-xs text-muted-foreground">Custo-Benefício</span>
+                      </div>
+                      {(() => {
+                        const lovableModels = ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K);
+                        // Best cost-benefit: middle model (not cheapest, not most expensive)
+                        const bestCB = lovableModels.length > 2 ? lovableModels[Math.floor(lovableModels.length / 2)] : lovableModels[0];
+                        return bestCB ? (
+                          <>
+                            <p className="font-bold text-sm">{bestCB.name}</p>
+                            <p className="text-xs text-purple-500">${bestCB.costPer1K.toFixed(5)}/1K</p>
+                          </>
+                        ) : <p className="text-sm text-muted-foreground">N/A</p>;
+                      })()}
+                    </div>
+                  </div>
                 </div>
-                <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2"><Zap className="w-4 h-4 text-purple-500" /><span className="font-medium text-purple-600">Melhor Lovable AI</span></div>
-                  <p className="text-lg font-bold">{ALL_MODELS.filter(m => m.provider === 'Lovable AI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name}</p>
-                </div>
-                <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2"><Calculator className="w-4 h-4 text-blue-500" /><span className="font-medium text-blue-600">Melhor OpenAI</span></div>
-                  <p className="text-lg font-bold">{ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name}</p>
+                
+                {/* OpenAI */}
+                <div className="p-4 bg-gradient-to-br from-blue-500/10 to-cyan-500/5 border border-blue-500/20 rounded-xl">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-lg">🔵</span>
+                    <span className="font-semibold text-blue-600">OpenAI</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-background/50 rounded-lg">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Leaf className="w-3 h-3 text-green-500" />
+                        <span className="text-xs text-muted-foreground">Mais Econômico</span>
+                      </div>
+                      <p className="font-bold text-sm">{ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.name || 'N/A'}</p>
+                      <p className="text-xs text-green-500">${ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K)[0]?.costPer1K.toFixed(5) || '0'}/1K</p>
+                    </div>
+                    <div className="p-3 bg-background/50 rounded-lg">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Scale className="w-3 h-3 text-purple-500" />
+                        <span className="text-xs text-muted-foreground">Custo-Benefício</span>
+                      </div>
+                      {(() => {
+                        const openaiModels = ALL_MODELS.filter(m => m.provider === 'OpenAI').sort((a, b) => a.costPer1K - b.costPer1K);
+                        // Best cost-benefit: middle model (not cheapest, not most expensive)
+                        const bestCB = openaiModels.length > 2 ? openaiModels[Math.floor(openaiModels.length / 2)] : openaiModels[0];
+                        return bestCB ? (
+                          <>
+                            <p className="font-bold text-sm">{bestCB.name}</p>
+                            <p className="text-xs text-purple-500">${bestCB.costPer1K.toFixed(5)}/1K</p>
+                          </>
+                        ) : <p className="text-sm text-muted-foreground">N/A</p>;
+                      })()}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
