@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
-import { useRealModelCosts } from "@/hooks/useRealModelCosts";
-import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES } from "@/lib/modelCosts";
+import { useRealModelCosts, isValidCostData } from "@/hooks/useRealModelCosts";
+import { MODEL_COSTS, USD_TO_BRL, DEPTH_TOKEN_ESTIMATES, formatCostPer1M, formatCostPer1MBRL } from "@/lib/modelCosts";
 import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -112,6 +112,8 @@ const AdminPlans = () => {
     overall: { avgCost: number; avgTokens: number; totalCount: number; totalCost: number; totalTokens: number };
     costPer1KUSD: number;
     costPer1KBRL: number;
+    costPer1MUSD: number;
+    costPer1MBRL: number;
   } | null>(null);
 
   // Simulator state
@@ -164,12 +166,17 @@ const AdminPlans = () => {
       
       if (settingData) setGlobalEconomicMode(settingData.value);
 
-      // Load real costs grouped by depth AND model
-      const { data: usageData } = await supabase
+      // Load real costs grouped by depth AND model (filter corrupted data)
+      const { data: rawUsageData } = await supabase
         .from("analysis_usage")
         .select("depth_level, model_used, tokens_estimated, cost_estimated");
 
-      if (usageData && usageData.length > 0) {
+      // Filter out corrupted historical data
+      const usageData = rawUsageData?.filter(u => 
+        isValidCostData(u.cost_estimated, u.tokens_estimated)
+      ) || [];
+
+      if (usageData.length > 0) {
         const byDepth: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
         const byModel: Record<string, { totalCost: number; totalTokens: number; count: number }> = {};
         let totalCost = 0, totalTokens = 0;
@@ -196,9 +203,11 @@ const AdminPlans = () => {
           totalTokens += tokens;
         });
 
-        // Custo real por 1K tokens global
+        // Custo real por 1K e 1M tokens global
         const costPer1KUSD = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0.001;
         const costPer1KBRL = costPer1KUSD * USD_TO_BRL;
+        const costPer1MUSD = costPer1KUSD * 1000;
+        const costPer1MBRL = costPer1MUSD * USD_TO_BRL;
 
         // Custo por modelo
         const byModelFormatted = Object.fromEntries(
@@ -218,7 +227,9 @@ const AdminPlans = () => {
           byModel: byModelFormatted,
           overall: { avgCost: totalCost / usageData.length, avgTokens: totalTokens / usageData.length, totalCount: usageData.length, totalCost, totalTokens },
           costPer1KUSD,
-          costPer1KBRL
+          costPer1KBRL,
+          costPer1MUSD,
+          costPer1MBRL
         });
       }
     } catch (error) {
@@ -712,7 +723,7 @@ const AdminPlans = () => {
                               <div className="flex items-center gap-2">
                                 {model.isEconomic ? <Leaf className="w-3 h-3 text-green-500" /> : <Flame className="w-3 h-3 text-orange-500" />}
                                 <span>{model.name}</span>
-                                <span className="text-xs text-muted-foreground">${model.costPer1K.toFixed(5)}/1K</span>
+                                <span className="text-xs text-muted-foreground">${(model.costPer1K * 1000).toFixed(2)}/1M</span>
                               </div>
                             </SelectItem>
                           ))}
@@ -738,8 +749,8 @@ const AdminPlans = () => {
 
                     <div className="p-3 bg-muted/50 rounded-lg space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Custo/1K tokens:</span>
-                        <span className="font-mono text-xs">${realModelCostPer1K.toFixed(6)}</span>
+                        <span className="text-muted-foreground">Custo/1M tokens:</span>
+                        <span className="font-mono text-xs">${(realModelCostPer1K * 1000).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Tokens/Projeto:</span>
@@ -847,12 +858,12 @@ const AdminPlans = () => {
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
-                      <p className="text-xs text-muted-foreground">Custo/1K (USD)</p>
-                      <p className="text-xl font-bold">$ {realCosts.costPer1KUSD.toFixed(5)}</p>
+                      <p className="text-xs text-muted-foreground">Custo/1M (USD)</p>
+                      <p className="text-xl font-bold">$ {realCosts.costPer1MUSD.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Custo/1K (BRL)</p>
-                      <p className="text-2xl font-bold text-primary">R$ {realCosts.costPer1KBRL.toFixed(4)}</p>
+                      <p className="text-xs text-muted-foreground">Custo/1M (BRL)</p>
+                      <p className="text-2xl font-bold text-primary">R$ {realCosts.costPer1MBRL.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Total de Análises</p>
@@ -864,7 +875,7 @@ const AdminPlans = () => {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Tokens Totais</p>
-                      <p className="text-2xl font-bold">{(realCosts.overall.totalTokens / 1000).toFixed(0)}K</p>
+                      <p className="text-2xl font-bold">{(realCosts.overall.totalTokens / 1000000).toFixed(2)}M</p>
                     </div>
                   </div>
                 </CardContent>
@@ -879,7 +890,7 @@ const AdminPlans = () => {
                   Viabilidade por Tokens (Dados Reais)
                 </CardTitle>
                 <CardDescription>
-                  Cálculos: Custo Máximo = (Tokens / 1000) × R$ {realCosts?.costPer1KBRL.toFixed(4) || '0.0055'} | Margem = ((Receita - Custo) / Receita) × 100
+                  Cálculos: Custo Máximo = (Tokens / 1M) × R$ {realCosts?.costPer1MBRL.toFixed(2) || '5.50'} | Margem = ((Receita - Custo) / Receita) × 100
                 </CardDescription>
               </CardHeader>
               <CardContent>

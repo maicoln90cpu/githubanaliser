@@ -1,7 +1,7 @@
 /**
  * Centralized AI model costs configuration
- * All costs are per 1K tokens in USD
- * These are reference values - real costs are calculated from analysis_usage data
+ * All costs are stored per 1K tokens in USD (for calculation precision)
+ * Display should use per 1M tokens for consistency
  */
 
 export interface ModelCost {
@@ -10,32 +10,55 @@ export interface ModelCost {
   name: string;
   inputPer1K: number;  // USD per 1K input tokens
   outputPer1K: number; // USD per 1K output tokens
+  inputPer1M: number;  // USD per 1M input tokens (derived)
+  outputPer1M: number; // USD per 1M output tokens (derived)
   isEconomic?: boolean;
 }
 
 // Exchange rate (should ideally be fetched from API)
 export const USD_TO_BRL = 5.5;
 
+// Helper to create model with derived 1M values
+function createModel(
+  id: string, 
+  provider: 'Lovable AI' | 'OpenAI', 
+  name: string, 
+  inputPer1K: number, 
+  outputPer1K: number, 
+  isEconomic?: boolean
+): ModelCost {
+  return {
+    id,
+    provider,
+    name,
+    inputPer1K,
+    outputPer1K,
+    inputPer1M: inputPer1K * 1000,
+    outputPer1M: outputPer1K * 1000,
+    isEconomic,
+  };
+}
+
 // Reference costs per model (per 1K tokens in USD)
 // These are fallback values when no real data is available
 export const MODEL_COSTS: ModelCost[] = [
   // Lovable AI (Gemini)
-  { id: 'google/gemini-2.5-flash-lite', provider: 'Lovable AI', name: 'Gemini 2.5 Flash Lite', inputPer1K: 0.000075, outputPer1K: 0.0003, isEconomic: true },
-  { id: 'google/gemini-2.5-flash', provider: 'Lovable AI', name: 'Gemini 2.5 Flash', inputPer1K: 0.00015, outputPer1K: 0.0006, isEconomic: false },
-  { id: 'google/gemini-2.5-pro', provider: 'Lovable AI', name: 'Gemini 2.5 Pro', inputPer1K: 0.00125, outputPer1K: 0.01, isEconomic: false },
-  { id: 'google/gemini-3-pro-preview', provider: 'Lovable AI', name: 'Gemini 3 Pro Preview', inputPer1K: 0.00125, outputPer1K: 0.01, isEconomic: false },
+  createModel('google/gemini-2.5-flash-lite', 'Lovable AI', 'Gemini 2.5 Flash Lite', 0.000075, 0.0003, true),
+  createModel('google/gemini-2.5-flash', 'Lovable AI', 'Gemini 2.5 Flash', 0.00015, 0.0006, false),
+  createModel('google/gemini-2.5-pro', 'Lovable AI', 'Gemini 2.5 Pro', 0.00125, 0.01, false),
+  createModel('google/gemini-3-pro-preview', 'Lovable AI', 'Gemini 3 Pro Preview', 0.00125, 0.01, false),
   
   // OpenAI
-  { id: 'openai/gpt-5-nano', provider: 'OpenAI', name: 'GPT-5 Nano', inputPer1K: 0.00005, outputPer1K: 0.0004, isEconomic: true },
-  { id: 'openai/gpt-4.1-nano', provider: 'OpenAI', name: 'GPT-4.1 Nano', inputPer1K: 0.0001, outputPer1K: 0.0004, isEconomic: true },
-  { id: 'openai/gpt-4o-mini', provider: 'OpenAI', name: 'GPT-4o Mini', inputPer1K: 0.00015, outputPer1K: 0.0006, isEconomic: true },
-  { id: 'openai/gpt-5-mini', provider: 'OpenAI', name: 'GPT-5 Mini', inputPer1K: 0.00025, outputPer1K: 0.002, isEconomic: false },
-  { id: 'openai/gpt-4.1-mini', provider: 'OpenAI', name: 'GPT-4.1 Mini', inputPer1K: 0.0004, outputPer1K: 0.0016, isEconomic: false },
-  { id: 'openai/o4-mini', provider: 'OpenAI', name: 'O4 Mini', inputPer1K: 0.0011, outputPer1K: 0.0044, isEconomic: false },
-  { id: 'openai/o3', provider: 'OpenAI', name: 'O3', inputPer1K: 0.002, outputPer1K: 0.008, isEconomic: false },
-  { id: 'openai/gpt-4.1', provider: 'OpenAI', name: 'GPT-4.1', inputPer1K: 0.002, outputPer1K: 0.008, isEconomic: false },
-  { id: 'openai/gpt-5', provider: 'OpenAI', name: 'GPT-5', inputPer1K: 0.00125, outputPer1K: 0.01, isEconomic: false },
-  { id: 'openai/gpt-4o', provider: 'OpenAI', name: 'GPT-4o', inputPer1K: 0.0025, outputPer1K: 0.01, isEconomic: false },
+  createModel('openai/gpt-5-nano', 'OpenAI', 'GPT-5 Nano', 0.00005, 0.0004, true),
+  createModel('openai/gpt-4.1-nano', 'OpenAI', 'GPT-4.1 Nano', 0.0001, 0.0004, true),
+  createModel('openai/gpt-4o-mini', 'OpenAI', 'GPT-4o Mini', 0.00015, 0.0006, true),
+  createModel('openai/gpt-5-mini', 'OpenAI', 'GPT-5 Mini', 0.00025, 0.002, false),
+  createModel('openai/gpt-4.1-mini', 'OpenAI', 'GPT-4.1 Mini', 0.0004, 0.0016, false),
+  createModel('openai/o4-mini', 'OpenAI', 'O4 Mini', 0.0011, 0.0044, false),
+  createModel('openai/o3', 'OpenAI', 'O3', 0.002, 0.008, false),
+  createModel('openai/gpt-4.1', 'OpenAI', 'GPT-4.1', 0.002, 0.008, false),
+  createModel('openai/gpt-5', 'OpenAI', 'GPT-5', 0.00125, 0.01, false),
+  createModel('openai/gpt-4o', 'OpenAI', 'GPT-4o', 0.0025, 0.01, false),
 ];
 
 // Model options grouped by provider (for Select components)
@@ -102,6 +125,36 @@ export function formatCostUSD(costUSD: number): string {
     return `$${costUSD.toFixed(4)}`;
   }
   return `$${costUSD.toFixed(2)}`;
+}
+
+/**
+ * Format cost per 1M tokens for display (standardized)
+ * @param costPer1K Cost per 1K tokens in USD
+ * @returns Formatted string like "$0.75/1M" or "$10.00/1M"
+ */
+export function formatCostPer1M(costPer1K: number): string {
+  const costPer1M = costPer1K * 1000;
+  if (costPer1M < 0.01) {
+    return `$${costPer1M.toFixed(4)}/1M`;
+  }
+  if (costPer1M < 1) {
+    return `$${costPer1M.toFixed(2)}/1M`;
+  }
+  return `$${costPer1M.toFixed(2)}/1M`;
+}
+
+/**
+ * Format cost per 1M tokens in BRL
+ */
+export function formatCostPer1MBRL(costPer1K: number): string {
+  const costPer1M = costPer1K * 1000 * USD_TO_BRL;
+  if (costPer1M < 0.01) {
+    return `R$ ${costPer1M.toFixed(4)}/1M`;
+  }
+  if (costPer1M < 1) {
+    return `R$ ${costPer1M.toFixed(2)}/1M`;
+  }
+  return `R$ ${costPer1M.toFixed(2)}/1M`;
 }
 
 /**
