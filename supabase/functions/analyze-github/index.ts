@@ -15,6 +15,30 @@ const githubHeaders = {
   "User-Agent": "GitAnalyzer",
 };
 
+// Structured logging helper
+interface LogEntry {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  endpoint: string;
+  userId?: string;
+  projectId?: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+function log(level: LogEntry['level'], message: string, data?: Record<string, unknown>, context?: { userId?: string; projectId?: string }) {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    endpoint: 'analyze-github',
+    userId: context?.userId,
+    projectId: context?.projectId,
+    message,
+    data
+  };
+  console.log(JSON.stringify(entry));
+}
+
 async function fetchFileContent(owner: string, repo: string, path: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -33,7 +57,7 @@ async function fetchFileContent(owner: string, repo: string, path: string): Prom
       }
     }
   } catch (e) {
-    console.log(`Erro ao buscar ${path}:`, e);
+    log('debug', `Erro ao buscar ${path}`, { error: String(e) });
   }
   return null;
 }
@@ -81,7 +105,7 @@ async function fetchDirectoryContents(
     
     return allItems;
   } catch (e) {
-    console.log(`Erro ao buscar diretório ${path}:`, e);
+    log('debug', `Erro ao buscar diretório ${path}`, { error: String(e) });
     return [];
   }
 }
@@ -110,7 +134,7 @@ function isImportantFile(path: string): boolean {
   return importantPatterns.some(pattern => pattern.test(path));
 }
 
-async function updateProjectStatus(supabase: any, projectId: string, status: string, errorMessage?: string) {
+async function updateProjectStatus(supabase: any, projectId: string, status: string, errorMessage?: string, userId?: string) {
   const updateData: any = { analysis_status: status };
   if (errorMessage) {
     updateData.error_message = errorMessage;
@@ -121,7 +145,7 @@ async function updateProjectStatus(supabase: any, projectId: string, status: str
     .update(updateData)
     .eq("id", projectId);
   
-  console.log(`Status atualizado: ${status}`);
+  log('info', `Status atualizado: ${status}`, { status, errorMessage }, { projectId, userId });
 }
 
 interface AIResponse {

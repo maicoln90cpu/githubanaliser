@@ -6,6 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Structured logging helper
+interface LogEntry {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  endpoint: string;
+  userId?: string;
+  projectId?: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+function log(level: LogEntry['level'], message: string, data?: Record<string, unknown>, context?: { userId?: string; projectId?: string }) {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    endpoint: 'project-chat',
+    userId: context?.userId,
+    projectId: context?.projectId,
+    message,
+    data
+  };
+  console.log(JSON.stringify(entry));
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -76,9 +100,9 @@ serve(async (req) => {
         });
 
       if (rateLimitError) {
-        console.error("[project-chat] Rate limit check error:", rateLimitError);
+        log('error', 'Rate limit check error', { error: String(rateLimitError) }, { userId });
       } else if (rateLimitResult && !rateLimitResult.allowed) {
-        console.log(`[project-chat] Rate limited user ${userId}. Remaining: ${rateLimitResult.remaining}/${rateLimitResult.limit}`);
+        log('warn', 'Rate limited user', { remaining: rateLimitResult.remaining, limit: rateLimitResult.limit }, { userId, projectId });
         return new Response(
           JSON.stringify({
             error: "Limite de mensagens excedido",
