@@ -84,8 +84,8 @@ export function useDashboardData(userId: string | undefined) {
           table: 'projects',
           filter: `user_id=eq.${userId}`
         },
-        (payload) => {
-          console.log('Project update received:', payload);
+        () => {
+          // Realtime update received - invalidate cache
           // Invalidate and refetch dashboard data
           queryClient.invalidateQueries({ queryKey: ['dashboard-data', userId] });
         }
