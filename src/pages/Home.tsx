@@ -934,7 +934,7 @@ const Home = () => {
       <section id="features" className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">8 Análises Completas</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">10 Análises Completas</h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
               Nossa IA gera relatórios detalhados em português, cobrindo todos os aspectos do seu projeto.
             </p>
