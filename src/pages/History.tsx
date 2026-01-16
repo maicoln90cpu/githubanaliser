@@ -169,7 +169,7 @@ const History = () => {
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-xl font-semibold">{project.name}</h3>
                         <Badge variant="secondary" className="text-xs">
-                          {countAnalyses(project)}/8 análises
+                          {countAnalyses(project)}/10 análises
                         </Badge>
                       </div>
                       <a
