@@ -128,11 +128,9 @@ const Analyzing = () => {
     // If processing for too long, reset the flag
     if (isProcessingRef.current) {
       pollFailCountRef.current += 1;
-      console.log(`[Polling] Processing flag still true, fail count: ${pollFailCountRef.current}`);
       
       // After 3 consecutive fails (6 seconds), force reset
       if (pollFailCountRef.current >= 3) {
-        console.log("[Polling] Forcing isProcessingRef reset after consecutive fails");
         isProcessingRef.current = false;
         pollFailCountRef.current = 0;
       } else {
@@ -170,20 +168,15 @@ const Analyzing = () => {
       if (progressPercent === lastProgressRef.current && progressPercent < 100) {
         if (!staleStartTimeRef.current) {
           staleStartTimeRef.current = Date.now();
-          console.log(`[Polling] Progress stale at ${progressPercent}%, starting timer`);
         } else {
           const staleTime = Date.now() - staleStartTimeRef.current;
           if (staleTime > 30000) {
-            console.log(`[Polling] Progress stale for ${staleTime}ms, forcing refresh`);
             staleStartTimeRef.current = null;
             isProcessingRef.current = false;
           }
         }
       } else {
         // Progress changed, reset stale timer
-        if (staleStartTimeRef.current) {
-          console.log(`[Polling] Progress changed to ${progressPercent}%, resetting stale timer`);
-        }
         staleStartTimeRef.current = null;
         lastProgressRef.current = progressPercent;
       }
@@ -217,7 +210,6 @@ const Analyzing = () => {
       if (pendingItems.length === 0 && processingItems.length === 0) {
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true;
-          console.log("[Polling] All items completed, navigating to project");
           
           // Update project status
           await supabase
@@ -238,7 +230,6 @@ const Analyzing = () => {
       // If something is already processing in the database, just wait
       if (processingItems.length > 0) {
         setCurrentAnalysisType(processingItems[0].analysis_type);
-        console.log(`[Polling] Item ${processingItems[0].analysis_type} still processing in DB`);
         return;
       }
 
@@ -248,14 +239,12 @@ const Analyzing = () => {
         const nextItem = pendingItems[0];
         setCurrentAnalysisType(nextItem.analysis_type);
         
-        console.log(`[Queue] Processando: ${nextItem.analysis_type}`);
-        
         try {
           // Create AbortController for timeout
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
           
-          const { data, error } = await supabase.functions.invoke("process-single-analysis", {
+          const { error } = await supabase.functions.invoke("process-single-analysis", {
             body: { queueItemId: nextItem.id }
           });
           
@@ -263,8 +252,6 @@ const Analyzing = () => {
 
           if (error) {
             console.error(`[Queue] Erro ao processar ${nextItem.analysis_type}:`, error);
-          } else {
-            console.log(`[Queue] Concluído: ${nextItem.analysis_type}`);
           }
         } catch (e) {
           console.error(`[Queue] Exceção ao processar ${nextItem.analysis_type}:`, e);
@@ -282,8 +269,6 @@ const Analyzing = () => {
   // Poll and process queue with global timeout
   useEffect(() => {
     if (!projectId || hasCompletedRef.current) return;
-
-    console.log(`[Polling] Starting polling for project ${projectId}`);
     
     // Reset refs when starting new polling session
     staleStartTimeRef.current = null;
@@ -301,7 +286,6 @@ const Analyzing = () => {
 
     // Global timeout: 10 minutes max for entire analysis
     globalTimeoutRef.current = setTimeout(() => {
-      console.log("[Polling] Global timeout reached (10 minutes)");
       if (!hasCompletedRef.current) {
         toast.error("Análise demorou muito tempo. Verifique o status no projeto.");
         if (pollingRef.current) clearInterval(pollingRef.current);
@@ -337,15 +321,14 @@ const Analyzing = () => {
 
     const startAnalysis = async () => {
       if (analysisStartedRef.current) {
-        console.log("[Analyzing] ⚠️ Análise já iniciada, ignorando chamada duplicada");
-        return;
+        return; // Análise já iniciada, ignorando chamada duplicada
       }
       analysisStartedRef.current = true;
       
       try {
-        // CORREÇÃO: Verificar analysis_queue ANTES de chamar edge function
+        // Verificar analysis_queue ANTES de chamar edge function
         if (existingProjectId) {
-          console.log("[Analyzing] Verificando fila existente para projeto:", existingProjectId);
+          // Verificar itens na fila
           
           // Verificar itens na fila
           const { data: queueItems } = await supabase
@@ -355,7 +338,7 @@ const Analyzing = () => {
             .in("status", ["pending", "processing"]);
           
           if (queueItems && queueItems.length > 0) {
-            console.log(`[Analyzing] ✓ Já existem ${queueItems.length} itens na fila. Iniciando polling sem chamar edge function.`);
+            // Já existem itens na fila - iniciar polling sem chamar edge function
             setSteps(prev => prev.map((step, i) => 
               i <= 1 ? { ...step, status: "complete" } : step
             ));
@@ -373,7 +356,7 @@ const Analyzing = () => {
 
           if (existingProject?.analysis_status === "queue_ready" || 
               existingProject?.analysis_status?.startsWith("generating_")) {
-            console.log("[Analyzing] ✓ Projeto já em andamento (status), acompanhando...");
+            // Projeto já em andamento - acompanhando
             setSteps(prev => prev.map((step, i) => 
               i <= 1 ? { ...step, status: "complete" } : step
             ));
@@ -383,7 +366,7 @@ const Analyzing = () => {
           }
         }
 
-        console.log("[Analyzing] Iniciando nova análise via edge function...");
+        // Nova análise via edge function
         setSteps(prev => prev.map((step, i) => 
           i === 0 ? { ...step, status: "loading" } : step
         ));
@@ -415,9 +398,7 @@ const Analyzing = () => {
           return;
         }
 
-        if (data.alreadyInProgress) {
-          console.log("✓ Análise já em andamento, acompanhando...");
-        }
+        // Continue tracking if already in progress
 
         setSteps(prev => prev.map((step, i) => 
           i <= 1 ? { ...step, status: i === 1 ? "loading" : "complete" } : step

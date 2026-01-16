@@ -711,7 +711,7 @@ const AdminCosts = () => {
         !u.is_legacy_cost && isValidCostData(u.cost_estimated, u.tokens_estimated)
       ) || [];
       
-      console.log(`[AdminCosts] Dados filtrados: ${usageData.length}/${rawUsageData?.length || 0} registros válidos (excluindo is_legacy_cost=true)`);
+      // Filtered data: ${usageData.length}/${rawUsageData?.length || 0} valid records
 
       const realTotalCost = usageData.reduce((sum, u) => sum + Number(u.cost_estimated || 0), 0);
       const realTotalTokens = usageData.reduce((sum, u) => sum + (u.tokens_estimated || 0), 0);
